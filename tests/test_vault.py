@@ -19,10 +19,17 @@ def test_init_vault_creates_structure(tmp_path, monkeypatch):
     assert (vault_path / "decisions").is_dir()
     assert (vault_path / "research").is_dir()
     assert (vault_path / "tools").is_dir()
+    assert (vault_path / "sessions").is_dir()
+    assert (vault_path / "raw" / "sessions").is_dir()
+    assert (vault_path / "incoming").is_dir()
 
     config = yaml.safe_load((vault_path / "wiki.yaml").read_text())
     assert config["vault"]["name"] == "my-wiki"
-    assert config["topics"] == ["projects", "decisions", "research", "tools"]
+    assert config["topics"] == ["projects", "decisions", "research", "tools", "sessions"]
+    assert config["conversations"]["topic"] == "sessions"
+    assert config["summarizer"]["type"] == "none"
+    assert config["sources"]["claude_code"]["enabled"] is True
+    assert config["sources"]["drop_zone"]["enabled"] is True
 
 
 def test_init_vault_sets_user_config(tmp_path, monkeypatch):
