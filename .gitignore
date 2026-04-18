@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Virtualenvs
+.venv/
+venv/
+
+# Local third-party reference projects (not vendored)
+3rdParty/
+
+# Editor / OS cruft
+.vscode/
+.idea/
+.DS_Store

@@ -111,6 +111,87 @@ awiki log
 awiki log --last 5
 ```
 
+### `awiki sync [--source cc|opencode|drop-zone] [--since DATE] [--dry-run]`
+
+Ingest conversations from configured sources. See the [Ingesting conversations](#ingesting-conversations) section below.
+
+### `awiki doctor [--fix] [--dry-run]`
+
+Inspect the vault for drift from the current schema and offer to fix each finding. Run this after upgrading `awiki`: it adds missing `wiki.yaml` sections (`conversations`, `summarizer`, `sources`), missing topic dirs, missing `raw/sessions/` + `incoming/`, and warns when an enabled source points at a path that doesn't exist. Interactive by default — use `--fix` to apply everything, `--dry-run` to just report.
+
+### `awiki adapt <source> <path-or-id> [-o FILE]`
+
+Low-level: convert a single session into a conversation bundle without ingesting. Useful for hooks, scripts, and debugging an adapter.
+
+### `awiki ingest-conversation <bundle.md>`
+
+Ingest a single bundle file. The entry point for external producers (e.g. a personal assistant) that write bundles directly rather than using an adapter.
+
+## Ingesting conversations
+
+Conversations are pulled in via **adapters** that turn agent-native session stores into a canonical **Conversation Bundle** (a single markdown file with frontmatter, stored under `raw/sessions/`). Bundles are then ingested into the `sessions` topic like any other wiki page.
+
+Three adapters ship today:
+
+- **claude-code** — reads Claude Code JSONL transcripts from `~/.claude/projects/<slug>/*.jsonl`.
+- **opencode** — reads Opencode's SQLite store at `~/.local/share/opencode/opencode.db` (opened read-only).
+- **drop-zone** — picks up pre-written bundles from a configured directory (default: `<vault>/incoming/`). This is how external agents without a built-in adapter (e.g. a personal assistant) file conversations.
+
+Run the sync manually:
+
+```bash
+awiki sync                           # all enabled sources
+awiki sync --source claude-code      # one source only
+awiki sync --dry-run                 # show what would be added
+awiki sync --since 2026-04-01        # older stuff only
+```
+
+Sync is state-tracked in `<vault>/.awiki-sync-state.json`, so reruns are idempotent. A changed session (mtime or content hash) gets re-ingested; unchanged sessions are skipped.
+
+### Writing bundles directly (for external agents)
+
+See [`Doc/conversation-bundle-schema.md`](Doc/conversation-bundle-schema.md) for the full spec. Minimum bundle:
+
+```markdown
+---
+type: conversation
+agent: my-assistant
+session_id: 2026-04-18-1030
+title: "Quick question about sqlite locking"
+---
+
+# Quick question about sqlite locking
+
+## user
+…
+
+## assistant
+…
+```
+
+Drop it into `<vault>/incoming/` (or whatever `sources.drop_zone.path` points to) and the next `awiki sync` will move it into `raw/sessions/` and create a wiki page under `sessions/`. Malformed bundles are quarantined under `incoming/rejected/` with a `.reason` sidecar — nothing is silently dropped.
+
+### Summarization (optional)
+
+By default the wiki page for a conversation is a link back to the full transcript in `raw/sessions/`. You can swap in a summarizer via `wiki.yaml`:
+
+```yaml
+summarizer:
+  type: none           # none | claude-p | local-openai
+  claude_p:
+    args: ["-p"]
+  local_openai:
+    base_url: http://127.0.0.1:8080/v1
+    model: ""
+    max_tokens: 600
+```
+
+- `none` — no LLM calls. Fast, offline, zero external deps.
+- `claude-p` — shells out to the `claude` CLI in `-p` mode. Uses your existing Claude Code credentials; no API key.
+- `local-openai` — POSTs to any OpenAI-compatible endpoint (e.g. a `llama.cpp` server). Stays local; no external traffic.
+
+If a summarizer is configured, each wiki page body is replaced with a structured summary (Context / Decisions / Key Exchanges / Open Threads). The raw transcript stays in `raw/sessions/` regardless.
+
 ## Claude Code Skills
 
 Three skills provide agent integration. Install them by adding the `skills/` directory to your Claude Code configuration.
