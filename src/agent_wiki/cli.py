@@ -1,5 +1,6 @@
 import glob as globmod
 import json
+import os
 import shutil
 import sys
 from datetime import datetime
@@ -340,12 +341,23 @@ def log_cmd(last):
     help="claude-json: emit {hookSpecificOutput:{additionalContext:...}}. "
          "plain: emit bare text.",
 )
-def context_cmd(output_format):
+@click.option(
+    "--debug",
+    is_flag=True,
+    default=False,
+    help="Log each call and its result as JSONL to "
+         "~/.cache/agent-wiki/context.debug.log. Equivalent to "
+         "AWIKI_CONTEXT_DEBUG=1.",
+)
+def context_cmd(output_format, debug):
     """Auto-context hook payload. Reads {'prompt': ...} JSON from stdin.
 
     Silent-fail: any error, skip, or zero-hit result → exit 0, no output.
     Never blocks the agent's prompt.
     """
+    if debug:
+        os.environ["AWIKI_CONTEXT_DEBUG"] = "1"
+
     try:
         payload = json.load(sys.stdin)
         prompt = payload.get("prompt", "")
