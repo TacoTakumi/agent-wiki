@@ -50,3 +50,46 @@ def extract_keywords(prompt: str, max_keywords: int = 5) -> list[str]:
         return []
 
     return [kw for kw, _score in results]
+
+
+def build_context_block(
+    hits: list[dict],
+    topic_order: list[str],
+    limit: int = 5,
+) -> str:
+    """Render a compact pointer block grouped by topic.
+
+    Hits with paths outside any listed topic are dropped (we don't emit
+    references to `raw/`, `index.md`, or other orphan files).
+    """
+    capped = hits[:limit]
+    if not capped:
+        return ""
+
+    # Group by leading path segment; keep only known topics.
+    by_topic: dict[str, list[dict]] = {}
+    for hit in capped:
+        parts = hit["path"].split("/", 1)
+        if len(parts) != 2:
+            continue
+        topic = parts[0]
+        if topic not in topic_order:
+            continue
+        by_topic.setdefault(topic, []).append(hit)
+
+    if not by_topic:
+        return ""
+
+    total = sum(len(v) for v in by_topic.values())
+    lines = [
+        f"<!-- agent-wiki: {total} possibly-relevant "
+        f"{'page' if total == 1 else 'pages'}. "
+        f"Use awiki-search to read any in full. -->",
+    ]
+    for topic in topic_order:
+        if topic not in by_topic:
+            continue
+        lines.append(f"## {topic}")
+        for hit in by_topic[topic]:
+            lines.append(f"- [{hit['title']}]({hit['path']})")
+    return "\n".join(lines) + "\n"
