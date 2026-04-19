@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from pathlib import Path
 
 
@@ -93,3 +95,67 @@ def build_context_block(
         for hit in by_topic[topic]:
             lines.append(f"- [{hit['title']}]({hit['path']})")
     return "\n".join(lines) + "\n"
+
+
+def _log_error(msg: str) -> None:
+    """Append a diagnostic line to ~/.cache/agent-wiki/context.log.
+
+    Silent on logging failure — we cannot let logging itself break the hook.
+    Rotates (rename to .log.old) when the file exceeds ~1MB.
+    """
+    try:
+        cache = Path(
+            os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
+        ) / "agent-wiki"
+        cache.mkdir(parents=True, exist_ok=True)
+        log = cache / "context.log"
+        if log.exists() and log.stat().st_size > 1_000_000:
+            rotated = cache / "context.log.old"
+            if rotated.exists():
+                rotated.unlink()
+            log.rename(rotated)
+        with log.open("a") as f:
+            f.write(msg.rstrip() + "\n")
+    except Exception:
+        pass
+
+
+def run_context(prompt: str, vault_path: Path) -> str | None:
+    """Top-level orchestration for the auto-context hook.
+
+    Returns the rendered context block, or None when anything short-circuits
+    (skip rule, disabled, no hits, any error). Never raises.
+    """
+    from agent_wiki.config import auto_context_enabled, load_vault_config
+    from agent_wiki.search import search_vault
+
+    try:
+        if should_skip(prompt):
+            return None
+        if not auto_context_enabled(vault_path):
+            return None
+
+        try:
+            vault_config = load_vault_config(vault_path)
+        except FileNotFoundError:
+            return None
+        topics = vault_config.get("topics") or []
+
+        keywords = extract_keywords(prompt)
+        if not keywords:
+            return None
+
+        # OR-join keywords for ripgrep/Python regex.
+        import re
+        query = "|".join(re.escape(k) for k in keywords)
+        hits = search_vault(vault_path, query)
+        if not hits:
+            return None
+
+        hits.sort(key=lambda h: (-len(h.get("matches", [])), h["path"]))
+
+        block = build_context_block(hits, topic_order=topics)
+        return block or None
+    except Exception as exc:  # pragma: no cover — silent-fail net
+        _log_error(f"run_context: {type(exc).__name__}: {exc}")
+        return None
