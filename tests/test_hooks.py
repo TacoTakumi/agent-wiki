@@ -262,3 +262,48 @@ def test_cli_hook_status_reports_install_state(tmp_settings):
         "--config-path", str(tmp_settings),
     ])
     assert "installed" in result.output.lower()
+
+
+def test_end_to_end_install_then_fire_hook(tmp_config, tmp_vault, tmp_settings):
+    """Install the hook, seed a page, invoke `awiki context` with a matching
+    prompt, and verify the structured output would land in Claude's context."""
+    # Seed a wiki page.
+    (tmp_vault / "research" / "ingest-pipeline.md").write_text(
+        "---\ntitle: Ingest Pipeline\ntopic: research\n---\n\n"
+        "# Ingest Pipeline\n\nThe ingest pipeline handles codex sessions.\n"
+    )
+
+    runner = CliRunner()
+
+    # 1. Install the hook.
+    install_result = runner.invoke(cli, [
+        "hook", "install",
+        "--agent", "claude",
+        "--config-path", str(tmp_settings),
+    ])
+    assert install_result.exit_code == 0
+    settings = json.loads(tmp_settings.read_text())
+    hook_cmd = settings["hooks"]["UserPromptSubmit"][0]["hooks"][0]["command"]
+    assert hook_cmd == "awiki context"
+
+    # 2. Simulate Claude firing the hook with a matching prompt.
+    stdin = json.dumps({
+        "prompt": "how do I configure the ingest pipeline for codex sessions",
+        "session_id": "test",
+        "cwd": str(tmp_vault),
+    })
+    ctx_result = runner.invoke(cli, ["context"], input=stdin)
+    assert ctx_result.exit_code == 0
+    payload = json.loads(ctx_result.output)
+    additional = payload["hookSpecificOutput"]["additionalContext"]
+    assert "Ingest Pipeline" in additional
+    assert "research/ingest-pipeline.md" in additional
+
+    # 3. Uninstall and confirm the settings file is clean.
+    runner.invoke(cli, [
+        "hook", "uninstall",
+        "--agent", "claude",
+        "--config-path", str(tmp_settings),
+    ])
+    data = json.loads(tmp_settings.read_text())
+    assert not data.get("hooks", {}).get("UserPromptSubmit")
