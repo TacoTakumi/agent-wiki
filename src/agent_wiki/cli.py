@@ -374,3 +374,60 @@ def context_cmd(output_format):
         click.echo(json.dumps({
             "hookSpecificOutput": {"additionalContext": block},
         }))
+
+
+@cli.group("hook")
+def hook_group():
+    """Install / uninstall / inspect the auto-context hook for an agent CLI."""
+    pass
+
+
+@hook_group.command("install")
+@click.option("--agent", default="claude", help="Target agent CLI (claude, manual).")
+@click.option("--config-path", default=None, type=click.Path(),
+              help="Override the agent's settings file path (for tests or non-default installs).")
+def hook_install(agent, config_path):
+    """Wire `awiki context` into the target agent's hook system."""
+    from agent_wiki.hooks import get_backend
+    try:
+        backend = get_backend(agent)
+    except KeyError as exc:
+        raise click.ClickException(str(exc))
+    path = Path(config_path) if config_path else None
+    try:
+        msg = backend["install"](config_path=path)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(msg)
+
+
+@hook_group.command("uninstall")
+@click.option("--agent", default="claude")
+@click.option("--config-path", default=None, type=click.Path())
+def hook_uninstall(agent, config_path):
+    """Remove the auto-context hook from the target agent's settings."""
+    from agent_wiki.hooks import get_backend
+    try:
+        backend = get_backend(agent)
+    except KeyError as exc:
+        raise click.ClickException(str(exc))
+    path = Path(config_path) if config_path else None
+    try:
+        msg = backend["uninstall"](config_path=path)
+    except ValueError as exc:
+        raise click.ClickException(str(exc))
+    click.echo(msg)
+
+
+@hook_group.command("status")
+@click.option("--agent", default="claude")
+@click.option("--config-path", default=None, type=click.Path())
+def hook_status(agent, config_path):
+    """Report install state for the target agent."""
+    from agent_wiki.hooks import get_backend
+    try:
+        backend = get_backend(agent)
+    except KeyError as exc:
+        raise click.ClickException(str(exc))
+    path = Path(config_path) if config_path else None
+    click.echo(backend["status"](config_path=path))

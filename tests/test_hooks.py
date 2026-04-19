@@ -194,3 +194,71 @@ def test_claude_status_reports_installed(tmp_settings):
 def test_claude_status_reports_not_installed(tmp_settings):
     msg = claude_backend.status(config_path=tmp_settings)
     assert "not installed" in msg.lower()
+
+
+def test_cli_hook_install_claude_writes_settings(tmp_settings):
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "hook", "install",
+        "--agent", "claude",
+        "--config-path", str(tmp_settings),
+    ])
+    assert result.exit_code == 0, result.output
+    data = json.loads(tmp_settings.read_text())
+    hooks = data["hooks"]["UserPromptSubmit"][0]["hooks"]
+    assert any(h["command"] == "awiki context" for h in hooks)
+
+
+def test_cli_hook_install_manual_prints_instructions():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["hook", "install", "--agent", "manual"])
+    assert result.exit_code == 0
+    assert "awiki context" in result.output
+    assert "UserPromptSubmit" in result.output
+
+
+def test_cli_hook_install_unknown_agent_errors():
+    runner = CliRunner()
+    result = runner.invoke(cli, ["hook", "install", "--agent", "opencode"])
+    assert result.exit_code != 0
+    assert "manual" in result.output.lower()
+
+
+def test_cli_hook_uninstall_removes_entry(tmp_settings):
+    runner = CliRunner()
+    runner.invoke(cli, [
+        "hook", "install",
+        "--agent", "claude",
+        "--config-path", str(tmp_settings),
+    ])
+    result = runner.invoke(cli, [
+        "hook", "uninstall",
+        "--agent", "claude",
+        "--config-path", str(tmp_settings),
+    ])
+    assert result.exit_code == 0
+    data = json.loads(tmp_settings.read_text())
+    assert not data.get("hooks", {}).get("UserPromptSubmit")
+
+
+def test_cli_hook_status_reports_install_state(tmp_settings):
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "hook", "status",
+        "--agent", "claude",
+        "--config-path", str(tmp_settings),
+    ])
+    assert result.exit_code == 0
+    assert "not installed" in result.output.lower()
+
+    runner.invoke(cli, [
+        "hook", "install",
+        "--agent", "claude",
+        "--config-path", str(tmp_settings),
+    ])
+    result = runner.invoke(cli, [
+        "hook", "status",
+        "--agent", "claude",
+        "--config-path", str(tmp_settings),
+    ])
+    assert "installed" in result.output.lower()
