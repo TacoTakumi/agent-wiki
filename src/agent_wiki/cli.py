@@ -1,5 +1,7 @@
 import glob as globmod
+import json
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -7,6 +9,7 @@ import click
 
 from agent_wiki.adapters import ADAPTER_NAMES, build_adapter
 from agent_wiki.config import get_vault_path, load_vault_config
+from agent_wiki.context import run_context
 from agent_wiki.doctor import SourcePathMissing, run_checks
 from agent_wiki.conversation import (
     BUNDLE_SUBDIR,
@@ -327,3 +330,47 @@ def log_cmd(last):
 
     for entry in entries:
         click.echo(entry)
+
+
+@cli.command("context")
+@click.option(
+    "--output-format",
+    type=click.Choice(["claude-json", "plain"]),
+    default="claude-json",
+    help="claude-json: emit {hookSpecificOutput:{additionalContext:...}}. "
+         "plain: emit bare text.",
+)
+def context_cmd(output_format):
+    """Auto-context hook payload. Reads {'prompt': ...} JSON from stdin.
+
+    Silent-fail: any error, skip, or zero-hit result → exit 0, no output.
+    Never blocks the agent's prompt.
+    """
+    try:
+        payload = json.load(sys.stdin)
+        prompt = payload.get("prompt", "")
+        if not isinstance(prompt, str):
+            return
+    except Exception:
+        return
+
+    try:
+        from agent_wiki.config import get_vault_path
+        vault_path = get_vault_path()
+    except Exception:
+        return
+
+    try:
+        block = run_context(prompt, vault_path)
+    except Exception:
+        return
+
+    if not block:
+        return
+
+    if output_format == "plain":
+        click.echo(block, nl=False)
+    else:
+        click.echo(json.dumps({
+            "hookSpecificOutput": {"additionalContext": block},
+        }))
