@@ -151,3 +151,16 @@ def test_run_context_returns_none_when_no_wiki_yaml(tmp_path, monkeypatch):
         "how do I configure the ingest pipeline",
         tmp_path,
     ) is None
+
+
+def test_run_context_returns_none_when_yaml_toggle_off(tmp_vault, monkeypatch):
+    """The wiki.yaml-based toggle (not just env) disables run_context."""
+    monkeypatch.delenv("AWIKI_AUTO_CONTEXT", raising=False)
+    _seed_page(tmp_vault, "research", "x", "X", "ingest pipeline")
+    config = _yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    config["auto_context"] = False
+    (tmp_vault / "wiki.yaml").write_text(_yaml.dump(config))
+    assert run_context(
+        "how do I configure the ingest pipeline",
+        tmp_vault,
+    ) is None

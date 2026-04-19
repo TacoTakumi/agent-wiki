@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 
 from pathlib import Path
 
@@ -105,7 +106,7 @@ def _log_error(msg: str) -> None:
     """
     try:
         cache = Path(
-            os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
+            os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))
         ) / "agent-wiki"
         cache.mkdir(parents=True, exist_ok=True)
         log = cache / "context.log"
@@ -146,7 +147,6 @@ def run_context(prompt: str, vault_path: Path) -> str | None:
             return None
 
         # OR-join keywords for ripgrep/Python regex.
-        import re
         query = "|".join(re.escape(k) for k in keywords)
         hits = search_vault(vault_path, query)
         if not hits:
