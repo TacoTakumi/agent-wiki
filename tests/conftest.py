@@ -1,6 +1,7 @@
 import os
 import pytest
 import yaml
+import json as _json
 
 
 @pytest.fixture
@@ -34,3 +35,14 @@ def tmp_config(tmp_path, tmp_vault, monkeypatch):
     config_file.write_text(yaml.dump({"vault_path": str(tmp_vault)}))
     monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
     return config_file
+
+
+@pytest.fixture
+def tmp_settings(tmp_path):
+    """Create an empty settings.json file and return its path.
+
+    Used to test `awiki hook install --config-path <path>`.
+    """
+    settings_path = tmp_path / "claude-settings.json"
+    settings_path.write_text(_json.dumps({}))
+    return settings_path
