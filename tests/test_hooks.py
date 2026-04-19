@@ -78,3 +78,22 @@ def test_context_silent_when_no_vault_configured(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["context"], input=json.dumps({"prompt": "some long enough prompt here"}))
     assert result.exit_code == 0
     assert result.output == ""
+
+
+from agent_wiki.hooks import BACKENDS, get_backend
+
+
+def test_backends_dict_contains_claude_and_manual():
+    assert "claude" in BACKENDS
+    assert "manual" in BACKENDS
+
+
+def test_get_backend_raises_on_unknown_agent():
+    import pytest
+    with pytest.raises(KeyError):
+        get_backend("opencode")
+
+
+def test_manual_backend_has_install_function():
+    backend = get_backend("manual")
+    assert callable(backend["install"])
