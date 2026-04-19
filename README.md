@@ -127,6 +127,30 @@ Low-level: convert a single session into a conversation bundle without ingesting
 
 Ingest a single bundle file. The entry point for external producers (e.g. a personal assistant) that write bundles directly rather than using an adapter.
 
+### `awiki context [--output-format claude-json|plain]`
+
+Auto-context hook payload. Reads `{"prompt": "..."}` JSON from stdin, extracts keywords with YAKE, searches the vault, and emits a compact pointer block to stdout. Designed to be wired into an agent CLI's `UserPromptSubmit`-style hook so the model sees relevant page titles before answering. Silent-fails on every error path — never blocks the prompt.
+
+```bash
+echo '{"prompt":"how do I configure ingest"}' | awiki context
+# {"hookSpecificOutput": {"additionalContext": "<!-- agent-wiki: 3 possibly-relevant pages... -->\n## research\n- [Ingest Pipeline](research/ingest-pipeline.md)\n..."}}
+```
+
+Skips short prompts (< 15 chars or < 3 words) and slash commands. Toggleable via `auto_context: true|false` in `wiki.yaml` or `AWIKI_AUTO_CONTEXT=0|1` env var. Diagnostics go to `~/.cache/agent-wiki/context.log`.
+
+### `awiki hook install|uninstall|status [--agent claude|manual] [--config-path PATH]`
+
+Wire `awiki context` into an agent CLI's hook system.
+
+```bash
+awiki hook install --agent claude       # edits ~/.claude/settings.json (atomic, idempotent)
+awiki hook status --agent claude        # report install state
+awiki hook uninstall --agent claude     # remove only the awiki entry, preserve others
+awiki hook install --agent manual       # print copy-paste wiring for any host
+```
+
+The Claude backend writes a `UserPromptSubmit` hook entry pointing at `awiki context`, preserves all other settings, and refuses to mutate the file if it isn't valid JSON. Use `--config-path` to target a non-default settings file (handy for tests). The `manual` backend touches no files — it just prints the contract so you can wire OpenCode, Codex, Cursor, etc. by hand.
+
 ## Ingesting conversations
 
 Conversations are pulled in via **adapters** that turn agent-native session stores into a canonical **Conversation Bundle** (a single markdown file with frontmatter, stored under `raw/sessions/`). Bundles are then ingested into the `sessions` topic like any other wiki page.
@@ -224,6 +248,18 @@ Before web searching for technical knowledge, search the wiki first:
 The wiki vault is at the path configured in ~/.config/agent-wiki/config.yaml.
 ```
 
+### Auto-Context Hook (UserPromptSubmit)
+
+Instead of relying on a CLAUDE.md prompt, you can have agent-wiki inject pointers to relevant pages on every user prompt:
+
+```bash
+awiki hook install --agent claude
+```
+
+This adds a `UserPromptSubmit` hook to `~/.claude/settings.json` that runs `awiki context` for each prompt. The hook extracts keywords with YAKE, searches the vault, and silently injects a small block of page pointers (capped at 5) so the model knows what's available without you having to ask. Skips slash commands and short prompts. Toggle off per-vault with `auto_context: false` in `wiki.yaml` or one-shot with `AWIKI_AUTO_CONTEXT=0`.
+
+For other agent CLIs (OpenCode, Codex, etc.), `awiki hook install --agent manual` prints the wiring contract so you can hook it up by hand.
+
 ## Architecture
 
 The system follows Karpathy's three-layer architecture:
@@ -298,11 +334,13 @@ agent-wiki/
     lint.py        # Audit broken links, orphans, missing frontmatter
     log.py         # Append-only activity log
     page.py        # Page model: frontmatter, slugify, wikilinks
+    context.py     # Auto-context hook: keyword extract, search, format
+    hooks/         # Per-agent install backends (claude, manual)
   skills/
     awiki-search/  # Claude Code skill
     awiki-save/    # Claude Code skill
     awiki-ingest/  # Claude Code skill
-  tests/           # pytest test suite (39 tests)
+  tests/           # pytest test suite (167 tests)
 ```
 
 ### Obsidian / Logseq Compatibility
