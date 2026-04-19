@@ -29,6 +29,7 @@ def init_vault(vault_path: Path) -> None:
         "vault": {"name": vault_path.name, "version": 1},
         "topics": DEFAULT_TOPICS,
         "default_topic": "research",
+        "auto_context": True,
         "conversations": {
             "topic": "sessions",
             "include_live": False,
