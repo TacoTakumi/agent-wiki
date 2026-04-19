@@ -1,8 +1,9 @@
 import os
-import yaml
+import yaml as _yaml
 import pytest
 from pathlib import Path
 from agent_wiki.config import get_config_dir, load_user_config, save_user_config, load_vault_config, auto_context_enabled
+from agent_wiki.vault import init_vault
 
 
 def test_get_config_dir_default(monkeypatch, tmp_path):
@@ -51,16 +52,16 @@ def test_auto_context_enabled_defaults_true_when_key_missing(tmp_vault):
 
 
 def test_auto_context_enabled_reads_false_from_wiki_yaml(tmp_vault):
-    config = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    config = _yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
     config["auto_context"] = False
-    (tmp_vault / "wiki.yaml").write_text(yaml.dump(config))
+    (tmp_vault / "wiki.yaml").write_text(_yaml.dump(config))
     assert auto_context_enabled(tmp_vault) is False
 
 
 def test_auto_context_enabled_env_overrides_yaml(tmp_vault, monkeypatch):
-    config = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    config = _yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
     config["auto_context"] = True
-    (tmp_vault / "wiki.yaml").write_text(yaml.dump(config))
+    (tmp_vault / "wiki.yaml").write_text(_yaml.dump(config))
     monkeypatch.setenv("AWIKI_AUTO_CONTEXT", "0")
     assert auto_context_enabled(tmp_vault) is False
 
@@ -81,3 +82,11 @@ def test_auto_context_enabled_returns_false_when_no_wiki_yaml(tmp_path, monkeypa
     monkeypatch.delenv("AWIKI_AUTO_CONTEXT", raising=False)
     # Empty dir — no wiki.yaml.
     assert auto_context_enabled(tmp_path) is False
+
+
+def test_init_vault_writes_auto_context_true(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(tmp_path / "config"))
+    vault = tmp_path / "vault"
+    init_vault(vault)
+    config = _yaml.safe_load((vault / "wiki.yaml").read_text())
+    assert config["auto_context"] is True
