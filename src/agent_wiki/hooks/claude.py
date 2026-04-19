@@ -66,8 +66,47 @@ def install(config_path: Path | None = None) -> str:
 
 
 def uninstall(config_path: Path | None = None) -> str:
-    raise NotImplementedError("claude backend uninstall: implemented in Task 11")
+    """Remove the `awiki context` hook entry. Idempotent."""
+    path = config_path or _default_settings_path()
+    if not path.exists():
+        return f"Nothing to uninstall: {path} does not exist."
+    data = _read_settings(path)
+
+    events = data.get("hooks", {}).get(CLAUDE_EVENT, [])
+    removed = False
+    for group in events:
+        before = len(group.get("hooks", []))
+        group["hooks"] = [
+            h for h in group.get("hooks", [])
+            if h.get("command") != AWIKI_COMMAND
+        ]
+        if len(group["hooks"]) != before:
+            removed = True
+
+    # Drop empty groups, then drop the event key entirely if no groups left.
+    if events:
+        data["hooks"][CLAUDE_EVENT] = [g for g in events if g.get("hooks")]
+        if not data["hooks"][CLAUDE_EVENT]:
+            del data["hooks"][CLAUDE_EVENT]
+        if not data["hooks"]:
+            del data["hooks"]
+
+    _atomic_write_json(path, data)
+    return "Uninstalled." if removed else "Nothing to uninstall."
 
 
 def status(config_path: Path | None = None) -> str:
-    raise NotImplementedError("claude backend status: implemented in Task 11")
+    """Report whether `awiki context` is wired into the target settings."""
+    path = config_path or _default_settings_path()
+    if not path.exists():
+        return f"Not installed ({path} does not exist)."
+    try:
+        data = _read_settings(path)
+    except ValueError:
+        return f"Cannot read {path}: malformed JSON."
+    events = data.get("hooks", {}).get(CLAUDE_EVENT, [])
+    for group in events:
+        for h in group.get("hooks", []):
+            if h.get("command") == AWIKI_COMMAND:
+                return f"Installed at {path}."
+    return f"Not installed in {path}."
