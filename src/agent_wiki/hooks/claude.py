@@ -19,10 +19,13 @@ def _default_settings_path() -> Path:
 
 
 def _read_settings(path: Path) -> dict:
-    if not path.exists() or path.read_text().strip() == "":
+    if not path.exists():
+        return {}
+    text = path.read_text()
+    if text.strip() == "":
         return {}
     try:
-        return json.loads(path.read_text())
+        return json.loads(text)
     except json.JSONDecodeError as exc:
         raise ValueError(
             f"Refusing to modify {path}: file is not valid JSON ({exc}). "
