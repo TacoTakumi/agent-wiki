@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import time
 
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -98,27 +101,53 @@ def build_context_block(
     return "\n".join(lines) + "\n"
 
 
-def _log_error(msg: str) -> None:
-    """Append a diagnostic line to ~/.cache/agent-wiki/context.log.
+def _cache_dir() -> Path:
+    return Path(
+        os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))
+    ) / "agent-wiki"
+
+
+def _append_rotated(filename: str, line: str) -> None:
+    """Append `line` to ~/.cache/agent-wiki/<filename> with 1MB rotation.
 
     Silent on logging failure — we cannot let logging itself break the hook.
-    Rotates (rename to .log.old) when the file exceeds ~1MB.
     """
     try:
-        cache = Path(
-            os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))
-        ) / "agent-wiki"
+        cache = _cache_dir()
         cache.mkdir(parents=True, exist_ok=True)
-        log = cache / "context.log"
+        log = cache / filename
         if log.exists() and log.stat().st_size > 1_000_000:
-            rotated = cache / "context.log.old"
+            rotated = cache / (filename + ".old")
             if rotated.exists():
                 rotated.unlink()
             log.rename(rotated)
         with log.open("a") as f:
-            f.write(msg.rstrip() + "\n")
+            f.write(line.rstrip() + "\n")
     except Exception:
         pass
+
+
+def _log_error(msg: str) -> None:
+    """Append a diagnostic line to ~/.cache/agent-wiki/context.log."""
+    _append_rotated("context.log", msg)
+
+
+def _debug_enabled() -> bool:
+    val = os.environ.get("AWIKI_CONTEXT_DEBUG")
+    if val is None:
+        return False
+    return val.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _log_debug(trace: dict) -> None:
+    """Append a JSONL trace to ~/.cache/agent-wiki/context.debug.log when enabled."""
+    if not _debug_enabled():
+        return
+    try:
+        line = json.dumps(trace, ensure_ascii=False)
+    except Exception:
+        return
+    _append_rotated("context.debug.log", line)
 
 
 def run_context(prompt: str, vault_path: Path) -> str | None:
@@ -130,32 +159,67 @@ def run_context(prompt: str, vault_path: Path) -> str | None:
     from agent_wiki.config import auto_context_enabled, load_vault_config
     from agent_wiki.search import search_vault
 
+    t0 = time.monotonic()
+    trace: dict = {
+        "ts": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+        "prompt": prompt[:200],
+        "prompt_len": len(prompt),
+        "outcome": None,
+        "keywords": [],
+        "hits_raw": 0,
+        "hits_rendered": 0,
+        "block_chars": 0,
+        "block": "",
+    }
+
+    def finish(block: str | None) -> str | None:
+        trace["duration_ms"] = int((time.monotonic() - t0) * 1000)
+        _log_debug(trace)
+        return block
+
     try:
         if should_skip(prompt):
-            return None
+            trace["outcome"] = "skip_rule"
+            return finish(None)
         if not auto_context_enabled(vault_path):
-            return None
+            trace["outcome"] = "disabled"
+            return finish(None)
 
         try:
             vault_config = load_vault_config(vault_path)
         except FileNotFoundError:
-            return None
+            trace["outcome"] = "no_vault_config"
+            return finish(None)
         topics = vault_config.get("topics") or []
 
         keywords = extract_keywords(prompt)
+        trace["keywords"] = keywords
         if not keywords:
-            return None
+            trace["outcome"] = "no_keywords"
+            return finish(None)
 
         # OR-join keywords for ripgrep/Python regex.
         query = "|".join(re.escape(k) for k in keywords)
         hits = search_vault(vault_path, query)
+        trace["hits_raw"] = len(hits)
         if not hits:
-            return None
+            trace["outcome"] = "no_hits"
+            return finish(None)
 
         hits.sort(key=lambda h: (-len(h.get("matches", [])), h["path"]))
 
         block = build_context_block(hits, topic_order=topics)
-        return block or None
+        if not block:
+            trace["outcome"] = "all_filtered"
+            return finish(None)
+
+        trace["hits_rendered"] = block.count("\n- [")
+        trace["block_chars"] = len(block)
+        trace["block"] = block
+        trace["outcome"] = "ok"
+        return finish(block)
     except Exception as exc:  # pragma: no cover — silent-fail net
         _log_error(f"run_context: {type(exc).__name__}: {exc}")
-        return None
+        trace["outcome"] = "error"
+        trace["error"] = f"{type(exc).__name__}: {exc}"
+        return finish(None)

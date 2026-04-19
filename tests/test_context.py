@@ -164,3 +164,81 @@ def test_run_context_returns_none_when_yaml_toggle_off(tmp_vault, monkeypatch):
         "how do I configure the ingest pipeline",
         tmp_vault,
     ) is None
+
+
+# --- Debug-logging tests -----------------------------------------------------
+
+import json as _json
+
+
+@pytest.fixture
+def debug_cache(tmp_path, monkeypatch):
+    """Redirect the debug log to an isolated cache dir and enable debug."""
+    cache_root = tmp_path / "cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_root))
+    monkeypatch.setenv("AWIKI_CONTEXT_DEBUG", "1")
+    return cache_root / "agent-wiki" / "context.debug.log"
+
+
+def _read_traces(log_path):
+    assert log_path.exists(), f"debug log not written at {log_path}"
+    return [_json.loads(line) for line in log_path.read_text().splitlines() if line]
+
+
+def test_debug_log_ok_path_records_keywords_hits_and_block(debug_cache, tmp_vault):
+    _seed_page(tmp_vault, "research", "ingest-pipeline",
+               "Ingest Pipeline", "The ingest pipeline handles codex sessions.")
+    run_context(
+        "how do I configure the ingest pipeline for codex sessions",
+        tmp_vault,
+    )
+    [trace] = _read_traces(debug_cache)
+    assert trace["outcome"] == "ok"
+    assert trace["keywords"], "expected non-empty keywords"
+    assert trace["hits_raw"] >= 1
+    assert trace["hits_rendered"] >= 1
+    assert trace["block_chars"] > 0
+    assert "Ingest Pipeline" in trace["block"]
+    assert "duration_ms" in trace
+    assert trace["prompt_len"] == len(
+        "how do I configure the ingest pipeline for codex sessions"
+    )
+
+
+def test_debug_log_records_skip_rule(debug_cache, tmp_vault):
+    run_context("/gsd-next", tmp_vault)
+    [trace] = _read_traces(debug_cache)
+    assert trace["outcome"] == "skip_rule"
+    assert trace["keywords"] == []
+    assert trace["block"] == ""
+
+
+def test_debug_log_records_disabled(debug_cache, tmp_vault, monkeypatch):
+    monkeypatch.setenv("AWIKI_AUTO_CONTEXT", "0")
+    run_context("how do I configure the ingest pipeline", tmp_vault)
+    [trace] = _read_traces(debug_cache)
+    assert trace["outcome"] == "disabled"
+
+
+def test_debug_log_records_no_hits(debug_cache, tmp_vault):
+    run_context("tell me about quantum tunneling in semiconductors", tmp_vault)
+    [trace] = _read_traces(debug_cache)
+    assert trace["outcome"] == "no_hits"
+    assert trace["hits_raw"] == 0
+    assert trace["block"] == ""
+
+
+def test_debug_log_not_written_when_disabled(tmp_path, monkeypatch, tmp_vault):
+    cache_root = tmp_path / "cache"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_root))
+    monkeypatch.delenv("AWIKI_CONTEXT_DEBUG", raising=False)
+    run_context("how do I configure the ingest pipeline", tmp_vault)
+    assert not (cache_root / "agent-wiki" / "context.debug.log").exists()
+
+
+def test_debug_log_truncates_long_prompt(debug_cache, tmp_vault):
+    long_prompt = "configure the ingest pipeline " + ("x" * 500)
+    run_context(long_prompt, tmp_vault)
+    [trace] = _read_traces(debug_cache)
+    assert len(trace["prompt"]) == 200
+    assert trace["prompt_len"] == len(long_prompt)
