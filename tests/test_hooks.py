@@ -139,3 +139,58 @@ def test_claude_install_refuses_malformed_settings(tmp_settings):
         claude_backend.install(config_path=tmp_settings)
     # File unchanged.
     assert tmp_settings.read_text() == "{not valid json"
+
+
+def test_claude_uninstall_removes_only_awiki_entry(tmp_settings):
+    tmp_settings.write_text(json.dumps({
+        "hooks": {
+            "UserPromptSubmit": [{
+                "matcher": "*",
+                "hooks": [
+                    {"type": "command", "command": "awiki context"},
+                    {"type": "command", "command": "other-tool"},
+                ],
+            }],
+        },
+    }))
+    claude_backend.uninstall(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    hooks = data["hooks"]["UserPromptSubmit"][0]["hooks"]
+    commands = [h["command"] for h in hooks]
+    assert "awiki context" not in commands
+    assert "other-tool" in commands
+
+
+def test_claude_uninstall_is_noop_when_not_installed(tmp_settings):
+    tmp_settings.write_text(json.dumps({"model": "claude-opus-4-7"}))
+    # Should not raise.
+    claude_backend.uninstall(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    assert data == {"model": "claude-opus-4-7"}
+
+
+def test_claude_uninstall_removes_empty_event_group(tmp_settings):
+    """If removing awiki leaves an empty UserPromptSubmit, clean it up."""
+    tmp_settings.write_text(json.dumps({
+        "hooks": {
+            "UserPromptSubmit": [{
+                "matcher": "*",
+                "hooks": [{"type": "command", "command": "awiki context"}],
+            }],
+        },
+    }))
+    claude_backend.uninstall(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    # The event key should be gone entirely, or empty.
+    assert not data.get("hooks", {}).get("UserPromptSubmit")
+
+
+def test_claude_status_reports_installed(tmp_settings):
+    claude_backend.install(config_path=tmp_settings)
+    msg = claude_backend.status(config_path=tmp_settings)
+    assert "installed" in msg.lower()
+
+
+def test_claude_status_reports_not_installed(tmp_settings):
+    msg = claude_backend.status(config_path=tmp_settings)
+    assert "not installed" in msg.lower()
