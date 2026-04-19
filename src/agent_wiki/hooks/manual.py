@@ -10,7 +10,7 @@ To wire agent-wiki into any host that supports a UserPromptSubmit-style hook:
 
   Command:  awiki context
   Stdin:    JSON with a "prompt" field, e.g. {"prompt": "user text"}
-  Stdout:   JSON of shape {"hookSpecificOutput": {"additionalContext": "..."}}
+  Stdout:   JSON of shape {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": "..."}}
             (use `awiki context --output-format plain` for bare text)
   Exit:     Always 0 (silent-fail on every error).
 
