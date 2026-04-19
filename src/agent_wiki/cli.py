@@ -338,8 +338,8 @@ def log_cmd(last):
     "--output-format",
     type=click.Choice(["claude-json", "plain"]),
     default="claude-json",
-    help="claude-json: emit {hookSpecificOutput:{additionalContext:...}}. "
-         "plain: emit bare text.",
+    help="claude-json: emit {hookSpecificOutput:{hookEventName:UserPromptSubmit,"
+         "additionalContext:...}}. plain: emit bare text.",
 )
 @click.option(
     "--debug",
@@ -384,7 +384,10 @@ def context_cmd(output_format, debug):
         click.echo(block, nl=False)
     else:
         click.echo(json.dumps({
-            "hookSpecificOutput": {"additionalContext": block},
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": block,
+            },
         }))
 
 

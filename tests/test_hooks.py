@@ -25,6 +25,7 @@ def test_context_emits_additional_context_when_hits(tmp_config, tmp_vault):
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert "hookSpecificOutput" in payload
+    assert payload["hookSpecificOutput"]["hookEventName"] == "UserPromptSubmit"
     assert "Ingest Pipeline" in payload["hookSpecificOutput"]["additionalContext"]
 
 
