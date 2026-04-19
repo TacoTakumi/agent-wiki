@@ -97,3 +97,45 @@ def test_get_backend_raises_on_unknown_agent():
 def test_manual_backend_has_install_function():
     backend = get_backend("manual")
     assert callable(backend["install"])
+
+
+from agent_wiki.hooks import claude as claude_backend
+
+
+def test_claude_install_writes_hook_into_empty_settings(tmp_settings):
+    claude_backend.install(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    events = data["hooks"]["UserPromptSubmit"]
+    assert len(events) == 1
+    hooks = events[0]["hooks"]
+    assert any(h["command"] == "awiki context" for h in hooks)
+
+
+def test_claude_install_preserves_unrelated_settings(tmp_settings):
+    tmp_settings.write_text(json.dumps({
+        "model": "claude-opus-4-7",
+        "hooks": {"PreToolUse": [{"matcher": "*", "hooks": [{"type": "command", "command": "echo pre"}]}]},
+    }))
+    claude_backend.install(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    assert data["model"] == "claude-opus-4-7"
+    assert "PreToolUse" in data["hooks"]
+    assert "UserPromptSubmit" in data["hooks"]
+
+
+def test_claude_install_is_idempotent(tmp_settings):
+    claude_backend.install(config_path=tmp_settings)
+    claude_backend.install(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    hooks = data["hooks"]["UserPromptSubmit"][0]["hooks"]
+    awiki_hooks = [h for h in hooks if h["command"] == "awiki context"]
+    assert len(awiki_hooks) == 1
+
+
+def test_claude_install_refuses_malformed_settings(tmp_settings):
+    tmp_settings.write_text("{not valid json")
+    import pytest
+    with pytest.raises(ValueError):
+        claude_backend.install(config_path=tmp_settings)
+    # File unchanged.
+    assert tmp_settings.read_text() == "{not valid json"
