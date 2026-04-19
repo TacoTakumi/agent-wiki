@@ -100,3 +100,54 @@ def test_build_context_block_mentions_awiki_search_skill():
     hits = [{"title": "X", "path": "research/x.md", "matches": ["m"]}]
     block = build_context_block(hits, topic_order=["research"])
     assert "awiki-search" in block
+
+
+import yaml as _yaml
+
+from agent_wiki.context import run_context
+
+
+def _seed_page(vault, topic, slug, title, body):
+    page = vault / topic / f"{slug}.md"
+    page.write_text(
+        f"---\ntitle: {title}\ntopic: {topic}\n---\n\n# {title}\n\n{body}\n"
+    )
+
+
+def test_run_context_returns_block_when_hits_found(tmp_vault):
+    _seed_page(tmp_vault, "research", "ingest-pipeline",
+               "Ingest Pipeline", "The ingest pipeline handles codex sessions.")
+    result = run_context(
+        "how do I configure the ingest pipeline for codex sessions",
+        tmp_vault,
+    )
+    assert result is not None
+    assert "Ingest Pipeline" in result
+
+
+def test_run_context_returns_none_when_no_hits(tmp_vault):
+    result = run_context("tell me about quantum tunneling in semiconductors", tmp_vault)
+    assert result is None
+
+
+def test_run_context_returns_none_when_prompt_should_skip(tmp_vault):
+    _seed_page(tmp_vault, "research", "x", "X", "ingest pipeline")
+    assert run_context("ok", tmp_vault) is None
+    assert run_context("/gsd-next", tmp_vault) is None
+
+
+def test_run_context_returns_none_when_toggle_off(tmp_vault, monkeypatch):
+    _seed_page(tmp_vault, "research", "x", "X", "ingest pipeline")
+    monkeypatch.setenv("AWIKI_AUTO_CONTEXT", "0")
+    assert run_context(
+        "how do I configure the ingest pipeline",
+        tmp_vault,
+    ) is None
+
+
+def test_run_context_returns_none_when_no_wiki_yaml(tmp_path, monkeypatch):
+    monkeypatch.delenv("AWIKI_AUTO_CONTEXT", raising=False)
+    assert run_context(
+        "how do I configure the ingest pipeline",
+        tmp_path,
+    ) is None
