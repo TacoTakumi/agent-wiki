@@ -51,3 +51,21 @@ def get_vault_path() -> Path:
     if not path.exists():
         raise click.UsageError(f"Vault not found at {path}")
     return path
+
+
+def auto_context_enabled(vault_path: Path) -> bool:
+    """Return True if the auto-context hook should fire for this vault.
+
+    Resolution order:
+      1. AWIKI_AUTO_CONTEXT env var (accepts 1/0, true/false, yes/no, on/off)
+      2. wiki.yaml `auto_context` key (default True when key present but unset)
+      3. False if no wiki.yaml exists (vault not initialized)
+    """
+    env = os.environ.get("AWIKI_AUTO_CONTEXT")
+    if env is not None:
+        return env.strip().lower() in ("1", "true", "yes", "on")
+    try:
+        config = load_vault_config(vault_path)
+    except FileNotFoundError:
+        return False
+    return bool(config.get("auto_context", True))
