@@ -84,6 +84,7 @@ def _echo_result(r, show_coverage=False):
 @click.argument("query")
 @click.option("--topic", "-t", default=None, help="Limit search to a topic")
 @click.option("--limit", "-N", default=20, show_default=True,
+              type=click.IntRange(min=1),
               help="Max results to show in the all-terms tier")
 def search(query, topic, limit):
     """Search the wiki vault."""
@@ -105,7 +106,9 @@ def search(query, topic, limit):
         _echo_result(r)
 
     if shown_partial:
-        click.echo("\nPartial matches (some terms only):")
+        # Only separate from the all-tier with a blank line if it printed anything.
+        prefix = "\n" if shown_all else ""
+        click.echo(f"{prefix}Partial matches (some terms only):")
         for r in shown_partial:
             _echo_result(r, show_coverage=True)
 

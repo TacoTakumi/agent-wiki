@@ -84,6 +84,10 @@ def test_search_shows_partial_tier_with_coverage(tmp_path, monkeypatch):
     assert "Partial matches" in result.output
     assert "Partial Match" in result.output
     assert "(1/3 terms)" in result.output
+    # Nothing was truncated (1 all + 1 partial, well under the caps).
+    assert "Showing" not in result.output
+    # All-terms tier prints before the partial section.
+    assert result.output.index("Full Match") < result.output.index("Partial matches")
 
 
 def test_search_caps_all_tier_and_reports_truncation(tmp_path, monkeypatch):
@@ -104,3 +108,14 @@ def test_search_no_results(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["search", "nonexistentterm"])
     assert result.exit_code == 0
     assert "No results found." in result.output
+
+
+def test_search_partial_only_has_no_leading_blank(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    _make_page(vault, "a", "Only Alpha", "# Only Alpha\n\nalpha here\n")
+    _make_page(vault, "b", "Only Beta", "# Only Beta\n\nbeta here\n")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "alpha beta"])
+    assert result.exit_code == 0
+    # No page has BOTH terms → all-tier empty → partial header is the first line.
+    assert result.output.startswith("Partial matches")
