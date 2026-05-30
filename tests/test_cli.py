@@ -119,3 +119,16 @@ def test_search_partial_only_has_no_leading_blank(tmp_path, monkeypatch):
     assert result.exit_code == 0
     # No page has BOTH terms → all-tier empty → partial header is the first line.
     assert result.output.startswith("Partial matches")
+
+
+def test_search_caps_partial_tier_and_reports_truncation(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    # 7 pages each containing only ONE of two query terms → all partial matches.
+    for i in range(7):
+        _make_page(vault, f"q{i}", f"Partial {i}", f"# Partial {i}\n\nalpha only\n")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "alpha beta"])
+    assert result.exit_code == 0
+    assert "Partial matches" in result.output
+    assert result.output.count("(1/2 terms)") == 5   # partial tier capped at 5
+    assert "Showing 5 of 7 matches" in result.output
