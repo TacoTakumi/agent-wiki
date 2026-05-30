@@ -86,3 +86,51 @@ def test_skip_excludes_raw_index_and_log():
 def test_skip_allows_normal_pages():
     assert _skip(_Path("research/my-notes.md")) is False
     assert _skip(_Path("tools/docker.md")) is False
+
+
+def test_search_and_matches_terms_across_lines(tmp_vault):
+    # All three terms appear, but on different lines → still an "all" match.
+    _create_page(tmp_vault, "research", "hooks", "Hooks Page",
+                 "# Hooks Page\n\nClaude is great.\nWe use hooks here.\nAlso some code.\n")
+    _create_page(tmp_vault, "research", "partial", "Partial Page",
+                 "# Partial Page\n\nClaude is mentioned.\nNo other terms.\n")
+
+    results = search_vault(tmp_vault, "claude hooks code")
+    by_title = {r["title"]: r for r in results}
+
+    assert by_title["Hooks Page"]["match_kind"] == "all"
+    assert by_title["Hooks Page"]["coverage"] == 3
+    assert by_title["Hooks Page"]["term_count"] == 3
+    assert by_title["Partial Page"]["match_kind"] == "partial"
+    assert by_title["Partial Page"]["coverage"] == 1
+
+
+def test_search_ranks_higher_coverage_first(tmp_vault):
+    _create_page(tmp_vault, "research", "three", "Three",
+                 "# Three\n\nalpha beta gamma\n")
+    _create_page(tmp_vault, "research", "two", "Two",
+                 "# Two\n\nalpha beta only\n")
+
+    results = search_vault(tmp_vault, "alpha beta gamma")
+    assert results[0]["title"] == "Three"
+    assert results[0]["coverage"] == 3
+    assert results[1]["title"] == "Two"
+    assert results[1]["coverage"] == 2
+
+
+def test_search_token_order_and_whitespace_independent(tmp_vault):
+    _create_page(tmp_vault, "research", "x", "X", "# X\n\nbeta then alpha\n")
+    r1 = search_vault(tmp_vault, "alpha beta")
+    r2 = search_vault(tmp_vault, "  beta   alpha ")
+    assert [r["path"] for r in r1] == [r["path"] for r in r2]
+    assert r1[0]["coverage"] == 2
+
+
+def test_search_single_token_is_all_tier(tmp_vault):
+    _create_page(tmp_vault, "research", "p", "Python Notes",
+                 "# Python Notes\n\nPython is a great language.\n")
+    results = search_vault(tmp_vault, "python")
+    assert len(results) == 1
+    assert results[0]["match_kind"] == "all"
+    assert results[0]["coverage"] == 1
+    assert results[0]["term_count"] == 1

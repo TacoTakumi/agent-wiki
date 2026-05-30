@@ -1,4 +1,3 @@
-import re
 import subprocess
 import shutil
 from pathlib import Path
@@ -30,45 +29,97 @@ def _skip(rel: Path) -> bool:
     return str(rel).startswith("raw/") or rel.name in _SKIP_NAMES
 
 
-def _search_ripgrep(vault_path: Path, query: str, topic: str | None) -> list[dict]:
-    """Search using ripgrep for speed."""
+def _search_ripgrep(
+    vault_path: Path, tokens: list[str], topic: str | None
+) -> dict[str, list[str]]:
+    """Collect matched lines via ripgrep. Returns {abs_path: [lines]}.
+
+    Each token is passed as a literal `-e` pattern with --fixed-strings, so
+    ripgrep matches lines containing ANY token (OR of literals). No regex
+    escaping is involved.
+    """
     search_path = vault_path / topic if topic else vault_path
     cmd = [
         "rg", "--iglob", "*.md",
+        "--fixed-strings",
         "--ignore-case",
         "--line-number",
         "--no-heading",
-        query,
-        str(search_path),
     ]
+    for tok in tokens:
+        cmd += ["-e", tok]
+    cmd.append(str(search_path))
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        return []
+        return {}
 
     if result.returncode not in (0, 1):
-        return []
+        return {}
 
-    # Group matches by file
     file_matches: dict[str, list[str]] = {}
     for line in result.stdout.splitlines():
         # ripgrep output: path:line_number:content
         parts = line.split(":", 2)
         if len(parts) >= 3:
-            filepath = parts[0]
-            content = parts[2].strip()
-            file_matches.setdefault(filepath, []).append(content)
+            file_matches.setdefault(parts[0], []).append(parts[2].strip())
+    return file_matches
 
+
+def _search_python(
+    vault_path: Path, tokens: list[str], topic: str | None
+) -> dict[str, list[str]]:
+    """Fallback collector: substring scan. Returns {abs_path: [lines]}.
+
+    A line matches if it contains ANY token (case-insensitive substring),
+    mirroring the ripgrep OR-of-literals semantics.
+    """
+    search_path = vault_path / topic if topic else vault_path
+    file_matches: dict[str, list[str]] = {}
+
+    for md_file in search_path.rglob("*.md"):
+        rel = md_file.relative_to(vault_path)
+        if _skip(rel):
+            continue
+
+        content = md_file.read_text()
+        matching = [
+            line.strip()
+            for line in content.splitlines()
+            if any(tok in line.lower() for tok in tokens)
+        ]
+        if matching:
+            file_matches[str(md_file)] = matching
+
+    return file_matches
+
+
+def _rank(
+    vault_path: Path, file_matches: dict[str, list[str]], tokens: list[str]
+) -> list[dict]:
+    """Turn {path: [lines]} into ranked result dicts.
+
+    Per file, coverage = number of distinct tokens present in its matched
+    lines. match_kind is "all" when every token is present, else "partial".
+    Sorted by (coverage desc, match-count desc, title asc).
+    """
+    n = len(tokens)
     results = []
+
     for filepath, matches in file_matches.items():
         path = Path(filepath)
-        # Skip raw/, index.md, log.md
+        # Skip raw/, index.md, log.md (rg path needs this; Python path already filtered).
         try:
             rel = path.relative_to(vault_path)
         except ValueError:
             continue
-        if str(rel).startswith("raw/") or rel.name in ("index.md", "log.md"):
+        if _skip(rel):
+            continue
+
+        haystack = "\n".join(matches).lower()
+        coverage = sum(1 for tok in tokens if tok in haystack)
+        if coverage == 0:
             continue
 
         page = parse_page(path)
@@ -77,45 +128,31 @@ def _search_ripgrep(vault_path: Path, query: str, topic: str | None) -> list[dic
             "title": title,
             "path": str(rel),
             "matches": matches,
+            "coverage": coverage,
+            "term_count": n,
+            "match_kind": "all" if coverage == n else "partial",
         })
 
-    return results
-
-
-def _search_python(vault_path: Path, query: str, topic: str | None) -> list[dict]:
-    """Fallback search using Python regex."""
-    search_path = vault_path / topic if topic else vault_path
-    pattern = re.compile(re.escape(query), re.IGNORECASE)
-    results = []
-
-    for md_file in search_path.rglob("*.md"):
-        rel = md_file.relative_to(vault_path)
-        if str(rel).startswith("raw/") or rel.name in ("index.md", "log.md"):
-            continue
-
-        content = md_file.read_text()
-        matching_lines = [
-            line.strip()
-            for line in content.splitlines()
-            if pattern.search(line)
-        ]
-
-        if matching_lines:
-            page = parse_page(md_file)
-            title = page["meta"].get("title", md_file.stem)
-            results.append({
-                "title": title,
-                "path": str(rel),
-                "matches": matching_lines,
-            })
-
+    results.sort(key=lambda r: (-r["coverage"], -len(r["matches"]), r["title"]))
     return results
 
 
 def search_vault(
     vault_path: Path, query: str, topic: str | None = None
 ) -> list[dict]:
-    """Search the wiki vault. Uses ripgrep if available, falls back to Python."""
+    """Search the wiki vault. Returns ALL ranked results; callers cap.
+
+    Multi-word queries are AND-across-the-page: every result reports a
+    `coverage` (distinct tokens matched) and a `match_kind` of "all" or
+    "partial". Uses ripgrep if available, falls back to a Python scan.
+    """
+    tokens = _tokenize(query)
+    if not tokens:
+        return []
+
     if shutil.which("rg"):
-        return _search_ripgrep(vault_path, query, topic)
-    return _search_python(vault_path, query, topic)
+        file_matches = _search_ripgrep(vault_path, tokens, topic)
+    else:
+        file_matches = _search_python(vault_path, tokens, topic)
+
+    return _rank(vault_path, file_matches, tokens)
