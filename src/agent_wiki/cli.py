@@ -71,10 +71,21 @@ def ingest(files, topic, tags):
             raise click.ClickException(str(e))
 
 
+def _echo_result(r, show_coverage=False):
+    """Print one search result in the standard title/path/snippet format."""
+    suffix = f"  ({r['coverage']}/{r['term_count']} terms)" if show_coverage else ""
+    click.echo(f"\n## {r['title']}{suffix}")
+    click.echo(f"   {r['path']}")
+    for match in r["matches"][:3]:
+        click.echo(f"   > {match}")
+
+
 @cli.command()
 @click.argument("query")
 @click.option("--topic", "-t", default=None, help="Limit search to a topic")
-def search(query, topic):
+@click.option("--limit", "-N", default=20, show_default=True,
+              help="Max results to show in the all-terms tier")
+def search(query, topic, limit):
     """Search the wiki vault."""
     vault_path = get_vault_path()
     results = search_vault(vault_path, query, topic=topic)
@@ -83,11 +94,28 @@ def search(query, topic):
         click.echo("No results found.")
         return
 
-    for r in results:
-        click.echo(f"\n## {r['title']}")
-        click.echo(f"   {r['path']}")
-        for match in r["matches"][:3]:
-            click.echo(f"   > {match}")
+    PARTIAL_LIMIT = 5
+    all_hits = [r for r in results if r["match_kind"] == "all"]
+    partial_hits = [r for r in results if r["match_kind"] == "partial"]
+
+    shown_all = all_hits[:limit]
+    shown_partial = partial_hits[:PARTIAL_LIMIT]
+
+    for r in shown_all:
+        _echo_result(r)
+
+    if shown_partial:
+        click.echo("\nPartial matches (some terms only):")
+        for r in shown_partial:
+            _echo_result(r, show_coverage=True)
+
+    total = len(all_hits) + len(partial_hits)
+    shown = len(shown_all) + len(shown_partial)
+    if shown < total:
+        click.echo(
+            f"\nShowing {shown} of {total} matches — "
+            f"narrow your query or use --topic."
+        )
 
 
 @cli.command("index")
