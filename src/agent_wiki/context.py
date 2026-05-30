@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import time
 
 from datetime import datetime, timezone
@@ -198,15 +197,15 @@ def run_context(prompt: str, vault_path: Path) -> str | None:
             trace["outcome"] = "no_keywords"
             return finish(None)
 
-        # OR-join keywords for ripgrep/Python regex.
-        query = "|".join(re.escape(k) for k in keywords)
+        # Space-join keywords; search_vault tokenizes (AND/partial + coverage).
+        query = " ".join(keywords)
         hits = search_vault(vault_path, query)
         trace["hits_raw"] = len(hits)
         if not hits:
             trace["outcome"] = "no_hits"
             return finish(None)
 
-        hits.sort(key=lambda h: (-len(h.get("matches", [])), h["path"]))
+        hits.sort(key=lambda h: (-h.get("coverage", 0), -len(h.get("matches", [])), h["path"]))
 
         block = build_context_block(hits, topic_order=topics)
         if not block:
