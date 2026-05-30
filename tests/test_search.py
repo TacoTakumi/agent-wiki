@@ -69,3 +69,20 @@ def test_tokenize_splits_lowercases_and_dedups():
 def test_tokenize_empty_query_returns_empty():
     assert _tokenize("") == []
     assert _tokenize("   ") == []
+
+
+from pathlib import Path as _Path
+from agent_wiki.search import _skip
+
+
+def test_skip_excludes_raw_index_and_log():
+    assert _skip(_Path("raw/source.md")) is True
+    assert _skip(_Path("raw/nested/source.md")) is True
+    assert _skip(_Path("index.md")) is True
+    assert _skip(_Path("log.md")) is True
+    assert _skip(_Path("research/index.md")) is True  # name match inside a topic
+
+
+def test_skip_allows_normal_pages():
+    assert _skip(_Path("research/my-notes.md")) is False
+    assert _skip(_Path("tools/docker.md")) is False
