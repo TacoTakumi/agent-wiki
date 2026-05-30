@@ -5,6 +5,30 @@ from pathlib import Path
 
 from agent_wiki.page import parse_page
 
+# Files/dirs that are never search results.
+_SKIP_NAMES = ("index.md", "log.md")
+
+
+def _tokenize(query: str) -> list[str]:
+    """Split a query into lowercased, whitespace-separated tokens.
+
+    Single source of truth for both backends. Order is preserved and
+    duplicates are dropped (first occurrence wins). Empty/whitespace → [].
+    """
+    seen: set[str] = set()
+    tokens: list[str] = []
+    for raw in query.split():
+        tok = raw.lower()
+        if tok and tok not in seen:
+            seen.add(tok)
+            tokens.append(tok)
+    return tokens
+
+
+def _skip(rel: Path) -> bool:
+    """True for paths that must never appear in results (raw/, index, log)."""
+    return str(rel).startswith("raw/") or rel.name in _SKIP_NAMES
+
 
 def _search_ripgrep(vault_path: Path, query: str, topic: str | None) -> list[dict]:
     """Search using ripgrep for speed."""
