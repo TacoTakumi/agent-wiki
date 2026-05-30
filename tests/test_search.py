@@ -55,3 +55,17 @@ def test_search_returns_matching_lines(tmp_vault):
     results = search_vault(tmp_vault, "python")
     assert len(results) == 1
     assert any("Python is great" in line for line in results[0]["matches"])
+
+
+from agent_wiki.search import _tokenize
+
+
+def test_tokenize_splits_lowercases_and_dedups():
+    assert _tokenize("Claude Code Hooks") == ["claude", "code", "hooks"]
+    assert _tokenize("  beta   alpha ") == ["beta", "alpha"]
+    assert _tokenize("alpha alpha beta") == ["alpha", "beta"]  # dedup, order preserved
+
+
+def test_tokenize_empty_query_returns_empty():
+    assert _tokenize("") == []
+    assert _tokenize("   ") == []
