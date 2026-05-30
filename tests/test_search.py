@@ -134,3 +134,26 @@ def test_search_single_token_is_all_tier(tmp_vault):
     assert results[0]["match_kind"] == "all"
     assert results[0]["coverage"] == 1
     assert results[0]["term_count"] == 1
+
+
+def test_search_python_fallback_multiword(tmp_vault, monkeypatch):
+    # Force the Python backend by hiding ripgrep.
+    monkeypatch.setattr("agent_wiki.search.shutil.which", lambda name: None)
+    _create_page(tmp_vault, "research", "hooks", "Hooks Page",
+                 "# Hooks Page\n\nClaude is great.\nWe use hooks.\n")
+
+    results = search_vault(tmp_vault, "claude hooks")
+    assert len(results) == 1
+    assert results[0]["match_kind"] == "all"
+    assert results[0]["coverage"] == 2
+
+
+def test_search_python_fallback_partial_or(tmp_vault, monkeypatch):
+    # Regression: the old Python fallback re.escape'd the '|' and broke OR.
+    monkeypatch.setattr("agent_wiki.search.shutil.which", lambda name: None)
+    _create_page(tmp_vault, "research", "p", "P", "# P\n\nonly alpha here\n")
+
+    results = search_vault(tmp_vault, "alpha zzz")
+    assert len(results) == 1
+    assert results[0]["match_kind"] == "partial"
+    assert results[0]["coverage"] == 1

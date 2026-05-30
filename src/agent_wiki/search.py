@@ -43,7 +43,7 @@ def _search_ripgrep(
         "rg", "--iglob", "*.md",
         "--fixed-strings",
         "--ignore-case",
-        "--line-number",
+        "--null",
         "--no-heading",
     ]
     for tok in tokens:
@@ -60,10 +60,11 @@ def _search_ripgrep(
 
     file_matches: dict[str, list[str]] = {}
     for line in result.stdout.splitlines():
-        # ripgrep output: path:line_number:content
-        parts = line.split(":", 2)
-        if len(parts) >= 3:
-            file_matches.setdefault(parts[0], []).append(parts[2].strip())
+        # --null makes ripgrep emit "<path>\0<content>", so the path is
+        # delimited cleanly even when the path or content contains colons.
+        path_str, sep, content = line.partition("\0")
+        if sep:
+            file_matches.setdefault(path_str, []).append(content.strip())
     return file_matches
 
 
@@ -102,7 +103,9 @@ def _rank(
 
     Per file, coverage = number of distinct tokens present in its matched
     lines. match_kind is "all" when every token is present, else "partial".
-    Sorted by (coverage desc, match-count desc, title asc).
+    Sorted by (coverage desc, match-count desc, title asc). Coverage uses
+    case-insensitive substring tests, so a token like `log` counts as
+    present in `login`.
     """
     n = len(tokens)
     results = []
