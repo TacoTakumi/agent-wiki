@@ -242,3 +242,17 @@ def test_debug_log_truncates_long_prompt(debug_cache, tmp_vault):
     [trace] = _read_traces(debug_cache)
     assert len(trace["prompt"]) == 200
     assert trace["prompt_len"] == len(long_prompt)
+
+
+def test_run_context_works_without_ripgrep(tmp_vault, monkeypatch):
+    # Regression: old code re.escape'd a '|'-joined query, so the Python
+    # fallback matched nothing. Tokenized search must find the page.
+    monkeypatch.setattr("agent_wiki.search.shutil.which", lambda name: None)
+    _seed_page(tmp_vault, "research", "ingest-pipeline",
+               "Ingest Pipeline", "The ingest pipeline handles codex sessions.")
+    result = run_context(
+        "how do I configure the ingest pipeline for codex sessions",
+        tmp_vault,
+    )
+    assert result is not None
+    assert "Ingest Pipeline" in result
