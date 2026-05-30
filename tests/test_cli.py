@@ -62,3 +62,45 @@ def test_log_command_last(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["log", "--last", "1"])
     assert result.exit_code == 0
     assert "test.md" in result.output
+
+
+def _make_page(vault, slug, title, body):
+    meta = {
+        "title": title, "topic": "research", "tags": [],
+        "created": "2026-05-30", "updated": "2026-05-30", "sources": [],
+    }
+    (vault / "research" / f"{slug}.md").write_text(render_page(meta, body))
+
+
+def test_search_shows_partial_tier_with_coverage(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    _make_page(vault, "full", "Full Match", "# Full Match\n\nalpha beta gamma\n")
+    _make_page(vault, "part", "Partial Match", "# Partial Match\n\nalpha only\n")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "alpha beta gamma"])
+    assert result.exit_code == 0
+    assert "Full Match" in result.output
+    assert "Partial matches" in result.output
+    assert "Partial Match" in result.output
+    assert "(1/3 terms)" in result.output
+
+
+def test_search_caps_all_tier_and_reports_truncation(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    for i in range(5):
+        _make_page(vault, f"p{i}", f"Page {i}", f"# Page {i}\n\nalpha beta\n")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "alpha beta", "--limit", "2"])
+    assert result.exit_code == 0
+    assert "Showing 2 of 5 matches" in result.output
+    assert "narrow your query" in result.output
+
+
+def test_search_no_results(tmp_path, monkeypatch):
+    _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "nonexistentterm"])
+    assert result.exit_code == 0
+    assert "No results found." in result.output
