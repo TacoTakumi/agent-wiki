@@ -62,3 +62,73 @@ def test_log_command_last(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["log", "--last", "1"])
     assert result.exit_code == 0
     assert "test.md" in result.output
+
+
+def _make_page(vault, slug, title, body):
+    meta = {
+        "title": title, "topic": "research", "tags": [],
+        "created": "2026-05-30", "updated": "2026-05-30", "sources": [],
+    }
+    (vault / "research" / f"{slug}.md").write_text(render_page(meta, body))
+
+
+def test_search_shows_partial_tier_with_coverage(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    _make_page(vault, "full", "Full Match", "# Full Match\n\nalpha beta gamma\n")
+    _make_page(vault, "part", "Partial Match", "# Partial Match\n\nalpha only\n")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "alpha beta gamma"])
+    assert result.exit_code == 0
+    assert "Full Match" in result.output
+    assert "Partial matches" in result.output
+    assert "Partial Match" in result.output
+    assert "(1/3 terms)" in result.output
+    # Nothing was truncated (1 all + 1 partial, well under the caps).
+    assert "Showing" not in result.output
+    # All-terms tier prints before the partial section.
+    assert result.output.index("Full Match") < result.output.index("Partial matches")
+
+
+def test_search_caps_all_tier_and_reports_truncation(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    for i in range(5):
+        _make_page(vault, f"p{i}", f"Page {i}", f"# Page {i}\n\nalpha beta\n")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "alpha beta", "--limit", "2"])
+    assert result.exit_code == 0
+    assert "Showing 2 of 5 matches" in result.output
+    assert "narrow your query" in result.output
+
+
+def test_search_no_results(tmp_path, monkeypatch):
+    _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "nonexistentterm"])
+    assert result.exit_code == 0
+    assert "No results found." in result.output
+
+
+def test_search_partial_only_has_no_leading_blank(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    _make_page(vault, "a", "Only Alpha", "# Only Alpha\n\nalpha here\n")
+    _make_page(vault, "b", "Only Beta", "# Only Beta\n\nbeta here\n")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "alpha beta"])
+    assert result.exit_code == 0
+    # No page has BOTH terms → all-tier empty → partial header is the first line.
+    assert result.output.startswith("Partial matches")
+
+
+def test_search_caps_partial_tier_and_reports_truncation(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    # 7 pages each containing only ONE of two query terms → all partial matches.
+    for i in range(7):
+        _make_page(vault, f"q{i}", f"Partial {i}", f"# Partial {i}\n\nalpha only\n")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["search", "alpha beta"])
+    assert result.exit_code == 0
+    assert "Partial matches" in result.output
+    assert result.output.count("(1/2 terms)") == 5   # partial tier capped at 5
+    assert "Showing 5 of 7 matches" in result.output
