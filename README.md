@@ -252,14 +252,7 @@ Ingest an existing file into the vault. The agent confirms the file path, asks f
 
 ### CLAUDE.md Integration
 
-Add this to your project or global CLAUDE.md to make the agent check the wiki automatically:
-
-```markdown
-## Agent Wiki
-Before web searching for technical knowledge, search the wiki first:
-`awiki search <query>`
-The wiki vault is at the path configured in ~/.config/agent-wiki/config.yaml.
-```
+To make agents check the wiki automatically, add wiki guidance to your project or global CLAUDE.md. A ready-made, project-agnostic block lives in [`awiki-claude-md-snippet.md`](awiki-claude-md-snippet.md) — paste its contents verbatim at the end of any CLAUDE.md. It tells the agent to search the wiki first, read full pages with `awiki show <path>`, and save findings with the `awiki-save` skill.
 
 ### Auto-Context Hook (UserPromptSubmit)
 
