@@ -22,7 +22,7 @@ This installs two commands: `awiki` and `aw` (short alias). They are identical.
 
 ### Optional
 
-- **ripgrep** (`rg`) — search uses ripgrep when available, falls back to Python regex.
+- **ripgrep** (`rg`) — search uses ripgrep when available, falls back to a built-in Python scan.
 - **pytest** — `uv pip install pytest` to run tests.
 
 ## Quick Start
@@ -64,12 +64,13 @@ awiki ingest *.md --topic research              # glob support
 - Title is extracted from the first `# heading`, or derived from the filename.
 - The original file is preserved in `raw/` and never modified.
 
-### `awiki search <query> [--topic <topic>]`
+### `awiki search <query> [--topic <topic>] [--limit N]`
 
-Full-text search across all wiki pages. Uses ripgrep if available, otherwise Python regex. Skips `raw/`, `index.md`, and `log.md`.
+Full-text search across all wiki pages. Multi-word queries match **all** terms anywhere in a page (AND across the page); pages matching only some terms are listed separately as lower-ranked partial matches, ordered by how many terms they cover. Uses ripgrep when available, otherwise a built-in case-insensitive substring scan. Skips `raw/`, `index.md`, and `log.md`. `--limit` caps how many all-terms results are shown (default 20).
 
 ```bash
 awiki search "authentication"
+awiki search "claude code hooks"        # pages containing all three terms rank first
 awiki search "docker" --topic tools
 ```
 
