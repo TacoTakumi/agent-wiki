@@ -132,3 +132,56 @@ def test_search_caps_partial_tier_and_reports_truncation(tmp_path, monkeypatch):
     assert "Partial matches" in result.output
     assert result.output.count("(1/2 terms)") == 5   # partial tier capped at 5
     assert "Showing 5 of 7 matches" in result.output
+
+
+def test_show_command_prints_page_verbatim(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    meta = {
+        "title": "Raft Consensus", "topic": "research", "tags": ["consensus"],
+        "created": "2026-04-14", "updated": "2026-04-14", "sources": [],
+    }
+    page = render_page(meta, "# Raft Consensus\n\nRaft is a consensus algorithm.\n")
+    (vault / "research" / "raft.md").write_text(page)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["show", "research/raft.md"])
+    assert result.exit_code == 0
+    # Verbatim: output is byte-for-byte the file (frontmatter + body).
+    assert result.output == page
+
+
+def test_show_command_rejects_traversal_without_leaking(tmp_path, monkeypatch):
+    _setup_vault(tmp_path, monkeypatch)
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOPSECRET-DO-NOT-LEAK\n")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["show", "../secret.txt"])
+    assert result.exit_code == 1
+    assert "outside the vault" in result.output
+    assert "TOPSECRET" not in result.output
+
+
+def test_show_command_missing_page_errors(tmp_path, monkeypatch):
+    _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["show", "research/nope.md"])
+    assert result.exit_code == 1
+    assert "no such page" in result.output
+
+
+def test_show_command_directory_errors(tmp_path, monkeypatch):
+    _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["show", "research"])
+    assert result.exit_code == 1
+    assert "no such page" in result.output
+
+
+def test_show_command_binary_file_errors(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "raw" / "blob.bin").write_bytes(b"\xff\xfe\x00\x01\x80")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["show", "raw/blob.bin"])
+    assert result.exit_code == 1
+    assert "cannot display binary file" in result.output
