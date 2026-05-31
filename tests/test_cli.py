@@ -168,3 +168,20 @@ def test_show_command_missing_page_errors(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["show", "research/nope.md"])
     assert result.exit_code == 1
     assert "no such page" in result.output
+
+
+def test_show_command_directory_errors(tmp_path, monkeypatch):
+    _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    result = runner.invoke(cli, ["show", "research"])
+    assert result.exit_code == 1
+    assert "no such page" in result.output
+
+
+def test_show_command_binary_file_errors(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "raw" / "blob.bin").write_bytes(b"\xff\xfe\x00\x01\x80")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["show", "raw/blob.bin"])
+    assert result.exit_code == 1
+    assert "cannot display binary file" in result.output
