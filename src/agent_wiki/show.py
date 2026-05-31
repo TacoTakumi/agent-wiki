@@ -14,3 +14,20 @@ def resolve_in_vault(vault_path: Path, user_path: str) -> Path:
     if target != vault_root and vault_root not in target.parents:
         raise ValueError(f"path is outside the vault: {user_path}")
     return target
+
+
+def read_vault_file(vault_path: Path, user_path: str) -> str:
+    """Return the verbatim text of a vault file given its vault-relative path.
+
+    Confines the path to the vault (see ``resolve_in_vault``). Raises:
+      - ``ValueError`` if the path escapes the vault, or the file is not
+        valid UTF-8 (e.g. a PDF under ``raw/``).
+      - ``FileNotFoundError`` if the path does not exist or is a directory.
+    """
+    target = resolve_in_vault(vault_path, user_path)
+    if not target.is_file():
+        raise FileNotFoundError(f"no such page: {user_path}")
+    try:
+        return target.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        raise ValueError(f"cannot display binary file: {user_path}")
