@@ -22,6 +22,7 @@ from agent_wiki.index import rebuild_index
 from agent_wiki.lint import lint_vault
 from agent_wiki.log import read_log
 from agent_wiki.search import search_vault
+from agent_wiki.show import read_vault_file
 from agent_wiki.sync import pending_count, sync as run_sync, synced_count
 from agent_wiki.vault import init_vault
 
@@ -119,6 +120,18 @@ def search(query, topic, limit):
             f"\nShowing {shown} of {total} matches — "
             f"narrow your query or use --topic."
         )
+
+
+@cli.command()
+@click.argument("path")
+def show(path):
+    """Print a wiki page (or any vault file) by its vault-relative path."""
+    vault_path = get_vault_path()
+    try:
+        content = read_vault_file(vault_path, path)
+    except (ValueError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+    click.echo(content, nl=False)
 
 
 @cli.command("index")

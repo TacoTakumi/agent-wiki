@@ -74,6 +74,18 @@ awiki search "claude code hooks"        # pages containing all three terms rank 
 awiki search "docker" --topic tools
 ```
 
+### `awiki show <path>`
+
+Print a wiki page (or any file in the vault) by its **vault-relative path** — the path `awiki search` prints in its results. Output is the file verbatim, including YAML frontmatter. Use it to read a full page after locating it with `awiki search`.
+
+```bash
+awiki search "raft consensus"            # prints e.g. research/raft-consensus.md
+awiki show research/raft-consensus.md    # prints that page in full
+```
+
+- Accepts any file inside the vault (topic pages, `raw/`, `index.md`, `log.md`).
+- Paths that escape the vault are rejected; missing files and binary (non-UTF-8) files report an error and exit non-zero.
+
 ### `awiki index`
 
 Rebuild `index.md` from all wiki pages, grouped by topic. Each entry shows the page title (as a wikilink), file path, tags, and last updated date.

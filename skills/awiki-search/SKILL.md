@@ -14,6 +14,13 @@ Search the wiki knowledge base for existing knowledge before resorting to web se
 3. Present results to the user
 4. If no results found, inform the user and suggest a web search
 
+## Reading a full page
+
+Search prints only matching snippets, not whole pages. To read a full page,
+run `awiki show <path>` with the vault-relative path printed in the results:
+
+    awiki show research/raft-consensus.md
+
 ## When to Use
 
 - Before any web search for technical knowledge
