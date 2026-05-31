@@ -89,7 +89,7 @@ def build_context_block(
     lines = [
         f"<!-- agent-wiki: {total} possibly-relevant "
         f"{'page' if total == 1 else 'pages'}. "
-        f"Use awiki-search to read any in full. -->",
+        f"Use `awiki show <path>` to read any in full. -->",
     ]
     for topic in topic_order:
         if topic not in by_topic:

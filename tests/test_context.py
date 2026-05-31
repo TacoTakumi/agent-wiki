@@ -96,10 +96,10 @@ def test_build_context_block_hides_unknown_topics():
     assert "Orphan" not in block
 
 
-def test_build_context_block_mentions_awiki_search_skill():
+def test_build_context_block_points_at_awiki_show():
     hits = [{"title": "X", "path": "research/x.md", "matches": ["m"]}]
     block = build_context_block(hits, topic_order=["research"])
-    assert "awiki-search" in block
+    assert "awiki show" in block
 
 
 import yaml as _yaml
