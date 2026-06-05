@@ -214,3 +214,21 @@ def test_cli_ingest_update_succeeds(tmp_config, tmp_path):
     res = runner.invoke(cli, ["ingest", str(src), "-t", "research", "--update"])
     assert res.exit_code == 0
     assert "Updated" in res.output
+
+
+def test_cli_ingest_update_ambiguous_skips_not_crash(tmp_config, tmp_vault, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    # one raw file linked by TWO pages -> ambiguous update -> ValueError in ingest_file
+    (tmp_vault / "raw" / "dup.md").write_text("x\n")
+    for name in ("one", "two"):
+        (tmp_vault / "research" / f"{name}.md").write_text(
+            "---\ntitle: " + name + "\ntopic: research\nsources:\n- raw/dup.md\n---\n\nbody\n"
+        )
+    src = tmp_path / "dup.md"
+    src.write_text("# Dup\n\nnew\n")
+    res = CliRunner().invoke(cli, ["ingest", str(src), "-t", "research", "--update"])
+    assert res.exit_code == 1
+    assert "skipped" in res.output
+    # handled cleanly as a skip, not an uncaught crash
+    assert res.exception is None or isinstance(res.exception, SystemExit)

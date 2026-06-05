@@ -104,6 +104,9 @@ def ingest(files, topic, tags, update):
         except FileNotFoundError as e:
             click.echo(f"skipped: {e}", err=True)
             skipped += 1
+        except ValueError as e:
+            click.echo(f"skipped: {path.name}: {e}", err=True)
+            skipped += 1
     if skipped:
         sys.exit(1)
 
