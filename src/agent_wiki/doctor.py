@@ -259,7 +259,10 @@ class RawContentDrift(Check):
                     raw_path = vault_path / src
                     if not raw_path.is_file():
                         continue
-                    raw_text = raw_path.read_text()
+                    try:
+                        raw_text = raw_path.read_text()
+                    except UnicodeDecodeError:
+                        continue  # binary raw isn't text-comparable; skip like a missing source
                     if canonical != (raw_text.rstrip("\n") + "\n"):
                         out.append((raw_path, canonical))
         return out
