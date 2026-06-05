@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from agent_wiki.config import load_vault_config
+from agent_wiki.page import parse_page
 from agent_wiki.vault import DEFAULT_TOPICS, _default_sources_config
 
 
@@ -56,6 +57,14 @@ def _write_config(vault_path: Path, config: dict[str, Any]) -> None:
     (vault_path / "wiki.yaml").write_text(
         yaml.dump(config, default_flow_style=False, sort_keys=False)
     )
+
+
+def _page_body_for_raw(body: str) -> str:
+    """Page body as it should appear in raw/: drop the one leading blank line
+    that render_page inserts, and normalize to a single trailing newline."""
+    if body.startswith("\n"):
+        body = body[1:]
+    return body.rstrip("\n") + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -228,6 +237,47 @@ class SourcePathMissing(Check):
         return "no change (informational)"
 
 
+class RawContentDrift(Check):
+    """Rewrite raw/ files that drifted from their (canonical) wiki page."""
+
+    name = "raw-content-drift"
+    description = "Rewrite raw/ files that drifted from their (canonical) page"
+
+    def _drifted(self, vault_path: Path) -> list[tuple[Path, str]]:
+        config = _read_config(vault_path)
+        out: list[tuple[Path, str]] = []
+        for topic in config.get("topics") or []:
+            topic_dir = vault_path / topic
+            if not topic_dir.is_dir():
+                continue
+            for md_file in topic_dir.rglob("*.md"):
+                page = parse_page(md_file)
+                canonical = _page_body_for_raw(page["body"])
+                for src in (page["meta"].get("sources") or []):
+                    if not src.startswith("raw/"):
+                        continue
+                    raw_path = vault_path / src
+                    if not raw_path.is_file():
+                        continue
+                    raw_text = raw_path.read_text()
+                    if canonical != (raw_text.rstrip("\n") + "\n"):
+                        out.append((raw_path, canonical))
+        return out
+
+    def detect(self, vault_path: Path) -> Finding | None:
+        drifted = self._drifted(vault_path)
+        if not drifted:
+            return None
+        names = ", ".join(sorted(p.name for p, _ in drifted))
+        return Finding(self, f"{len(drifted)} raw file(s) differ from their page: {names}")
+
+    def fix(self, vault_path: Path) -> str:
+        drifted = self._drifted(vault_path)
+        for raw_path, canonical in drifted:
+            raw_path.write_text(canonical)
+        return f"rewrote {len(drifted)} raw file(s) from pages"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -242,6 +292,7 @@ ALL_CHECKS: tuple[Check, ...] = (
     MissingRawSessionsDir(),
     MissingDropZoneDir(),
     SourcePathMissing(),
+    RawContentDrift(),
 )
 
 

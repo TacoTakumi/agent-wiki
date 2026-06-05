@@ -215,3 +215,21 @@ def test_cli_doctor_clean_vault(tmp_path, monkeypatch):
         or "informational" in result.output
         or "0 applied" in result.output
     )
+
+
+def test_raw_content_drift_detect(tmp_vault, tmp_path):
+    from agent_wiki.ingest import ingest_file
+    from agent_wiki.doctor import RawContentDrift
+
+    src = tmp_path / "d.md"
+    src.write_text("# D\n\noriginal\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+
+    # No drift right after ingest.
+    assert RawContentDrift().detect(tmp_vault) is None
+
+    # Hand-edit the page body -> drift.
+    page.write_text(page.read_text().replace("original", "edited by hand"))
+    finding = RawContentDrift().detect(tmp_vault)
+    assert finding is not None
+    assert "d.md" in finding.detail
