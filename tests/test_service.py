@@ -78,3 +78,16 @@ def test_search_caps_and_truncation(tmp_vault):
 def test_search_empty(tmp_vault):
     out = _svc(tmp_vault).search("zzzznomatch")
     assert out == {"all": [], "partial": [], "total": 0, "shown": 0, "truncated": False}
+
+
+def test_status_counts(tmp_vault):
+    src = tmp_vault / "note.md"
+    src.write_text("# Note\n\nbody\n")
+    ingest_file(src, tmp_vault, topic="research")
+    st = _svc(tmp_vault).status()
+    assert st["vault"] == str(tmp_vault)
+    assert st["total"] == 1
+    assert {"topic": "research", "count": 1} in st["topics"]
+    assert st["raw"] == 1
+    assert st["sessions_synced"] == 0
+    assert st["last_activity"]  # most recent log entry string
