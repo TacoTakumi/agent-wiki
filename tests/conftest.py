@@ -90,3 +90,15 @@ def writer_h():
 @pytest.fixture
 def admin_h():
     return {"Authorization": "Bearer admin-tok"}
+
+
+@pytest.fixture
+def remote_service(server_app):
+    # httpx.ASGITransport is async-only; a sync httpx.Client cannot drive it.
+    # fastapi's TestClient is a sync httpx.Client that wraps the ASGI app
+    # in-process, which is exactly the transport RemoteVaultService needs here.
+    from fastapi.testclient import TestClient
+    from agent_wiki.remote import RemoteVaultService
+    client = TestClient(server_app, base_url="http://test",
+                        raise_server_exceptions=False)
+    return RemoteVaultService("http://test", "writer-tok", client=client)
