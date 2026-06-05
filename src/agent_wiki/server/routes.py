@@ -73,6 +73,7 @@ def build_router(svc, require) -> APIRouter:
             name, data = upload.filename, await upload.read()
             topic = form.get("topic") or None
             tags = form.get("tags") or None
+            update = str(form.get("update") or "").lower() in ("1", "true", "yes")
         elif ctype.startswith("application/json"):
             body = await request.json()
             try:
@@ -81,13 +82,14 @@ def build_router(svc, require) -> APIRouter:
                 raise HTTPException(status_code=400, detail="JSON needs filename + content")
             topic = body.get("topic")
             tags = body.get("tags")
+            update = bool(body.get("update", False))
         else:
             raise HTTPException(status_code=400, detail="send multipart file or JSON body")
         tag_list = [s.strip() for s in tags.split(",")] if tags else None
         with tempfile.TemporaryDirectory() as d:
             tmp = Path(d) / Path(name).name
             tmp.write_bytes(data)
-            return svc.ingest(tmp, topic=topic, tags=tag_list)
+            return svc.ingest(tmp, topic=topic, tags=tag_list, update=update)
 
     @r.post("/conversations", status_code=201)
     async def conversations(
