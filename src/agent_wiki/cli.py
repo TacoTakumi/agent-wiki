@@ -469,3 +469,27 @@ def token_revoke(name):
     """Revoke a token by name."""
     from agent_wiki.server_config import revoke_token
     click.echo(f"Revoked '{name}'." if revoke_token(name) else f"No token named '{name}'.")
+
+
+@cli.command()
+@click.option("--bind", default=None, help="Bind address (default from server.yaml or 127.0.0.1).")
+@click.option("--port", default=None, type=int, help="Port (default from server.yaml or 8731).")
+def serve(bind, port):
+    """Run the agent-wiki HTTP server for the LOCAL vault (server host)."""
+    try:
+        import uvicorn
+    except ImportError:
+        raise click.ClickException("server extra not installed: pip install 'agent-wiki[server]'")
+    from agent_wiki.server_config import load_server_config
+    from agent_wiki.server.app import create_app
+
+    vault_path = get_vault_path()
+    server_config = load_server_config()
+    host = bind or server_config["bind"]
+    bind_port = port or server_config["port"]
+    if not server_config["tokens"]:
+        click.echo("WARNING: no tokens configured; all requests will be rejected. "
+                   "Run 'awiki token add ...' first.", err=True)
+    app = create_app(vault_path, server_config)
+    click.echo(f"Serving vault {vault_path} on http://{host}:{bind_port}")
+    uvicorn.run(app, host=host, port=bind_port)
