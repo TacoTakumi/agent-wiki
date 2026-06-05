@@ -8,7 +8,7 @@ import click
 
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
-from agent_wiki.doctor import SourcePathMissing, run_checks
+from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
 from agent_wiki.vault import init_vault
 
 
@@ -251,13 +251,20 @@ def adapt(source, ref, output):
 
 @cli.command()
 @click.option("--fix", is_flag=True, default=False,
-              help="Apply all fixes without prompting")
+              help="Apply all (schema) fixes without prompting")
 @click.option("--dry-run", is_flag=True, default=False,
               help="Only report findings")
-def doctor(fix, dry_run):
+@click.option("--reconcile-raw", "reconcile_raw", is_flag=True, default=False,
+              help="Rewrite raw/ from drifted pages (server-local only)")
+def doctor(fix, dry_run, reconcile_raw):
     """Inspect the vault and offer to fix drift from current schema."""
     svc = _service()
     from agent_wiki.remote import RemoteVaultService
+    if reconcile_raw and isinstance(svc, RemoteVaultService):
+        raise click.ClickException(
+            "--reconcile-raw rewrites raw/ and must be run on the server; "
+            "it is not available to remote clients."
+        )
     if isinstance(svc, RemoteVaultService):
         out = svc.doctor(fix=fix, dry_run=dry_run)
         if not out["findings"]:
@@ -285,13 +292,19 @@ def doctor(fix, dry_run):
     for f in findings:
         click.echo(f"  [{f.check.name}] {f.detail}")
         informational = isinstance(f.check, SourcePathMissing)
+        is_reconcile = isinstance(f.check, RawContentDrift)
 
-        if dry_run or informational:
+        if dry_run or informational or (is_reconcile and not reconcile_raw):
             click.echo(f"    → {f.check.description}")
             skipped += 1
             continue
 
-        should_fix = fix or click.confirm(f"    Fix? [{f.check.description}]", default=True)
+        if is_reconcile:
+            should_fix = fix or click.confirm(
+                f"    Rewrite raw from page? [{f.check.description}]", default=False)
+        else:
+            should_fix = fix or click.confirm(
+                f"    Fix? [{f.check.description}]", default=True)
         if not should_fix:
             skipped += 1
             continue

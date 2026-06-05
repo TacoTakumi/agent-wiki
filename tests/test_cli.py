@@ -232,3 +232,33 @@ def test_cli_ingest_update_ambiguous_skips_not_crash(tmp_config, tmp_vault, tmp_
     assert "skipped" in res.output
     # handled cleanly as a skip, not an uncaught crash
     assert res.exception is None or isinstance(res.exception, SystemExit)
+
+
+def test_cli_doctor_reconcile_raw_local(tmp_config, tmp_vault, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "d.md"
+    src.write_text("# D\n\noriginal\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    page.write_text(page.read_text().replace("original", "edited by hand"))
+
+    runner = CliRunner()
+    res = runner.invoke(cli, ["doctor", "--reconcile-raw", "--fix"])
+    assert res.exit_code == 0
+    assert "edited by hand" in (tmp_vault / "raw" / "d.md").read_text()
+
+
+def test_cli_doctor_reconcile_raw_remote_refused(monkeypatch, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    from agent_wiki.remote import RemoteVaultService
+
+    class _Fake(RemoteVaultService):
+        def __init__(self):
+            pass
+    monkeypatch.setattr("agent_wiki.cli._service", lambda: _Fake())
+
+    res = CliRunner().invoke(cli, ["doctor", "--reconcile-raw"])
+    assert res.exit_code != 0
+    assert "must be run on the server" in res.output
