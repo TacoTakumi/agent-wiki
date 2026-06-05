@@ -31,3 +31,17 @@ def read_vault_file(vault_path: Path, user_path: str) -> str:
         return target.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         raise ValueError(f"cannot display binary file: {user_path}")
+
+
+def read_vault_bytes(vault_path: Path, user_path: str) -> bytes:
+    """Return the raw bytes of a vault file given its vault-relative path.
+
+    Confines the path to the vault (see ``resolve_in_vault``). Raises
+    ``FileNotFoundError`` if missing/a directory, ``ValueError`` if the path
+    escapes the vault. Unlike ``read_vault_file`` it does NOT refuse binary
+    content — the caller decides how to serve it.
+    """
+    target = resolve_in_vault(vault_path, user_path)
+    if not target.is_file():
+        raise FileNotFoundError(f"no such page: {user_path}")
+    return target.read_bytes()
