@@ -114,3 +114,19 @@ def test_ingest_conversation_returns_page(tmp_vault):
     assert out["page"].endswith(".md")
     assert out["bundle"] == "claude-abc.md"
     assert (tmp_vault / out["page"]).exists()
+
+
+def test_rebuild_index(tmp_vault):
+    assert _svc(tmp_vault).rebuild_index() == {"ok": True}
+    assert (tmp_vault / "index.md").exists()
+
+
+def test_sync_dry_run_shape(tmp_vault):
+    out = _svc(tmp_vault).sync(dry_run=True)
+    assert set(out["counts"]) == {"new", "updated", "skipped", "error"}
+    assert isinstance(out["results"], list)
+
+
+def test_sync_rejects_bad_since(tmp_vault):
+    with pytest.raises(ValueError, match="ISO"):
+        _svc(tmp_vault).sync(since="not-a-date")
