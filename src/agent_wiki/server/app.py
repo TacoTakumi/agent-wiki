@@ -21,6 +21,10 @@ def create_app(vault_path: Path, server_config: dict) -> FastAPI:
     async def _not_found(request, exc):
         return JSONResponse(status_code=404, content={"detail": str(exc)})
 
+    @app.exception_handler(FileExistsError)
+    async def _conflict(request, exc):
+        return JSONResponse(status_code=409, content={"detail": str(exc)})
+
     @app.exception_handler(ValueError)
     async def _value_error(request, exc):
         msg = str(exc)

@@ -33,6 +33,8 @@ class RemoteVaultService(VaultService):
         code = resp.status_code
         if code == 404:
             raise FileNotFoundError(detail)
+        if code == 409:
+            raise FileExistsError(detail)
         if code in (400, 415):
             raise ValueError(detail)
         if code in (401, 403):
@@ -72,18 +74,21 @@ class RemoteVaultService(VaultService):
         return self._check(self._c.post("/v1/context", json={"prompt": prompt})).json()["block"]
 
     # --- writes ---
-    def ingest(self, source: Path, topic=None, tags=None) -> dict:
+    def ingest(self, source: Path, topic=None, tags=None, update=False) -> dict:
         return self.ingest_path_bytes(
-            Path(source).name, Path(source).read_bytes(), topic=topic, tags=tags
+            Path(source).name, Path(source).read_bytes(),
+            topic=topic, tags=tags, update=update,
         )
 
-    def ingest_path_bytes(self, filename, data, topic=None, tags=None) -> dict:
+    def ingest_path_bytes(self, filename, data, topic=None, tags=None, update=False) -> dict:
         files = {"file": (filename, data, "application/octet-stream")}
         form = {}
         if topic:
             form["topic"] = topic
         if tags:
             form["tags"] = ",".join(tags)
+        if update:
+            form["update"] = "true"
         return self._check(self._c.post("/v1/ingest", files=files, data=form)).json()
 
     def ingest_conversation(self, bundle: Path, no_summarize=False) -> dict:

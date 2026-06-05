@@ -36,3 +36,23 @@ def test_remote_permission_error_is_clickexception(server_app):
     reader = RemoteVaultService("http://test", "reader-tok", client=c)
     with pytest.raises(click.ClickException):
         reader.ingest_path_bytes("n.md", b"# N\n\nx\n", topic="research")
+
+
+def test_remote_ingest_collision_raises_file_exists(remote_service, tmp_path):
+    src = tmp_path / "r.md"
+    src.write_text("# R\n\nv1\n")
+    remote_service.ingest(src)
+    clash = tmp_path / "sub" / "r.md"
+    clash.parent.mkdir()
+    clash.write_text("# R2\n\nx\n")
+    with pytest.raises(FileExistsError):
+        remote_service.ingest(clash)
+
+
+def test_remote_ingest_update_rewrites(remote_service, tmp_vault, tmp_path):
+    src = tmp_path / "r.md"
+    src.write_text("# R\n\nv1\n")
+    remote_service.ingest(src)
+    src.write_text("# R\n\nv2\n")
+    remote_service.ingest(src, update=True)
+    assert (tmp_vault / "raw" / "r.md").read_text() == "# R\n\nv2\n"

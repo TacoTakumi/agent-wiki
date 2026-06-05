@@ -10,6 +10,7 @@ class IngestJSON(BaseModel):
     content: str
     topic: str | None = None
     tags: str | None = None     # comma-separated
+    update: bool = False
 
 
 class SyncRequest(BaseModel):
