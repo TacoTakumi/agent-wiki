@@ -61,3 +61,46 @@ def test_log_lint_context(client, reader_h):
     r = client.post("/v1/context", json={"prompt": "hi"}, headers=reader_h)
     assert r.status_code == 200
     assert "block" in r.json()
+
+
+def test_ingest_json_writer(client, writer_h):
+    r = client.post("/v1/ingest", json={
+        "filename": "note.md", "content": "# Title\n\nbody\n",
+        "topic": "research", "tags": "x,y",
+    }, headers=writer_h)
+    assert r.status_code == 201
+    body = r.json()
+    assert body["title"] == "Title" and body["page"] == "research/title.md"
+
+
+def test_ingest_multipart_writer(client, writer_h):
+    r = client.post(
+        "/v1/ingest",
+        files={"file": ("m.md", b"# M\n\nhi\n", "text/markdown")},
+        data={"topic": "research"},
+        headers=writer_h,
+    )
+    assert r.status_code == 201
+    assert r.json()["page"] == "research/m.md"
+
+
+def test_ingest_forbidden_for_reader(client, reader_h):
+    r = client.post("/v1/ingest", json={"filename": "n.md", "content": "# N\n\nx\n"},
+                    headers=reader_h)
+    assert r.status_code == 403
+
+
+def test_index_writer(client, writer_h):
+    assert client.post("/v1/index", headers=writer_h).json() == {"ok": True}
+
+
+def test_sync_dry_run(client, writer_h):
+    r = client.post("/v1/sync", json={"dry_run": True}, headers=writer_h)
+    assert r.status_code == 200
+    assert "counts" in r.json()
+
+
+def test_doctor_requires_admin(client, writer_h, admin_h):
+    assert client.post("/v1/doctor", json={}, headers=writer_h).status_code == 403
+    r = client.post("/v1/doctor", json={"fix": False}, headers=admin_h)
+    assert r.status_code == 200 and "findings" in r.json()
