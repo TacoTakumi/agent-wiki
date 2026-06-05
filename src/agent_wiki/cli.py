@@ -384,3 +384,43 @@ def hook_status(agent, config_path):
         raise click.ClickException(str(exc))
     path = Path(config_path) if config_path else None
     click.echo(backend["status"](config_path=path))
+
+
+@cli.group("token")
+def token_group():
+    """Manage server bearer tokens (admin, local on the server host)."""
+    pass
+
+
+@token_group.command("add")
+@click.argument("name")
+@click.option("--role", type=click.Choice(["reader", "writer", "admin"]), required=True)
+def token_add(name, role):
+    """Generate a token, print it ONCE, and store only its hash."""
+    from agent_wiki.server_config import add_token
+    try:
+        secret = add_token(name, role)
+    except ValueError as e:
+        raise click.ClickException(str(e))
+    click.echo(f"Token for '{name}' ({role}) — store it now, it will not be shown again:")
+    click.echo(secret)
+
+
+@token_group.command("list")
+def token_list():
+    """List token names and roles (never the secret)."""
+    from agent_wiki.server_config import list_tokens
+    tokens = list_tokens()
+    if not tokens:
+        click.echo("No tokens.")
+        return
+    for t in tokens:
+        click.echo(f"  {t['name']}: {t['role']}")
+
+
+@token_group.command("revoke")
+@click.argument("name")
+def token_revoke(name):
+    """Revoke a token by name."""
+    from agent_wiki.server_config import revoke_token
+    click.echo(f"Revoked '{name}'." if revoke_token(name) else f"No token named '{name}'.")
