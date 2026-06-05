@@ -53,6 +53,23 @@ def get_vault_path() -> Path:
     return path
 
 
+def get_backend():
+    """Resolve the configured vault into a VaultService (local or remote)."""
+    config = load_user_config()
+    server = config.get("server")
+    if server and server.get("url"):
+        from agent_wiki.remote import RemoteVaultService
+        return RemoteVaultService(server["url"], server.get("token"))
+    vault_path = config.get("vault_path")
+    if vault_path:
+        from agent_wiki.service import LocalVaultService
+        path = Path(vault_path).expanduser()
+        if not path.exists():
+            raise click.UsageError(f"Vault not found at {path}")
+        return LocalVaultService(path)
+    raise click.UsageError("No vault configured. Run 'awiki init' first.")
+
+
 def auto_context_enabled(vault_path: Path) -> bool:
     """Return True if the auto-context hook should fire for this vault.
 
