@@ -6,17 +6,31 @@ drop-in the CLI uses for remote vaults. Both honor the same contract.
 """
 from __future__ import annotations
 
+import shutil
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 from agent_wiki.config import load_vault_config
 from agent_wiki.context import run_context
 from agent_wiki.conversation import BUNDLE_SUBDIR
+from agent_wiki.conversation import ingest_conversation as _ingest_conversation
+from agent_wiki.ingest import ingest_file
 from agent_wiki.lint import lint_vault
 from agent_wiki.log import read_log
+from agent_wiki.page import parse_page
 from agent_wiki.search import search_vault
 from agent_wiki.show import read_vault_bytes, read_vault_file
 from agent_wiki.sync import synced_count
+
+
+def _build_summarizer(vault_config: dict):
+    from agent_wiki.summarize import make_summarizer
+    return make_summarizer(vault_config.get("summarizer") or {})
+
+
+def _build_redactor(vault_config: dict):
+    from agent_wiki.redact import make_redactor
+    return make_redactor(vault_config.get("redaction") or {})
 
 
 class VaultService(ABC):
@@ -43,6 +57,13 @@ class VaultService(ABC):
 
     @abstractmethod
     def context(self, prompt: str) -> str: ...
+
+    @abstractmethod
+    def ingest(self, source: Path, topic: str | None = None,
+               tags: list[str] | None = None) -> dict: ...
+
+    @abstractmethod
+    def ingest_conversation(self, bundle: Path, no_summarize: bool = False) -> dict: ...
 
 
 class LocalVaultService(VaultService):
@@ -108,3 +129,37 @@ class LocalVaultService(VaultService):
 
     def context(self, prompt: str) -> str:
         return run_context(prompt, self.vault_path) or ""
+
+    # --- writes ---
+    def ingest(self, source: Path, topic: str | None = None,
+               tags: list[str] | None = None) -> dict:
+        page_path = ingest_file(source, self.vault_path, topic=topic, tags=tags)
+        meta = parse_page(page_path)["meta"] or {}
+        return {
+            "page": str(page_path.relative_to(self.vault_path)),
+            "title": meta.get("title", page_path.stem),
+            "topic": meta.get("topic", topic),
+            "sources": meta.get("sources", []),
+        }
+
+    def ingest_conversation(self, bundle: Path, no_summarize: bool = False) -> dict:
+        config = load_vault_config(self.vault_path)
+        src = Path(bundle).resolve()
+        sessions_dir = (self.vault_path / BUNDLE_SUBDIR).resolve()
+        try:
+            src.relative_to(sessions_dir)
+            bundle_in_vault = src
+        except ValueError:
+            sessions_dir.mkdir(parents=True, exist_ok=True)
+            bundle_in_vault = sessions_dir / src.name
+            shutil.copy2(src, bundle_in_vault)
+        summarizer = None if no_summarize else _build_summarizer(config)
+        redactor = _build_redactor(config)
+        page_path = _ingest_conversation(
+            bundle_in_vault, self.vault_path,
+            summarizer=summarizer, redactor=redactor,
+        )
+        return {
+            "page": str(page_path.relative_to(self.vault_path)),
+            "bundle": bundle_in_vault.name,
+        }
