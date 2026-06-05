@@ -21,6 +21,10 @@ run `awiki show <path>` with the vault-relative path printed in the results:
 
     awiki show research/raft-consensus.md
 
+> `search` and `show` work the same against a local or remote vault — when
+> connected to a remote server (`awiki init --remote`) they transparently run
+> over HTTP against the server's vault.
+
 ## When to Use
 
 - Before any web search for technical knowledge

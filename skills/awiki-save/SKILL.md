@@ -20,6 +20,10 @@ Save valuable content from the current conversation to the wiki as a two-step pr
 
 4. **Report**: Tell the user what was saved and where
 
+> Works the same against a local or remote vault. The temp file is created and
+> read on this machine; when connected to a remote server its contents are
+> uploaded, so a local temp path is correct.
+
 ## Choosing a Topic
 
 Ask the user which topic to file under if not obvious:
