@@ -257,7 +257,14 @@ Ingest an existing file into the vault. The agent confirms the file path, asks f
 
 ### CLAUDE.md Integration
 
-To make agents check the wiki automatically, add wiki guidance to your project or global CLAUDE.md. A ready-made, project-agnostic block lives in [`awiki-claude-md-snippet.md`](awiki-claude-md-snippet.md) — paste its contents verbatim at the end of any CLAUDE.md. It tells the agent to search the wiki first, read full pages with `awiki show <path>`, and save findings with the `awiki-save` skill.
+To make agents check the wiki automatically, add wiki guidance to your project or global agent-memory file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, …). Run:
+
+```bash
+awiki directions          # prints a self-installing block: tell your agent to run this
+awiki directions --raw    # prints just the block, for pasting into a memory file by hand
+```
+
+`awiki directions` emits an agent-directed header plus a canonical wiki-usage block wrapped in `<!-- awiki:begin -->` / `<!-- awiki:end -->` markers. Point an agent at it ("set up awiki usage instructions") and it will adapt the wording to your project and append the block to the right memory file; the markers make re-running idempotent. The block tells the agent to search the wiki first, read full pages with `awiki show <path>`, and save findings with the `awiki-save` skill.
 
 ### Auto-Context Hook (UserPromptSubmit)
 
