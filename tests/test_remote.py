@@ -56,3 +56,17 @@ def test_remote_ingest_update_rewrites(remote_service, tmp_vault, tmp_path):
     src.write_text("# R\n\nv2\n")
     remote_service.ingest(src, update=True)
     assert (tmp_vault / "raw" / "r.md").read_text() == "# R\n\nv2\n"
+
+
+def test_http_doctor_fix_does_not_rewrite_raw(client, tmp_vault, tmp_path, admin_h):
+    # Drift a page on the SERVER vault: ingest, then hand-edit the page body.
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "d.md"
+    src.write_text("# D\n\noriginal\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    page.write_text(page.read_text().replace("original", "edited by hand"))
+
+    # A remote admin 'doctor --fix' must NOT rewrite raw (server-local only).
+    resp = client.post("/v1/doctor", json={"fix": True}, headers=admin_h)
+    assert resp.status_code == 200
+    assert (tmp_vault / "raw" / "d.md").read_text() == "# D\n\noriginal\n"
