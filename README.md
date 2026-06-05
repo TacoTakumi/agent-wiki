@@ -51,7 +51,7 @@ Create a new vault at the given path (defaults to current directory). Sets up th
 awiki init ~/vaults/agent-wiki
 ```
 
-### `awiki ingest <files> [--topic <topic>] [--tags <tags>]`
+### `awiki ingest <files> [--topic <topic>] [--tags <tags>] [--update]`
 
 Ingest one or more files into the vault. Each file is copied to `raw/` (immutable archive) and a wiki page is created in the appropriate topic folder with YAML frontmatter.
 
@@ -59,10 +59,13 @@ Ingest one or more files into the vault. Each file is copied to `raw/` (immutabl
 awiki ingest notes.md                          # uses default topic (research)
 awiki ingest notes.md --topic tools --tags cli,python
 awiki ingest *.md --topic research              # glob support
+awiki ingest notes.md --update                 # overwrite raw + update the linked page
 ```
 
 - Title is extracted from the first `# heading`, or derived from the filename.
 - The original file is preserved in `raw/` and never modified.
+- A file is identified by its `raw/` basename. **Without `--update`, ingesting a file whose basename already exists in `raw/` is refused** so nothing is silently clobbered. In a glob, the colliding file is skipped and the rest proceed; the command exits non-zero if any file was skipped.
+- `--update` overwrites `raw/<basename>` and rewrites its linked wiki page (located via the page's `sources:` frontmatter): the body is refreshed, `created` is preserved, `updated` is bumped, and tags are kept unless `--tags` is given. If the title or `--topic` changed, the page file is renamed/moved to match.
 
 ### `awiki search <query> [--topic <topic>] [--limit N]`
 
@@ -128,9 +131,11 @@ awiki log --last 5
 
 Ingest conversations from configured sources. See the [Ingesting conversations](#ingesting-conversations) section below.
 
-### `awiki doctor [--fix] [--dry-run]`
+### `awiki doctor [--fix] [--dry-run] [--reconcile-raw]`
 
 Inspect the vault for drift from the current schema and offer to fix each finding. Run this after upgrading `awiki`: it adds missing `wiki.yaml` sections (`conversations`, `summarizer`, `sources`), missing topic dirs, missing `raw/sessions/` + `incoming/`, and warns when an enabled source points at a path that doesn't exist. Interactive by default — use `--fix` to apply everything, `--dry-run` to just report.
+
+`doctor` also reports **raw content drift** — pages whose body no longer matches their `raw/` source (e.g. after editing a page directly). Rewriting raw from the canonical page is a deliberate, **server-local** operation: run `awiki doctor --reconcile-raw` on the machine that holds the vault. It is excluded from a blanket `--fix`, prompts before overwriting (default No), and **cannot be triggered by a remote client** — there is no HTTP path for it.
 
 ### `awiki adapt <source> <path-or-id> [-o FILE]`
 
