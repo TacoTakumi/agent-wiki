@@ -8,18 +8,22 @@ from __future__ import annotations
 
 import shutil
 from abc import ABC, abstractmethod
+from datetime import datetime
 from pathlib import Path
 
+from agent_wiki.adapters import build_adapter
 from agent_wiki.config import load_vault_config
 from agent_wiki.context import run_context
-from agent_wiki.conversation import BUNDLE_SUBDIR
+from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
 from agent_wiki.conversation import ingest_conversation as _ingest_conversation
+from agent_wiki.index import rebuild_index as _rebuild_index
 from agent_wiki.ingest import ingest_file
 from agent_wiki.lint import lint_vault
 from agent_wiki.log import read_log
-from agent_wiki.page import parse_page
+from agent_wiki.page import parse_page, render_page
 from agent_wiki.search import search_vault
 from agent_wiki.show import read_vault_bytes, read_vault_file
+from agent_wiki.sync import sync as _sync
 from agent_wiki.sync import synced_count
 
 
@@ -64,6 +68,16 @@ class VaultService(ABC):
 
     @abstractmethod
     def ingest_conversation(self, bundle: Path, no_summarize: bool = False) -> dict: ...
+
+    @abstractmethod
+    def rebuild_index(self) -> dict: ...
+
+    @abstractmethod
+    def sync(self, source: str | None = None, since: str | None = None,
+             dry_run: bool = False, include_live: bool = False) -> dict: ...
+
+    @abstractmethod
+    def adapt(self, source: str, ref: str, output: str | None = None) -> dict: ...
 
 
 class LocalVaultService(VaultService):
@@ -163,3 +177,53 @@ class LocalVaultService(VaultService):
             "page": str(page_path.relative_to(self.vault_path)),
             "bundle": bundle_in_vault.name,
         }
+
+    def rebuild_index(self) -> dict:
+        _rebuild_index(self.vault_path)
+        return {"ok": True}
+
+    def sync(self, source: str | None = None, since: str | None = None,
+             dry_run: bool = False, include_live: bool = False) -> dict:
+        config = load_vault_config(self.vault_path)
+        since_dt = None
+        if since:
+            try:
+                since_dt = datetime.fromisoformat(since)
+            except ValueError:
+                raise ValueError(f"since must be an ISO 8601 date (YYYY-MM-DD): {since}")
+        if include_live:
+            sources_cfg = config.setdefault("sources", {})
+            for name in ("claude_code", "opencode", "drop_zone"):
+                if name in sources_cfg:
+                    sources_cfg[name] = dict(sources_cfg[name])
+                    sources_cfg[name]["include_live"] = True
+        summarizer = _build_summarizer(config) if not dry_run else None
+        redactor = _build_redactor(config) if not dry_run else None
+        results = _sync(self.vault_path, source=source, dry_run=dry_run,
+                        since=since_dt, summarizer=summarizer, redactor=redactor)
+        counts = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
+        out = []
+        for r in results:
+            counts[r.action] = counts.get(r.action, 0) + 1
+            out.append({
+                "action": r.action,
+                "source": r.source,
+                "key": r.key,
+                "error": r.error,
+                "page": str(r.page.relative_to(self.vault_path)) if r.page else None,
+            })
+        return {"results": out, "counts": counts}
+
+    def adapt(self, source: str, ref: str, output: str | None = None) -> dict:
+        config = load_vault_config(self.vault_path)
+        cfg = (config.get("sources") or {}).get(source.replace("-", "_"), {})
+        adapter = build_adapter(source, cfg)
+        ref_value = Path(ref) if source == "claude-code" else ref
+        conv = adapter.to_bundle(ref_value)
+        if output:
+            out_path = Path(output)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(render_page(conv.frontmatter(), conv.body))
+            return {"bundle": str(out_path)}
+        path = write_bundle(conv, self.vault_path)
+        return {"bundle": str(path.relative_to(self.vault_path))}
