@@ -233,3 +233,26 @@ def test_raw_content_drift_detect(tmp_vault, tmp_path):
     finding = RawContentDrift().detect(tmp_vault)
     assert finding is not None
     assert "d.md" in finding.detail
+
+
+def _drift_vault(tmp_vault, tmp_path):
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "d.md"
+    src.write_text("# D\n\noriginal\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    page.write_text(page.read_text().replace("original", "edited by hand"))
+    return tmp_vault
+
+
+def test_blanket_fix_does_not_rewrite_raw(tmp_vault, tmp_path):
+    from agent_wiki.service import LocalVaultService
+    vault = _drift_vault(tmp_vault, tmp_path)
+    LocalVaultService(vault).doctor(fix=True)            # schema fixes only
+    assert (vault / "raw" / "d.md").read_text() == "# D\n\noriginal\n"
+
+
+def test_reconcile_raw_rewrites_from_page(tmp_vault, tmp_path):
+    from agent_wiki.service import LocalVaultService
+    vault = _drift_vault(tmp_vault, tmp_path)
+    LocalVaultService(vault).doctor(reconcile_raw=True)
+    assert "edited by hand" in (vault / "raw" / "d.md").read_text()
