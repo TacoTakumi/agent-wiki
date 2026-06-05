@@ -1,30 +1,25 @@
 import glob as globmod
 import json
 import os
-import shutil
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import click
 
-from agent_wiki.adapters import ADAPTER_NAMES, build_adapter
-from agent_wiki.config import get_vault_path, load_vault_config
-from agent_wiki.context import run_context
+from agent_wiki.adapters import ADAPTER_NAMES
+from agent_wiki.config import get_vault_path
 from agent_wiki.doctor import SourcePathMissing, run_checks
-from agent_wiki.conversation import (
-    BUNDLE_SUBDIR,
-    ingest_conversation as _ingest_conversation,
-    write_bundle,
-)
-from agent_wiki.ingest import ingest_file
-from agent_wiki.index import rebuild_index
-from agent_wiki.lint import lint_vault
-from agent_wiki.log import read_log
-from agent_wiki.search import search_vault
-from agent_wiki.show import read_vault_file
-from agent_wiki.sync import pending_count, sync as run_sync, synced_count
+from agent_wiki.service import LocalVaultService
 from agent_wiki.vault import init_vault
+
+
+def _service():
+    """Resolve the configured vault into a VaultService.
+
+    Phase 1: always local. Phase 6 swaps this for config.get_backend() so a
+    configured remote vault transparently routes over HTTP.
+    """
+    return LocalVaultService(get_vault_path())
 
 
 @click.group()
@@ -52,7 +47,7 @@ def init(path):
 @click.option("--tags", default=None, help="Comma-separated tags")
 def ingest(files, topic, tags):
     """Ingest files into the wiki vault."""
-    vault_path = get_vault_path()
+    svc = _service()
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
 
     expanded = []
@@ -66,8 +61,8 @@ def ingest(files, topic, tags):
     for file_path in expanded:
         path = Path(file_path)
         try:
-            result = ingest_file(path, vault_path, topic=topic, tags=tag_list)
-            click.echo(f"Ingested {path.name} -> {result.relative_to(vault_path)}")
+            out = svc.ingest(path, topic=topic, tags=tag_list)
+            click.echo(f"Ingested {path.name} -> {out['page']}")
         except FileNotFoundError as e:
             raise click.ClickException(str(e))
 
@@ -89,35 +84,25 @@ def _echo_result(r, show_coverage=False):
               help="Max results to show in the all-terms tier")
 def search(query, topic, limit):
     """Search the wiki vault."""
-    vault_path = get_vault_path()
-    results = search_vault(vault_path, query, topic=topic)
+    out = _service().search(query, topic=topic, limit=limit)
 
-    if not results:
+    if out["total"] == 0:
         click.echo("No results found.")
         return
 
-    PARTIAL_LIMIT = 5
-    all_hits = [r for r in results if r["match_kind"] == "all"]
-    partial_hits = [r for r in results if r["match_kind"] == "partial"]
-
-    shown_all = all_hits[:limit]
-    shown_partial = partial_hits[:PARTIAL_LIMIT]
-
-    for r in shown_all:
+    for r in out["all"]:
         _echo_result(r)
 
-    if shown_partial:
+    if out["partial"]:
         # Only separate from the all-tier with a blank line if it printed anything.
-        prefix = "\n" if shown_all else ""
+        prefix = "\n" if out["all"] else ""
         click.echo(f"{prefix}Partial matches (some terms only):")
-        for r in shown_partial:
+        for r in out["partial"]:
             _echo_result(r, show_coverage=True)
 
-    total = len(all_hits) + len(partial_hits)
-    shown = len(shown_all) + len(shown_partial)
-    if shown < total:
+    if out["truncated"]:
         click.echo(
-            f"\nShowing {shown} of {total} matches — "
+            f"\nShowing {out['shown']} of {out['total']} matches — "
             f"narrow your query or use --topic."
         )
 
@@ -126,9 +111,8 @@ def search(query, topic, limit):
 @click.argument("path")
 def show(path):
     """Print a wiki page (or any vault file) by its vault-relative path."""
-    vault_path = get_vault_path()
     try:
-        content = read_vault_file(vault_path, path)
+        content = _service().show(path)
     except (ValueError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
     click.echo(content, nl=False)
@@ -137,16 +121,14 @@ def show(path):
 @cli.command("index")
 def index_cmd():
     """Rebuild the wiki index."""
-    vault_path = get_vault_path()
-    rebuild_index(vault_path)
+    _service().rebuild_index()
     click.echo("Index rebuilt.")
 
 
 @cli.command()
 def lint():
     """Audit the wiki vault for issues."""
-    vault_path = get_vault_path()
-    issues = lint_vault(vault_path)
+    issues = _service().lint()
 
     if not issues:
         click.echo("No issues found.")
@@ -164,49 +146,20 @@ def lint():
 @cli.command()
 def status():
     """Show vault status overview."""
-    vault_path = get_vault_path()
-    vault_config = load_vault_config(vault_path)
-    topics = vault_config.get("topics", [])
+    st = _service().status()
 
-    click.echo(f"Vault: {vault_path}\n")
+    click.echo(f"Vault: {st['vault']}\n")
 
-    total_pages = 0
-    for topic in topics:
-        topic_dir = vault_path / topic
-        if not topic_dir.is_dir():
-            continue
-        count = len(list(topic_dir.rglob("*.md")))
-        total_pages += count
-        click.echo(f"  {topic}: {count} pages")
+    for t in st["topics"]:
+        click.echo(f"  {t['topic']}: {t['count']} pages")
 
-    raw_dir = vault_path / "raw"
-    raw_count = (
-        len([p for p in raw_dir.iterdir() if p.is_file()]) if raw_dir.is_dir() else 0
-    )
-    sessions_dir = vault_path / BUNDLE_SUBDIR
-    bundle_count = (
-        len(list(sessions_dir.glob("*.md"))) if sessions_dir.is_dir() else 0
-    )
+    click.echo(f"\n  raw: {st['raw']} files")
+    click.echo(f"  bundles: {st['bundles']}")
+    click.echo(f"  sessions synced: {st['sessions_synced']}")
+    click.echo(f"  total: {st['total']} pages")
 
-    click.echo(f"\n  raw: {raw_count} files")
-    click.echo(f"  bundles: {bundle_count}")
-    click.echo(f"  sessions synced: {synced_count(vault_path)}")
-    click.echo(f"  total: {total_pages} pages")
-
-    log_entries = read_log(vault_path, last=1)
-    if log_entries:
-        click.echo(f"\nLast activity: {log_entries[0]}")
-
-
-def _build_summarizer(vault_config):
-    """Construct summarizer based on wiki.yaml summarizer.type."""
-    from agent_wiki.summarize import make_summarizer
-    return make_summarizer(vault_config.get("summarizer") or {})
-
-
-def _build_redactor(vault_config):
-    from agent_wiki.redact import make_redactor
-    return make_redactor(vault_config.get("redaction") or {})
+    if st["last_activity"]:
+        click.echo(f"\nLast activity: {st['last_activity']}")
 
 
 @cli.command()
@@ -219,41 +172,22 @@ def _build_redactor(vault_config):
               help="Include sessions modified in the last 60 minutes")
 def sync(source, since, dry_run, include_live):
     """Discover new conversations from configured sources and ingest them."""
-    vault_path = get_vault_path()
-    vault_config = load_vault_config(vault_path)
+    try:
+        out = _service().sync(
+            source=source, since=since, dry_run=dry_run, include_live=include_live,
+        )
+    except ValueError as e:
+        raise click.ClickException(str(e))
 
-    since_dt = None
-    if since:
-        try:
-            since_dt = datetime.fromisoformat(since)
-        except ValueError:
-            raise click.BadParameter(f"--since must be ISO 8601: {since}")
+    for r in out["results"]:
+        if r["action"] == "error":
+            click.echo(f"  [ERROR] {r['source']} {r['key']}: {r['error']}", err=True)
+        elif r["action"] in ("new", "updated"):
+            tag = "DRY" if dry_run else r["action"].upper()
+            page = r["page"] if r["page"] else ""
+            click.echo(f"  [{tag}] {r['key']} -> {page}")
 
-    if include_live:
-        sources_cfg = vault_config.setdefault("sources", {})
-        for name in ("claude_code", "opencode", "drop_zone"):
-            if name in sources_cfg:
-                sources_cfg[name] = dict(sources_cfg[name])
-                sources_cfg[name]["include_live"] = True
-
-    summarizer = _build_summarizer(vault_config) if not dry_run else None
-    redactor = _build_redactor(vault_config) if not dry_run else None
-
-    results = run_sync(
-        vault_path, source=source, dry_run=dry_run, since=since_dt,
-        summarizer=summarizer, redactor=redactor,
-    )
-
-    counts = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
-    for r in results:
-        counts[r.action] = counts.get(r.action, 0) + 1
-        if r.action == "error":
-            click.echo(f"  [ERROR] {r.source} {r.key}: {r.error}", err=True)
-        elif r.action in ("new", "updated"):
-            tag = "DRY" if dry_run else r.action.upper()
-            page = r.page.relative_to(vault_path) if r.page else ""
-            click.echo(f"  [{tag}] {r.key} -> {page}")
-
+    counts = out["counts"]
     click.echo(
         f"\n{counts['new']} new, {counts['updated']} updated, "
         f"{counts['skipped']} unchanged, {counts['error']} errors"
@@ -267,24 +201,8 @@ def sync(source, since, dry_run, include_live):
               help="Write bundle to this path instead of raw/sessions/")
 def adapt(source, ref, output):
     """Convert one session to a conversation bundle without ingesting."""
-    vault_path = get_vault_path()
-    vault_config = load_vault_config(vault_path)
-    cfg = (vault_config.get("sources") or {}).get(source.replace("-", "_"), {})
-    adapter = build_adapter(source, cfg)
-
-    # SOURCE is a path/id the adapter understands.
-    ref_value = Path(ref) if source == "claude-code" else ref
-    conv = adapter.to_bundle(ref_value)
-
-    if output:
-        out_path = Path(output)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        from agent_wiki.page import render_page
-        out_path.write_text(render_page(conv.frontmatter(), conv.body))
-        click.echo(f"Bundle written: {out_path}")
-    else:
-        path = write_bundle(conv, vault_path)
-        click.echo(f"Bundle written: {path.relative_to(vault_path)}")
+    out = _service().adapt(source, ref, output=output)
+    click.echo(f"Bundle written: {out['bundle']}")
 
 
 @cli.command()
@@ -336,38 +254,15 @@ def doctor(fix, dry_run):
               help="Skip the configured summarizer for this ingest")
 def ingest_conversation_cmd(bundle, no_summarize):
     """Ingest a single conversation bundle into the vault."""
-    vault_path = get_vault_path()
-    vault_config = load_vault_config(vault_path)
-
-    src = Path(bundle).resolve()
-    sessions_dir = (vault_path / BUNDLE_SUBDIR).resolve()
-
-    # If the bundle isn't already under raw/sessions/, copy it in so the
-    # created page's [[wikilink]] resolves.
-    try:
-        src.relative_to(sessions_dir)
-        bundle_in_vault = src
-    except ValueError:
-        sessions_dir.mkdir(parents=True, exist_ok=True)
-        bundle_in_vault = sessions_dir / src.name
-        shutil.copy2(src, bundle_in_vault)
-
-    summarizer = None if no_summarize else _build_summarizer(vault_config)
-    redactor = _build_redactor(vault_config)
-
-    page_path = _ingest_conversation(
-        bundle_in_vault, vault_path,
-        summarizer=summarizer, redactor=redactor,
-    )
-    click.echo(f"Ingested {bundle_in_vault.name} -> {page_path.relative_to(vault_path)}")
+    out = _service().ingest_conversation(Path(bundle), no_summarize=no_summarize)
+    click.echo(f"Ingested {out['bundle']} -> {out['page']}")
 
 
 @cli.command("log")
 @click.option("--last", "-n", default=None, type=int, help="Show last N entries")
 def log_cmd(last):
     """Show activity log."""
-    vault_path = get_vault_path()
-    entries = read_log(vault_path, last=last)
+    entries = _service().log(last=last)
 
     if not entries:
         click.echo("No log entries.")
@@ -411,13 +306,12 @@ def context_cmd(output_format, debug):
         return
 
     try:
-        from agent_wiki.config import get_vault_path
-        vault_path = get_vault_path()
+        svc = _service()
     except Exception:
         return
 
     try:
-        block = run_context(prompt, vault_path)
+        block = svc.context(prompt)
     except Exception:
         return
 
