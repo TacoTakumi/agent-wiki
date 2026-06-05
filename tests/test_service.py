@@ -149,3 +149,39 @@ def test_doctor_apply_all(tmp_vault):
     after = _svc(tmp_vault).doctor(fix=False)
     assert out["applied"] >= 0
     assert len(after["findings"]) <= len(before["findings"])
+
+
+def test_ingest_serializes_under_log_lock(tmp_vault, monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENT_WIKI_STATE_DIR", str(tmp_path / "state"))
+    from agent_wiki import locking
+    events = []
+    orig = locking.file_lock
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def traced(vault, name, timeout=10.0):
+        events.append(("acquire", name))
+        with orig(vault, name, timeout=timeout):
+            yield
+        events.append(("release", name))
+
+    monkeypatch.setattr("agent_wiki.service.file_lock", traced)
+    src = tmp_vault / "n.md"; src.write_text("# N\n\nx\n")
+    _svc(tmp_vault).ingest(src, topic="research")
+    assert ("acquire", "log") in events
+
+
+def test_rebuild_index_uses_index_lock(tmp_vault, monkeypatch, tmp_path):
+    monkeypatch.setenv("AGENT_WIKI_STATE_DIR", str(tmp_path / "state"))
+    names = []
+    import contextlib
+
+    @contextlib.contextmanager
+    def traced(vault, name, timeout=10.0):
+        names.append(name)
+        yield
+
+    monkeypatch.setattr("agent_wiki.service.file_lock", traced)
+    _svc(tmp_vault).rebuild_index()
+    assert names == ["index"]
