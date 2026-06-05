@@ -468,6 +468,31 @@ awiki init --clear              # drop the remote config from this client
 
 Local and remote vaults are mutually exclusive: setting one clears the other.
 
+### Switching between local and remote
+
+Switching only rewrites the client config at `~/.config/agent-wiki/config.yaml` —
+it never reads, moves, or deletes vault files. Pointing a machine that already has a
+local vault at a remote server is safe: the local vault stays on disk untouched, and
+`awiki` simply routes commands to the server instead.
+
+One sharp edge: the config is **overwritten, not merged**, so switching to remote
+drops the `vault_path` pointer, and `awiki init --clear` only removes the remote
+config (it does not restore `vault_path`). Because `awiki init <path>` refuses an
+existing vault ("Vault already exists"), the way back to a local vault is to put the
+`vault_path` line back in `config.yaml`. Back it up before switching so the return
+trip is a one-liner:
+
+```bash
+cp ~/.config/agent-wiki/config.yaml ~/.config/agent-wiki/config.yaml.local-bak
+awiki init --remote https://wiki.example.com --token <secret>
+# …later, to go back to the local vault:
+cp ~/.config/agent-wiki/config.yaml.local-bak ~/.config/agent-wiki/config.yaml
+```
+
+Your local vault files are never destroyed by either direction of the switch — you
+can also ingest them into the remote later with `awiki ingest <path-to-old-vault>/...`
+(plain `ingest` uploads from the client; `sync`/`adapt` are server-side — see below).
+
 ### Server-host semantics
 
 A few commands act on the **server's** machine, not the client's:
