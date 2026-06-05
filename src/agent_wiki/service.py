@@ -12,11 +12,16 @@ from pathlib import Path
 from agent_wiki.context import run_context
 from agent_wiki.lint import lint_vault
 from agent_wiki.log import read_log
+from agent_wiki.search import search_vault
 from agent_wiki.show import read_vault_bytes, read_vault_file
 
 
 class VaultService(ABC):
     """The command surface shared by the local facade and the remote client."""
+
+    @abstractmethod
+    def search(self, query: str, topic: str | None = None,
+               limit: int = 20, partial_limit: int = 5) -> dict: ...
 
     @abstractmethod
     def show(self, rel: str) -> str: ...
@@ -39,6 +44,23 @@ class LocalVaultService(VaultService):
         self.vault_path = vault_path
 
     # --- reads (no lock) ---
+    def search(self, query: str, topic: str | None = None,
+               limit: int = 20, partial_limit: int = 5) -> dict:
+        results = search_vault(self.vault_path, query, topic=topic)
+        all_hits = [r for r in results if r["match_kind"] == "all"]
+        partial_hits = [r for r in results if r["match_kind"] == "partial"]
+        shown_all = all_hits[:limit]
+        shown_partial = partial_hits[:partial_limit]
+        total = len(all_hits) + len(partial_hits)
+        shown = len(shown_all) + len(shown_partial)
+        return {
+            "all": shown_all,
+            "partial": shown_partial,
+            "total": total,
+            "shown": shown,
+            "truncated": shown < total,
+        }
+
     def show(self, rel: str) -> str:
         return read_vault_file(self.vault_path, rel)
 

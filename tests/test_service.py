@@ -46,3 +46,35 @@ def test_lint_passthrough_returns_list(tmp_vault):
 
 def test_context_returns_str(tmp_vault):
     assert isinstance(_svc(tmp_vault).context("anything"), str)
+
+
+def _seed_pages(vault):
+    (vault / "research" / "alpha.md").write_text("# Alpha\n\nfoo bar baz\n")
+    (vault / "research" / "beta.md").write_text("# Beta\n\nfoo only\n")
+
+
+def test_search_splits_all_and_partial(tmp_vault):
+    _seed_pages(tmp_vault)
+    out = _svc(tmp_vault).search("foo bar")
+    titles_all = {r["title"] for r in out["all"]}
+    titles_partial = {r["title"] for r in out["partial"]}
+    # Hand-written files lack frontmatter, so the search title falls back to the
+    # filename stem (existing search behavior — title casing is incidental here).
+    assert "alpha" in titles_all          # has both terms
+    assert "beta" in titles_partial       # has only "foo"
+    assert out["total"] == 2
+
+
+def test_search_caps_and_truncation(tmp_vault):
+    for i in range(5):
+        (tmp_vault / "research" / f"p{i}.md").write_text(f"# P{i}\n\nfoo\n")
+    out = _svc(tmp_vault).search("foo", limit=2)
+    assert len(out["all"]) == 2
+    assert out["shown"] == 2
+    assert out["total"] == 5
+    assert out["truncated"] is True
+
+
+def test_search_empty(tmp_vault):
+    out = _svc(tmp_vault).search("zzzznomatch")
+    assert out == {"all": [], "partial": [], "total": 0, "shown": 0, "truncated": False}
