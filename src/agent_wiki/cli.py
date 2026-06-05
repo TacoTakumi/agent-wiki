@@ -75,7 +75,9 @@ def init(path, url, token, clear):
 @click.argument("files", nargs=-1, required=True)
 @click.option("--topic", "-t", default=None, help="Target topic folder")
 @click.option("--tags", default=None, help="Comma-separated tags")
-def ingest(files, topic, tags):
+@click.option("--update", is_flag=True, default=False,
+              help="Overwrite an existing raw file and update its wiki page")
+def ingest(files, topic, tags, update):
     """Ingest files into the wiki vault."""
     svc = _service()
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
@@ -88,13 +90,22 @@ def ingest(files, topic, tags):
         else:
             expanded.append(pattern)
 
+    skipped = 0
     for file_path in expanded:
         path = Path(file_path)
         try:
-            out = svc.ingest(path, topic=topic, tags=tag_list)
-            click.echo(f"Ingested {path.name} -> {out['page']}")
+            out = svc.ingest(path, topic=topic, tags=tag_list, update=update)
+            verb = "Updated" if update else "Ingested"
+            click.echo(f"{verb} {path.name} -> {out['page']}")
+        except FileExistsError:
+            click.echo(f"skipped: {path.name} already exists — use --update to overwrite",
+                       err=True)
+            skipped += 1
         except FileNotFoundError as e:
-            raise click.ClickException(str(e))
+            click.echo(f"skipped: {e}", err=True)
+            skipped += 1
+    if skipped:
+        sys.exit(1)
 
 
 def _echo_result(r, show_coverage=False):

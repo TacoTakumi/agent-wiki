@@ -185,3 +185,32 @@ def test_show_command_binary_file_errors(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["show", "raw/blob.bin"])
     assert result.exit_code == 1
     assert "cannot display binary file" in result.output
+
+
+def test_cli_ingest_collision_skips_and_exits(tmp_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    runner = CliRunner()
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    assert runner.invoke(cli, ["ingest", str(src), "-t", "research"]).exit_code == 0
+
+    clash = tmp_path / "sub" / "notes.md"
+    clash.parent.mkdir()
+    clash.write_text("# Clash\n\nx\n")
+    res = runner.invoke(cli, ["ingest", str(clash), "-t", "research"])
+    assert res.exit_code == 1
+    assert "already exists" in res.output
+
+
+def test_cli_ingest_update_succeeds(tmp_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    runner = CliRunner()
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    runner.invoke(cli, ["ingest", str(src), "-t", "research"])
+    src.write_text("# Notes\n\nv2\n")
+    res = runner.invoke(cli, ["ingest", str(src), "-t", "research", "--update"])
+    assert res.exit_code == 0
+    assert "Updated" in res.output
