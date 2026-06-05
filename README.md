@@ -396,10 +396,10 @@ an HTTP round-trip — every command behaves the same either way.
 
 ### Server host
 
-Install the server extra and run the daemon:
+The HTTP server ships in the default install — no extra to install. Add a token
+and run the daemon:
 
 ```bash
-pip install 'agent-wiki[server]'
 awiki token add laptop --role admin   # prints the secret ONCE; only its hash is stored
 awiki serve                           # binds 127.0.0.1:8731 by default
 ```

@@ -476,10 +476,7 @@ def token_revoke(name):
 @click.option("--port", default=None, type=int, help="Port (default from server.yaml or 8731).")
 def serve(bind, port):
     """Run the agent-wiki HTTP server for the LOCAL vault (server host)."""
-    try:
-        import uvicorn
-    except ImportError:
-        raise click.ClickException("server extra not installed: pip install 'agent-wiki[server]'")
+    import uvicorn
     from agent_wiki.server_config import load_server_config
     from agent_wiki.server.app import create_app
 
