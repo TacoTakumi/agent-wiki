@@ -47,3 +47,21 @@ def test_init_local_still_works(tmp_path, monkeypatch):
     res = CliRunner().invoke(cli, ["init", str(target)])
     assert res.exit_code == 0
     assert (target / "wiki.yaml").exists()
+
+
+def test_init_help_shows_remote_url_shape():
+    # The --remote help text must show the expected URL shape (scheme + port),
+    # not just "server URL", so users know it isn't a bare host:port.
+    res = CliRunner().invoke(cli, ["init", "--help"])
+    assert res.exit_code == 0
+    assert "http://host:8731" in res.output
+
+
+def test_init_remote_prompt_shows_url_example(tmp_path, monkeypatch):
+    # The interactive "Server URL" prompt must include an example so the user
+    # knows to enter a full base URL with scheme and port.
+    cd = tmp_path / "config"
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cd))
+    res = CliRunner().invoke(cli, ["init"], input="r\nhttp://myhost:8731\nsecret\n")
+    assert res.exit_code == 0
+    assert "Server URL (e.g. http://host:8731)" in res.output

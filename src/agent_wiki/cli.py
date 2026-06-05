@@ -27,7 +27,9 @@ def cli():
 
 @cli.command()
 @click.argument("path", default=None, required=False, type=click.Path())
-@click.option("--remote", "url", default=None, help="Set up a REMOTE vault (server URL).")
+@click.option("--remote", "url", default=None,
+              help="Set up a REMOTE vault: full base URL incl. scheme and port, "
+                   "e.g. http://host:8731 (no path).")
 @click.option("--token", default=None, help="Bearer token for the remote server.")
 @click.option("--clear", "clear", is_flag=True, default=False,
               help="Remove remote-server config from this client.")
@@ -50,7 +52,7 @@ def init(path, url, token, clear):
         mode = click.prompt("Set up (l)ocal or (r)emote vault?",
                             type=click.Choice(["l", "r"]), default="l")
         if mode == "r":
-            url = click.prompt("Server URL")
+            url = click.prompt("Server URL (e.g. http://host:8731)")
             token = click.prompt("Token", hide_input=True)
         else:
             path = click.prompt("Vault path", default=".")
