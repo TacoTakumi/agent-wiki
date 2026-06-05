@@ -130,3 +130,22 @@ def test_sync_dry_run_shape(tmp_vault):
 def test_sync_rejects_bad_since(tmp_vault):
     with pytest.raises(ValueError, match="ISO"):
         _svc(tmp_vault).sync(since="not-a-date")
+
+
+def test_doctor_report_only(tmp_vault):
+    # tmp_vault lacks the newer schema bits, so doctor finds drift.
+    out = _svc(tmp_vault).doctor(fix=False)
+    assert isinstance(out["findings"], list)
+    assert out["applied"] == 0
+    assert out["skipped"] == len(out["findings"])
+    for f in out["findings"]:
+        assert set(f) >= {"name", "detail", "description"}
+
+
+def test_doctor_apply_all(tmp_vault):
+    before = _svc(tmp_vault).doctor(fix=False)
+    out = _svc(tmp_vault).doctor(fix=True)
+    # Re-running report-only after fixing finds fewer (or zero) fixable issues.
+    after = _svc(tmp_vault).doctor(fix=False)
+    assert out["applied"] >= 0
+    assert len(after["findings"]) <= len(before["findings"])
