@@ -20,6 +20,7 @@ from agent_wiki.doctor import SourcePathMissing, run_checks
 from agent_wiki.index import rebuild_index as _rebuild_index
 from agent_wiki.ingest import ingest_file
 from agent_wiki.lint import lint_vault
+from agent_wiki.locking import file_lock
 from agent_wiki.log import read_log
 from agent_wiki.page import parse_page, render_page
 from agent_wiki.search import search_vault
@@ -151,7 +152,8 @@ class LocalVaultService(VaultService):
     # --- writes ---
     def ingest(self, source: Path, topic: str | None = None,
                tags: list[str] | None = None) -> dict:
-        page_path = ingest_file(source, self.vault_path, topic=topic, tags=tags)
+        with file_lock(self.vault_path, "log"):
+            page_path = ingest_file(source, self.vault_path, topic=topic, tags=tags)
         meta = parse_page(page_path)["meta"] or {}
         return {
             "page": str(page_path.relative_to(self.vault_path)),
@@ -173,17 +175,19 @@ class LocalVaultService(VaultService):
             shutil.copy2(src, bundle_in_vault)
         summarizer = None if no_summarize else _build_summarizer(config)
         redactor = _build_redactor(config)
-        page_path = _ingest_conversation(
-            bundle_in_vault, self.vault_path,
-            summarizer=summarizer, redactor=redactor,
-        )
+        with file_lock(self.vault_path, "log"):
+            page_path = _ingest_conversation(
+                bundle_in_vault, self.vault_path,
+                summarizer=summarizer, redactor=redactor,
+            )
         return {
             "page": str(page_path.relative_to(self.vault_path)),
             "bundle": bundle_in_vault.name,
         }
 
     def rebuild_index(self) -> dict:
-        _rebuild_index(self.vault_path)
+        with file_lock(self.vault_path, "index"):
+            _rebuild_index(self.vault_path)
         return {"ok": True}
 
     def sync(self, source: str | None = None, since: str | None = None,
@@ -203,8 +207,12 @@ class LocalVaultService(VaultService):
                     sources_cfg[name]["include_live"] = True
         summarizer = _build_summarizer(config) if not dry_run else None
         redactor = _build_redactor(config) if not dry_run else None
-        results = _sync(self.vault_path, source=source, dry_run=dry_run,
-                        since=since_dt, summarizer=summarizer, redactor=redactor)
+        if dry_run:
+            results = _sync(self.vault_path, source=source, dry_run=True, since=since_dt)
+        else:
+            with file_lock(self.vault_path, "log"), file_lock(self.vault_path, "index"):
+                results = _sync(self.vault_path, source=source, dry_run=False,
+                                since=since_dt, summarizer=summarizer, redactor=redactor)
         counts = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
         out = []
         for r in results:
@@ -242,15 +250,16 @@ class LocalVaultService(VaultService):
         applied = 0
         skipped = 0
         if fix and not dry_run:
-            for f in findings:
-                if isinstance(f.check, SourcePathMissing):  # informational only
-                    skipped += 1
-                    continue
-                try:
-                    f.check.fix(self.vault_path)
-                    applied += 1
-                except Exception:
-                    skipped += 1
+            with file_lock(self.vault_path, "log"):
+                for f in findings:
+                    if isinstance(f.check, SourcePathMissing):  # informational only
+                        skipped += 1
+                        continue
+                    try:
+                        f.check.fix(self.vault_path)
+                        applied += 1
+                    except Exception:
+                        skipped += 1
         else:
             skipped = len(findings)
         return {"findings": out_findings, "applied": applied, "skipped": skipped}
