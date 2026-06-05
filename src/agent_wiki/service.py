@@ -16,7 +16,7 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.context import run_context
 from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
 from agent_wiki.conversation import ingest_conversation as _ingest_conversation
-from agent_wiki.doctor import SourcePathMissing, run_checks
+from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
 from agent_wiki.index import rebuild_index as _rebuild_index
 from agent_wiki.ingest import ingest_file
 from agent_wiki.lint import lint_vault
@@ -82,7 +82,8 @@ class VaultService(ABC):
     def adapt(self, source: str, ref: str, output: str | None = None) -> dict: ...
 
     @abstractmethod
-    def doctor(self, fix: bool = False, dry_run: bool = False) -> dict: ...
+    def doctor(self, fix: bool = False, dry_run: bool = False,
+               reconcile_raw: bool = False) -> dict: ...
 
 
 class LocalVaultService(VaultService):
@@ -241,7 +242,8 @@ class LocalVaultService(VaultService):
         path = write_bundle(conv, self.vault_path)
         return {"bundle": str(path.relative_to(self.vault_path))}
 
-    def doctor(self, fix: bool = False, dry_run: bool = False) -> dict:
+    def doctor(self, fix: bool = False, dry_run: bool = False,
+               reconcile_raw: bool = False) -> dict:
         findings = run_checks(self.vault_path)
         out_findings = [
             {"name": f.check.name, "detail": f.detail,
@@ -250,10 +252,17 @@ class LocalVaultService(VaultService):
         ]
         applied = 0
         skipped = 0
-        if fix and not dry_run:
+        if (fix or reconcile_raw) and not dry_run:
             with file_lock(self.vault_path, "log"):
                 for f in findings:
                     if isinstance(f.check, SourcePathMissing):  # informational only
+                        skipped += 1
+                        continue
+                    if isinstance(f.check, RawContentDrift):
+                        if not reconcile_raw:                   # never via blanket --fix
+                            skipped += 1
+                            continue
+                    elif not fix:                               # schema fix needs --fix
                         skipped += 1
                         continue
                     try:
