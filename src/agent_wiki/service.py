@@ -9,11 +9,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+from agent_wiki.config import load_vault_config
 from agent_wiki.context import run_context
+from agent_wiki.conversation import BUNDLE_SUBDIR
 from agent_wiki.lint import lint_vault
 from agent_wiki.log import read_log
 from agent_wiki.search import search_vault
 from agent_wiki.show import read_vault_bytes, read_vault_file
+from agent_wiki.sync import synced_count
 
 
 class VaultService(ABC):
@@ -28,6 +31,9 @@ class VaultService(ABC):
 
     @abstractmethod
     def read_bytes(self, rel: str) -> bytes: ...
+
+    @abstractmethod
+    def status(self) -> dict: ...
 
     @abstractmethod
     def log(self, last: int | None = None) -> list[str]: ...
@@ -66,6 +72,33 @@ class LocalVaultService(VaultService):
 
     def read_bytes(self, rel: str) -> bytes:
         return read_vault_bytes(self.vault_path, rel)
+
+    def status(self) -> dict:
+        vault = self.vault_path
+        config = load_vault_config(vault)
+        topics_out = []
+        total = 0
+        for topic in config.get("topics", []):
+            topic_dir = vault / topic
+            if not topic_dir.is_dir():
+                continue
+            count = len(list(topic_dir.rglob("*.md")))
+            total += count
+            topics_out.append({"topic": topic, "count": count})
+        raw_dir = vault / "raw"
+        raw = len([p for p in raw_dir.iterdir() if p.is_file()]) if raw_dir.is_dir() else 0
+        sessions_dir = vault / BUNDLE_SUBDIR
+        bundles = len(list(sessions_dir.glob("*.md"))) if sessions_dir.is_dir() else 0
+        recent = read_log(vault, last=1)
+        return {
+            "vault": str(vault),
+            "topics": topics_out,
+            "raw": raw,
+            "bundles": bundles,
+            "sessions_synced": synced_count(vault),
+            "total": total,
+            "last_activity": recent[0] if recent else None,
+        }
 
     def log(self, last: int | None = None) -> list[str]:
         return read_log(self.vault_path, last=last)
