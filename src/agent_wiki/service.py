@@ -16,6 +16,7 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.context import run_context
 from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
 from agent_wiki.conversation import ingest_conversation as _ingest_conversation
+from agent_wiki.doctor import SourcePathMissing, run_checks
 from agent_wiki.index import rebuild_index as _rebuild_index
 from agent_wiki.ingest import ingest_file
 from agent_wiki.lint import lint_vault
@@ -78,6 +79,9 @@ class VaultService(ABC):
 
     @abstractmethod
     def adapt(self, source: str, ref: str, output: str | None = None) -> dict: ...
+
+    @abstractmethod
+    def doctor(self, fix: bool = False, dry_run: bool = False) -> dict: ...
 
 
 class LocalVaultService(VaultService):
@@ -227,3 +231,26 @@ class LocalVaultService(VaultService):
             return {"bundle": str(out_path)}
         path = write_bundle(conv, self.vault_path)
         return {"bundle": str(path.relative_to(self.vault_path))}
+
+    def doctor(self, fix: bool = False, dry_run: bool = False) -> dict:
+        findings = run_checks(self.vault_path)
+        out_findings = [
+            {"name": f.check.name, "detail": f.detail,
+             "description": f.check.description}
+            for f in findings
+        ]
+        applied = 0
+        skipped = 0
+        if fix and not dry_run:
+            for f in findings:
+                if isinstance(f.check, SourcePathMissing):  # informational only
+                    skipped += 1
+                    continue
+                try:
+                    f.check.fix(self.vault_path)
+                    applied += 1
+                except Exception:
+                    skipped += 1
+        else:
+            skipped = len(findings)
+        return {"findings": out_findings, "applied": applied, "skipped": skipped}
