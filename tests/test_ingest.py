@@ -168,6 +168,23 @@ def test_update_multiple_linked_pages_errors(tmp_vault, tmp_path):
     source.write_text("# Dup\n\nnew\n")
     with pytest.raises(ValueError):
         ingest_file(source, tmp_vault, topic="research", update=True)
+    assert (tmp_vault / "raw" / "dup.md").read_text() == "x\n"
+
+
+def test_update_destination_collision_errors(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Old Title\n\nbody\n")
+    ingest_file(source, tmp_vault, topic="research")
+    # A different page already occupies the slug the new title maps to.
+    (tmp_vault / "research" / "new-title.md").write_text(
+        "---\ntitle: New Title\ntopic: research\nsources: []\n---\n\nother content\n"
+    )
+    source.write_text("# New Title\n\nbody\n")
+    with pytest.raises(ValueError, match="already exists"):
+        ingest_file(source, tmp_vault, topic="research", update=True)
+    # neither the colliding page nor raw is clobbered
+    assert "other content" in (tmp_vault / "research" / "new-title.md").read_text()
+    assert (tmp_vault / "raw" / "notes.md").read_text() == "# Old Title\n\nbody\n"
 
 
 def test_update_logs_update_action(tmp_vault, tmp_path):

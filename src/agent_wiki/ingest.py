@@ -70,21 +70,30 @@ def ingest_file(
     slug = slugify(title)
     today = date.today().isoformat()
 
-    # On update, find the existing page(s) BEFORE mutating raw so an ambiguous
-    # case fails without side effects.
-    existing: list[Path] = []
+    # On update, resolve the target page and run ALL pre-flight checks BEFORE
+    # mutating raw, so any failure leaves the vault untouched.
+    old_path: Path | None = None
+    old_meta: dict = {}
+    new_path: Path | None = None
+    eff_topic = topic or vault_config.get("default_topic", "research")
     if update:
         existing = _find_pages_by_source(vault_path, raw_ref, vault_config.get("topics", []))
         if len(existing) > 1:
             joined = ", ".join(str(p.relative_to(vault_path)) for p in existing)
             raise ValueError(f"multiple pages link {raw_ref}; reconcile manually: {joined}")
+        if existing:
+            old_path = existing[0]
+            old_meta = parse_page(old_path)["meta"] or {}
+            eff_topic = topic or old_meta.get("topic") or vault_config.get("default_topic", "research")
+            new_path = vault_path / eff_topic / f"{slug}.md"
+            if new_path.resolve() != old_path.resolve() and new_path.exists():
+                raise ValueError(
+                    f"cannot update: target page {new_path.relative_to(vault_path)} already exists"
+                )
 
     shutil.copy2(source, raw_dest)
 
-    if update and existing:
-        old_path = existing[0]
-        old_meta = parse_page(old_path)["meta"] or {}
-        eff_topic = topic or old_meta.get("topic") or vault_config.get("default_topic", "research")
+    if update and old_path is not None:
         meta = {
             "title": title,
             "topic": eff_topic,
@@ -93,11 +102,6 @@ def ingest_file(
             "updated": today,
             "sources": _merge_sources(old_meta.get("sources"), raw_ref),
         }
-        new_path = vault_path / eff_topic / f"{slug}.md"
-        if new_path.resolve() != old_path.resolve() and new_path.exists():
-            raise ValueError(
-                f"cannot update: target page {new_path.relative_to(vault_path)} already exists"
-            )
         new_path.parent.mkdir(parents=True, exist_ok=True)
         new_path.write_text(render_page(meta, content))
         if new_path.resolve() != old_path.resolve():
@@ -106,7 +110,6 @@ def ingest_file(
         return new_path
 
     # Fresh page: a normal ingest, or an update whose raw had no linked page.
-    eff_topic = topic or vault_config.get("default_topic", "research")
     meta = {
         "title": title,
         "topic": eff_topic,
