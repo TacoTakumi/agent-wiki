@@ -6,6 +6,7 @@ the vault may be version-controlled/synced and must never carry token hashes.
 from __future__ import annotations
 
 import hashlib
+import secrets
 from pathlib import Path
 
 import yaml
@@ -50,3 +51,32 @@ def role_for_token(token: str, config: dict) -> str | None:
 
 def role_rank(role: str) -> int:
     return _ROLES.get(role, -1)
+
+
+def generate_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def add_token(name: str, role: str) -> str:
+    if role not in _ROLES:
+        raise ValueError(f"unknown role: {role}")
+    config = load_server_config()
+    if any(t.get("name") == name for t in config["tokens"]):
+        raise ValueError(f"token named {name!r} already exists")
+    secret = generate_token()
+    config["tokens"].append({"name": name, "role": role, "hash": hash_token(secret)})
+    save_server_config(config)
+    return secret
+
+
+def list_tokens() -> list[dict]:
+    return [{"name": t.get("name"), "role": t.get("role")}
+            for t in load_server_config().get("tokens", [])]
+
+
+def revoke_token(name: str) -> bool:
+    config = load_server_config()
+    before = len(config["tokens"])
+    config["tokens"] = [t for t in config["tokens"] if t.get("name") != name]
+    save_server_config(config)
+    return len(config["tokens"]) < before
