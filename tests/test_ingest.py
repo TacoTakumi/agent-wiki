@@ -74,3 +74,108 @@ def test_ingest_appends_to_log(tmp_vault, tmp_path):
 def test_ingest_nonexistent_file(tmp_vault, tmp_path):
     with pytest.raises(FileNotFoundError):
         ingest_file(tmp_path / "nope.md", tmp_vault)
+
+
+def test_ingest_refuses_existing_raw(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n\nv1\n")
+    ingest_file(source, tmp_vault, topic="research")
+
+    other = tmp_path / "other" / "notes.md"
+    other.parent.mkdir()
+    other.write_text("# Other\n\nclash\n")
+    with pytest.raises(FileExistsError):
+        ingest_file(other, tmp_vault, topic="research")
+    # raw/ untouched by the refused ingest
+    assert (tmp_vault / "raw" / "notes.md").read_text() == "# Notes\n\nv1\n"
+
+
+def test_update_rewrites_linked_page(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n\nv1\n")
+    page = ingest_file(source, tmp_vault, topic="research")
+    created = parse_page(page)["meta"]["created"]
+
+    source.write_text("# Notes\n\nv2 updated\n")
+    result = ingest_file(source, tmp_vault, topic="research", update=True)
+
+    assert result == page                      # same slug -> same path
+    meta = parse_page(result)["meta"]
+    assert "v2 updated" in parse_page(result)["body"]
+    assert meta["created"] == created          # preserved
+    assert meta["updated"]                      # present (today)
+    assert meta["sources"] == ["raw/notes.md"]
+    assert (tmp_vault / "raw" / "notes.md").read_text() == "# Notes\n\nv2 updated\n"
+
+
+def test_update_renames_on_title_change(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Old Title\n\nbody\n")
+    old_page = ingest_file(source, tmp_vault, topic="research")
+
+    source.write_text("# New Title\n\nbody\n")
+    result = ingest_file(source, tmp_vault, topic="research", update=True)
+
+    assert result.name == "new-title.md"
+    assert result.exists()
+    assert not old_page.exists()               # old slug removed
+    assert parse_page(result)["meta"]["sources"] == ["raw/notes.md"]
+
+
+def test_update_moves_on_topic_change(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n\nbody\n")
+    old_page = ingest_file(source, tmp_vault, topic="research")
+
+    result = ingest_file(source, tmp_vault, topic="tools", update=True)
+
+    assert result.parent.name == "tools"
+    assert not old_page.exists()
+    assert parse_page(result)["meta"]["topic"] == "tools"
+
+
+def test_update_keeps_tags_unless_overridden(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n\nbody\n")
+    ingest_file(source, tmp_vault, topic="research", tags=["a", "b"])
+
+    kept = ingest_file(source, tmp_vault, topic="research", update=True)
+    assert parse_page(kept)["meta"]["tags"] == ["a", "b"]
+
+    replaced = ingest_file(source, tmp_vault, topic="research",
+                           tags=["c"], update=True)
+    assert parse_page(replaced)["meta"]["tags"] == ["c"]
+
+
+def test_update_no_linked_page_creates_fresh(tmp_vault, tmp_path):
+    # raw exists but no page references it
+    (tmp_vault / "raw" / "orphan.md").write_text("old\n")
+    source = tmp_path / "orphan.md"
+    source.write_text("# Orphan\n\nfresh\n")
+
+    result = ingest_file(source, tmp_vault, topic="research", update=True)
+    assert result.exists()
+    assert parse_page(result)["meta"]["sources"] == ["raw/orphan.md"]
+
+
+def test_update_multiple_linked_pages_errors(tmp_vault, tmp_path):
+    (tmp_vault / "raw" / "dup.md").write_text("x\n")
+    for name in ("one", "two"):
+        (tmp_vault / "research" / f"{name}.md").write_text(
+            "---\ntitle: " + name + "\ntopic: research\nsources:\n- raw/dup.md\n---\n\nbody\n"
+        )
+    source = tmp_path / "dup.md"
+    source.write_text("# Dup\n\nnew\n")
+    with pytest.raises(ValueError):
+        ingest_file(source, tmp_vault, topic="research", update=True)
+
+
+def test_update_logs_update_action(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n\nv1\n")
+    ingest_file(source, tmp_vault, topic="research")
+    source.write_text("# Notes\n\nv2\n")
+    ingest_file(source, tmp_vault, topic="research", update=True)
+
+    log = (tmp_vault / "log.md").read_text()
+    assert "update: notes.md" in log
