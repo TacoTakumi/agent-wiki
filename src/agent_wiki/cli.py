@@ -162,6 +162,15 @@ def show(path):
     click.echo(content, nl=False)
 
 
+@cli.command()
+@click.option("--raw", is_flag=True, default=False,
+              help="Print only the marker-wrapped block (no agent header).")
+def directions(raw):
+    """Print self-installing instructions for wiring awiki into an agent."""
+    from agent_wiki.directions import render_directions
+    click.echo(render_directions(raw=raw), nl=False)
+
+
 @cli.command("index")
 def index_cmd():
     """Rebuild the wiki index."""
