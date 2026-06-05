@@ -387,6 +387,66 @@ default_topic: research
 
 Add new topics by editing this file and creating the corresponding directory.
 
+## Network server
+
+A vault can be served over HTTP so a remote AI assistant reads from and contributes
+to the same vault using the **same `awiki` CLI** as a transparent client. The CLI
+talks to a `VaultService` facade; locally that's an in-process call, remotely it's
+an HTTP round-trip — every command behaves the same either way.
+
+### Server host
+
+Install the server extra and run the daemon:
+
+```bash
+pip install 'agent-wiki[server]'
+awiki token add laptop --role admin   # prints the secret ONCE; only its hash is stored
+awiki serve                           # binds 127.0.0.1:8731 by default
+```
+
+Tokens live in `~/.config/agent-wiki/server.yaml` (respects `AGENT_WIKI_CONFIG_DIR`),
+**never** in the vault. Manage them with:
+
+```bash
+awiki token add <name> --role reader|writer|admin
+awiki token list      # names + roles only, never secrets
+awiki token revoke <name>
+```
+
+Roles are ranked `reader < writer < admin`: readers can search/show/status/log/lint/context,
+writers can additionally ingest/index/sync/adapt, and `doctor` requires admin.
+
+Run it under systemd with the sample unit in [`docs/agent-wiki.service`](docs/agent-wiki.service)
+(adjust `User=` and the `ExecStart` path).
+
+### TLS
+
+`awiki serve` speaks plain HTTP and binds to loopback by default. For remote access,
+terminate TLS at a reverse proxy (nginx/Caddy) in front of it and point clients at the
+HTTPS URL — the server itself does not manage certificates.
+
+### Remote client
+
+On another machine, point the CLI at the server:
+
+```bash
+awiki init --remote https://wiki.example.com --token <secret>
+awiki search "raft consensus"   # transparently runs over HTTP
+awiki init --clear              # drop the remote config from this client
+```
+
+Local and remote vaults are mutually exclusive: setting one clears the other.
+
+### Server-host semantics
+
+A few commands act on the **server's** machine, not the client's:
+
+- `sync` and `adapt` read the *server's* configured session directories and take
+  *server-side* paths/refs — they do not see files on the client.
+- `hook` is always local (it wires the client's agent CLI; there is no server hook).
+- Mutating operations serialize via per-vault file locks; under contention a request
+  may return `503` (the CLI surfaces this as "server busy, try again").
+
 ## Future Roadmap
 
 These are planned but not yet implemented:
