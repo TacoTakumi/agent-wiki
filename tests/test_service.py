@@ -91,3 +91,26 @@ def test_status_counts(tmp_vault):
     assert st["raw"] == 1
     assert st["sessions_synced"] == 0
     assert st["last_activity"]  # most recent log entry string
+
+
+def test_ingest_returns_structured_result(tmp_vault):
+    src = tmp_vault / "doc.md"
+    src.write_text("# Doc Title\n\nbody text\n")
+    out = _svc(tmp_vault).ingest(src, topic="research", tags=["x"])
+    assert out["title"] == "Doc Title"
+    assert out["topic"] == "research"
+    assert out["page"] == "research/doc-title.md"
+    assert out["sources"] == ["raw/doc.md"]
+    assert (tmp_vault / "research" / "doc-title.md").exists()
+
+
+def test_ingest_conversation_returns_page(tmp_vault):
+    bundle = tmp_vault / "raw" / "sessions" / "claude-abc.md"
+    bundle.parent.mkdir(parents=True, exist_ok=True)
+    bundle.write_text(
+        "---\ntype: conversation\nagent: claude\nsession_id: abc\ntitle: Chat\n---\n\nhi\n"
+    )
+    out = _svc(tmp_vault).ingest_conversation(bundle, no_summarize=True)
+    assert out["page"].endswith(".md")
+    assert out["bundle"] == "claude-abc.md"
+    assert (tmp_vault / out["page"]).exists()
