@@ -235,6 +235,17 @@ def test_raw_content_drift_detect(tmp_vault, tmp_path):
     assert "d.md" in finding.detail
 
 
+def test_raw_content_drift_skips_binary_raw(tmp_vault):
+    from agent_wiki.doctor import RawContentDrift
+    # A page whose source points at a non-UTF-8 raw file must be skipped, not crash.
+    (tmp_vault / "raw" / "blob.bin").write_bytes(b"\xff\xfe\x00\x01binary")
+    (tmp_vault / "research" / "blob.md").write_text(
+        "---\ntitle: Blob\ntopic: research\nsources:\n- raw/blob.bin\n---\n\nbody\n"
+    )
+    # Does not raise; the undecodable raw source is simply not reported as drift.
+    assert RawContentDrift().detect(tmp_vault) is None
+
+
 def _drift_vault(tmp_vault, tmp_path):
     from agent_wiki.ingest import ingest_file
     src = tmp_path / "d.md"
