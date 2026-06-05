@@ -9,17 +9,13 @@ import click
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
 from agent_wiki.doctor import SourcePathMissing, run_checks
-from agent_wiki.service import LocalVaultService
 from agent_wiki.vault import init_vault
 
 
 def _service():
-    """Resolve the configured vault into a VaultService.
-
-    Phase 1: always local. Phase 6 swaps this for config.get_backend() so a
-    configured remote vault transparently routes over HTTP.
-    """
-    return LocalVaultService(get_vault_path())
+    """Resolve the configured vault into a VaultService (local or remote)."""
+    from agent_wiki.config import get_backend
+    return get_backend()
 
 
 @click.group()
@@ -30,12 +26,46 @@ def cli():
 
 
 @cli.command()
-@click.argument("path", default=".", type=click.Path())
-def init(path):
-    """Initialize a new wiki vault."""
+@click.argument("path", default=None, required=False, type=click.Path())
+@click.option("--remote", "url", default=None, help="Set up a REMOTE vault (server URL).")
+@click.option("--token", default=None, help="Bearer token for the remote server.")
+@click.option("--clear", "clear", is_flag=True, default=False,
+              help="Remove remote-server config from this client.")
+def init(path, url, token, clear):
+    """Initialize a vault: local (a path) or remote (--remote URL --token T).
+
+    With no arguments, prompts for local vs remote.
+    """
+    from agent_wiki.config import load_user_config, save_user_config
+
+    if clear:
+        cfg = load_user_config()
+        cfg.pop("server", None)
+        save_user_config(cfg)
+        click.echo("Remote server config cleared.")
+        return
+
+    # Decide mode.
+    if url is None and path is None:
+        mode = click.prompt("Set up (l)ocal or (r)emote vault?",
+                            type=click.Choice(["l", "r"]), default="l")
+        if mode == "r":
+            url = click.prompt("Server URL")
+            token = click.prompt("Token", hide_input=True)
+        else:
+            path = click.prompt("Vault path", default=".")
+
+    if url is not None:  # remote
+        if not token:
+            token = click.prompt("Token", hide_input=True)
+        save_user_config({"server": {"url": url, "token": token}})
+        click.echo(f"Connected to remote vault at {url}")
+        return
+
+    # local
     vault_path = Path(path).resolve()
     try:
-        init_vault(vault_path)
+        init_vault(vault_path)   # also writes vault_path to user config
         click.echo(f"Vault initialized at {vault_path}")
     except FileExistsError as e:
         raise click.ClickException(str(e))
@@ -212,6 +242,21 @@ def adapt(source, ref, output):
               help="Only report findings")
 def doctor(fix, dry_run):
     """Inspect the vault and offer to fix drift from current schema."""
+    svc = _service()
+    from agent_wiki.remote import RemoteVaultService
+    if isinstance(svc, RemoteVaultService):
+        out = svc.doctor(fix=fix, dry_run=dry_run)
+        if not out["findings"]:
+            click.echo("No issues found.")
+            return
+        click.echo(f"Found {len(out['findings'])} issue(s):\n")
+        for f in out["findings"]:
+            click.echo(f"  [{f['name']}] {f['detail']}")
+            click.echo(f"    → {f['description']}")
+        click.echo(f"\n{out['applied']} applied, {out['skipped']} skipped")
+        return
+
+    # local: interactive confirm loop using core checks.
     vault_path = get_vault_path()
     findings = run_checks(vault_path)
 
