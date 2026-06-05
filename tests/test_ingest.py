@@ -196,3 +196,15 @@ def test_update_logs_update_action(tmp_vault, tmp_path):
 
     log = (tmp_vault / "log.md").read_text()
     assert "update: notes.md" in log
+
+
+def test_service_ingest_update(tmp_vault):
+    from agent_wiki.service import LocalVaultService
+    svc = LocalVaultService(tmp_vault)
+    src = tmp_vault / "in.md"
+    src.write_text("# In\n\nv1\n")
+    svc.ingest(src, topic="research")
+    src.write_text("# In\n\nv2\n")
+    out = svc.ingest(src, topic="research", update=True)
+    assert out["page"] == "research/in.md"
+    assert (tmp_vault / "raw" / "in.md").read_text() == "# In\n\nv2\n"

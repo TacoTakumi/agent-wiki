@@ -66,7 +66,7 @@ class VaultService(ABC):
 
     @abstractmethod
     def ingest(self, source: Path, topic: str | None = None,
-               tags: list[str] | None = None) -> dict: ...
+               tags: list[str] | None = None, update: bool = False) -> dict: ...
 
     @abstractmethod
     def ingest_conversation(self, bundle: Path, no_summarize: bool = False) -> dict: ...
@@ -151,9 +151,10 @@ class LocalVaultService(VaultService):
 
     # --- writes ---
     def ingest(self, source: Path, topic: str | None = None,
-               tags: list[str] | None = None) -> dict:
+               tags: list[str] | None = None, update: bool = False) -> dict:
         with file_lock(self.vault_path, "log"):
-            page_path = ingest_file(source, self.vault_path, topic=topic, tags=tags)
+            page_path = ingest_file(source, self.vault_path, topic=topic,
+                                    tags=tags, update=update)
         meta = parse_page(page_path)["meta"] or {}
         return {
             "page": str(page_path.relative_to(self.vault_path)),
