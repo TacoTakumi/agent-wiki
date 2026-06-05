@@ -1,0 +1,12 @@
+[Unit]
+Description=Agent Wiki server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/awiki serve --bind 127.0.0.1 --port 8731
+Restart=on-failure
+User=rob
+
+[Install]
+WantedBy=multi-user.target

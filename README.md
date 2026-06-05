@@ -416,8 +416,39 @@ awiki token revoke <name>
 Roles are ranked `reader < writer < admin`: readers can search/show/status/log/lint/context,
 writers can additionally ingest/index/sync/adapt, and `doctor` requires admin.
 
-Run it under systemd with the sample unit in [`docs/agent-wiki.service`](docs/agent-wiki.service)
-(adjust `User=` and the `ExecStart` path).
+### Running as a service (systemd)
+
+A sample unit ships at [`agent-wiki.service`](agent-wiki.service):
+
+```ini
+[Unit]
+Description=Agent Wiki server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/awiki serve --bind 127.0.0.1 --port 8731
+Restart=on-failure
+User=rob
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Install it as a system service:
+
+```bash
+sudo cp agent-wiki.service /etc/systemd/system/
+sudoedit /etc/systemd/system/agent-wiki.service   # set User= and the ExecStart path
+sudo systemctl daemon-reload
+sudo systemctl enable --now agent-wiki
+sudo systemctl status agent-wiki                  # confirm it's running
+```
+
+Edit `User=` to the account that owns the vault, and point `ExecStart` at your
+installed `awiki` binary — run `which awiki` to find it (inside a uv venv it lives
+in `.venv/bin/awiki`, not `/usr/local/bin`). Keep `--bind`/`--port` consistent with
+how you terminate TLS in front of it (see below).
 
 ### TLS
 
