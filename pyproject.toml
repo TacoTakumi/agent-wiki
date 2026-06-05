@@ -21,5 +21,8 @@ dependencies = [
 awiki = "agent_wiki.cli:cli"
 aw = "agent_wiki.cli:cli"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_wiki"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
