@@ -122,6 +122,32 @@ def ingest(files, topic, tags, update, force):
         sys.exit(1)
 
 
+@cli.command()
+@click.argument("name")
+@click.option("--force", is_flag=True, default=False,
+              help="Rebuild even if the page has diverged from its raw source")
+def reingest(name, force):
+    """Rebuild a page from its existing raw/<name> after you edit the raw.
+
+    The canonical loop: edit raw/<name>, then `awiki reingest <name>`. It compares
+    the page to the raw and, if they differ, prints a diff and stops — review it
+    (fold anything worth keeping into the raw), then re-run with --force.
+
+    The body is taken verbatim from the raw; front matter (title from the first
+    `# H1`, tags, created) is regenerated — keep the H1 stable or the slug (and thus
+    the page path) changes, which can orphan the page.
+    """
+    try:
+        out = _service().reingest(name, force=force)
+    except PageDriftError as e:
+        if e.diff:
+            click.echo(e.diff, err=True)
+        raise click.ClickException(str(e))
+    except (FileNotFoundError, ValueError) as e:
+        raise click.ClickException(str(e))
+    click.echo(f"Reingested {name} -> {out['page']}")
+
+
 def _echo_result(r, show_coverage=False):
     """Print one search result in the standard title/path/snippet format."""
     suffix = f"  ({r['coverage']}/{r['term_count']} terms)" if show_coverage else ""

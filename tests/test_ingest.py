@@ -298,3 +298,33 @@ def test_resolve_raw_ambiguous_raises(tmp_vault):
     (tmp_vault / "raw" / "doc.txt").write_text("y\n")
     with pytest.raises(ValueError):
         resolve_raw(tmp_vault, "doc")
+
+
+def test_service_reingest_rebuilds_from_edited_raw_with_force(tmp_vault):
+    from agent_wiki.service import LocalVaultService
+    svc = LocalVaultService(tmp_vault)
+    src = tmp_vault / "n.md"
+    src.write_text("# N\n\nv1\n")
+    svc.ingest(src, topic="research")
+    (tmp_vault / "raw" / "n.md").write_text("# N\n\nv2 from raw\n")   # edit raw
+    out = svc.reingest("n", force=True)
+    assert out["page"] == "research/n.md"
+    assert "v2 from raw" in (tmp_vault / "research" / "n.md").read_text()
+
+
+def test_service_reingest_refuses_diverged_without_force(tmp_vault):
+    from agent_wiki.service import LocalVaultService
+    from agent_wiki.ingest import PageDriftError
+    svc = LocalVaultService(tmp_vault)
+    src = tmp_vault / "n.md"
+    src.write_text("# N\n\nv1\n")
+    svc.ingest(src, topic="research")
+    (tmp_vault / "raw" / "n.md").write_text("# N\n\nv2\n")
+    with pytest.raises(PageDriftError):
+        svc.reingest("n")
+
+
+def test_service_reingest_missing_raw_raises(tmp_vault):
+    from agent_wiki.service import LocalVaultService
+    with pytest.raises(FileNotFoundError):
+        LocalVaultService(tmp_vault).reingest("does-not-exist")

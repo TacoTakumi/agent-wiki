@@ -94,6 +94,11 @@ class RemoteVaultService(VaultService):
             form["force"] = "true"
         return self._check(self._c.post("/v1/ingest", files=files, data=form)).json()
 
+    def reingest(self, name: str, force: bool = False) -> dict:
+        return self._check(self._c.post("/v1/reingest", json={
+            "name": name, "force": force,
+        })).json()
+
     def ingest_conversation(self, bundle: Path, no_summarize=False) -> dict:
         files = {"file": (Path(bundle).name, Path(bundle).read_bytes(), "text/markdown")}
         form = {"no_summarize": str(no_summarize).lower()}

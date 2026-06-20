@@ -119,3 +119,21 @@ def test_ingest_force_json(client, writer_h, tmp_vault):
                          json={"filename": "f.md", "content": "# F\n\nv2\n",
                                "update": True, "force": True}, headers=writer_h)
     assert forced.status_code == 201
+
+
+def test_reingest_writer_only(client, reader_h, writer_h, tmp_vault):
+    client.post("/v1/ingest", json={"filename": "r.md", "content": "# R\n\nv1\n"},
+                headers=writer_h)
+    (tmp_vault / "raw" / "r.md").write_text("# R\n\nv2\n")
+    assert client.post("/v1/reingest", json={"name": "r"},
+                       headers=reader_h).status_code == 403
+    refused = client.post("/v1/reingest", json={"name": "r"}, headers=writer_h)
+    assert refused.status_code == 400                          # drift -> 400
+    forced = client.post("/v1/reingest", json={"name": "r", "force": True},
+                         headers=writer_h)
+    assert forced.status_code == 201
+
+
+def test_reingest_missing_404(client, writer_h):
+    assert client.post("/v1/reingest", json={"name": "nope"},
+                       headers=writer_h).status_code == 404

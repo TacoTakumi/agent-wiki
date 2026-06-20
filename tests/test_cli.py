@@ -296,3 +296,20 @@ def test_ingest_update_refuses_diverged_then_force(tmp_path, monkeypatch):
     assert forced.exit_code == 0
     assert "v2" in page.read_text()
     assert "hand edit" not in page.read_text()
+
+
+def test_reingest_command_refuses_then_force(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    src = tmp_path / "doc.md"
+    src.write_text("# Doc\n\nv1\n")
+    runner.invoke(cli, ["ingest", str(src), "--topic", "research"])
+    (vault / "raw" / "doc.md").write_text("# Doc\n\nv2 in raw\n")    # edit raw
+
+    refused = runner.invoke(cli, ["reingest", "doc"])
+    assert refused.exit_code != 0
+    assert "differs from" in refused.output
+
+    forced = runner.invoke(cli, ["reingest", "doc", "--force"])
+    assert forced.exit_code == 0
+    assert "v2 in raw" in (vault / "research" / "doc.md").read_text()

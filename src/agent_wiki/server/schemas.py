@@ -30,3 +30,8 @@ class AdaptRequest(BaseModel):
 class DoctorRequest(BaseModel):
     fix: bool = False
     dry_run: bool = False
+
+
+class ReingestRequest(BaseModel):
+    name: str
+    force: bool = False

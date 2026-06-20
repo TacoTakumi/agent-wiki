@@ -18,7 +18,7 @@ from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
 from agent_wiki.conversation import ingest_conversation as _ingest_conversation
 from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
 from agent_wiki.index import rebuild_index as _rebuild_index
-from agent_wiki.ingest import ingest_file
+from agent_wiki.ingest import ingest_file, resolve_raw
 from agent_wiki.lint import lint_vault
 from agent_wiki.locking import file_lock
 from agent_wiki.log import read_log
@@ -81,6 +81,9 @@ class VaultService(ABC):
 
     @abstractmethod
     def adapt(self, source: str, ref: str, output: str | None = None) -> dict: ...
+
+    @abstractmethod
+    def reingest(self, name: str, force: bool = False) -> dict: ...
 
     @abstractmethod
     def doctor(self, fix: bool = False, dry_run: bool = False,
@@ -165,6 +168,11 @@ class LocalVaultService(VaultService):
             "topic": meta.get("topic", topic),
             "sources": meta.get("sources", []),
         }
+
+    def reingest(self, name: str, force: bool = False) -> dict:
+        raw_path = resolve_raw(self.vault_path, name)
+        # In-place rebuild: ingest_file detects samefile and skips the copy.
+        return self.ingest(raw_path, update=True, force=force)
 
     def ingest_conversation(self, bundle: Path, no_summarize: bool = False) -> dict:
         config = load_vault_config(self.vault_path)
