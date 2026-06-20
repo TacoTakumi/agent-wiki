@@ -104,3 +104,18 @@ def test_doctor_requires_admin(client, writer_h, admin_h):
     assert client.post("/v1/doctor", json={}, headers=writer_h).status_code == 403
     r = client.post("/v1/doctor", json={"fix": False}, headers=admin_h)
     assert r.status_code == 200 and "findings" in r.json()
+
+
+def test_ingest_force_json(client, writer_h, tmp_vault):
+    client.post("/v1/ingest", json={"filename": "f.md", "content": "# F\n\nv1\n"},
+                headers=writer_h)
+    page = tmp_vault / "research" / "f.md"        # default_topic is research
+    page.write_text(page.read_text().replace("v1", "v1\n\nhand edit"))
+    refused = client.post("/v1/ingest",
+                          json={"filename": "f.md", "content": "# F\n\nv2\n",
+                                "update": True}, headers=writer_h)
+    assert refused.status_code == 400             # PageDriftError -> ValueError -> 400
+    forced = client.post("/v1/ingest",
+                         json={"filename": "f.md", "content": "# F\n\nv2\n",
+                               "update": True, "force": True}, headers=writer_h)
+    assert forced.status_code == 201
