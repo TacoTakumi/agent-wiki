@@ -19,7 +19,7 @@ from typing import Any
 import yaml
 
 from agent_wiki.config import load_vault_config
-from agent_wiki.page import parse_page
+from agent_wiki.page import parse_page, page_body_for_raw, page_raw_diverged
 from agent_wiki.vault import DEFAULT_TOPICS, _default_sources_config
 
 
@@ -57,14 +57,6 @@ def _write_config(vault_path: Path, config: dict[str, Any]) -> None:
     (vault_path / "wiki.yaml").write_text(
         yaml.dump(config, default_flow_style=False, sort_keys=False)
     )
-
-
-def _page_body_for_raw(body: str) -> str:
-    """Page body as it should appear in raw/: drop the one leading blank line
-    that render_page inserts, and normalize to a single trailing newline."""
-    if body.startswith("\n"):
-        body = body[1:]
-    return body.rstrip("\n") + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +244,6 @@ class RawContentDrift(Check):
                 continue
             for md_file in topic_dir.rglob("*.md"):
                 page = parse_page(md_file)
-                canonical = _page_body_for_raw(page["body"])
                 for src in (page["meta"].get("sources") or []):
                     if not src.startswith("raw/"):
                         continue
@@ -263,8 +254,8 @@ class RawContentDrift(Check):
                         raw_text = raw_path.read_text()
                     except UnicodeDecodeError:
                         continue  # binary raw isn't text-comparable; skip like a missing source
-                    if canonical != (raw_text.rstrip("\n") + "\n"):
-                        out.append((raw_path, canonical))
+                    if page_raw_diverged(page["body"], raw_text):
+                        out.append((raw_path, page_body_for_raw(page["body"])))
         return out
 
     def detect(self, vault_path: Path) -> Finding | None:

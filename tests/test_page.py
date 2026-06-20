@@ -70,3 +70,37 @@ def test_extract_wikilinks():
 
 def test_extract_wikilinks_none():
     assert extract_wikilinks("No links here.") == set()
+
+
+from agent_wiki.page import (
+    page_body_for_raw, page_raw_diverged, page_lines_lost, page_raw_diff,
+)
+
+
+def test_page_body_for_raw_strips_leading_blank_and_normalizes_trailing():
+    # render_page inserts one leading blank line; raw should not have it.
+    assert page_body_for_raw("\n# T\n\nbody\n\n\n") == "# T\n\nbody\n"
+    assert page_body_for_raw("# T\n\nbody") == "# T\n\nbody\n"
+
+
+def test_page_raw_diverged_false_when_equivalent():
+    assert page_raw_diverged("\n# T\n\nbody\n", "# T\n\nbody\n") is False
+
+
+def test_page_raw_diverged_true_when_body_differs():
+    assert page_raw_diverged("\n# T\n\nbody plus edit\n", "# T\n\nbody\n") is True
+
+
+def test_page_lines_lost_counts_diverged_page_lines():
+    body = "\n# T\n\nkept\nhand edit one\nhand edit two\n"
+    raw = "# T\n\nkept\n"
+    assert page_lines_lost(body, raw) == 2
+
+
+def test_page_raw_diff_marks_page_losses_and_raw_gains():
+    body = "\n# T\n\nold line\n"
+    raw = "# T\n\nnew line\n"
+    diff = page_raw_diff(body, raw, "page:research/t.md", "raw:raw/t.md")
+    assert "-old line" in diff
+    assert "+new line" in diff
+    assert "page:research/t.md" in diff and "raw:raw/t.md" in diff
