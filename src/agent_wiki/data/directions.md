@@ -1,9 +1,11 @@
 ## Knowledge base: the Agent Wiki (awiki)
 
-This project's durable knowledge — decisions, research, tool/config
-details, and hard-won findings — lives in the **Agent Wiki**, a local
-markdown vault queried through the `awiki` CLI. Prefer it over
-re-deriving facts or searching the web.
+Durable knowledge — decisions, research, tool/config details, and
+hard-won findings — lives in the **Agent Wiki**, a single markdown vault
+**shared across all your projects** (and the assistant itself), queried
+through the `awiki` CLI. Prefer it over re-deriving facts or searching the
+web. Because the vault is shared, what you save here is available from every
+other project — and you can draw on theirs from here.
 
 **Search first, then read the full page:**
 

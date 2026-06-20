@@ -48,13 +48,16 @@ def test_render_directions_default_includes_header_and_block():
     assert render_block() in out
 
 
-def test_render_directions_header_instructs_version_upgrade():
+def test_render_directions_header_instructs_version_readapt():
     out = render_directions()
     lower = out.lower()
-    # the idempotency rule is now a version comparison: replace an older block
-    assert "version" in lower
-    assert "older" in lower
-    assert "replace" in lower
+    # upgrade path re-adapts (preserving project customizations) rather than
+    # blindly replacing — but copies the literal awiki commands verbatim.
+    assert "older" in lower       # triggered by an older installed version
+    assert "re-adapt" in lower
+    assert "preserv" in lower     # preserve project-specific wording
+    assert "verbatim" in lower    # literal awiki commands copied as-is
+    assert "replace" not in lower  # not a blind wholesale replace
 
 
 def test_render_directions_raw_omits_header_keeps_block():
@@ -83,6 +86,23 @@ def test_cli_directions_raw_flag_omits_header():
     assert "SET UP THE AGENT WIKI" not in res.output
     assert f"<!-- awiki:begin v{__version__} -->" in res.output
     assert END_MARKER in res.output
+
+
+def test_cli_version_reports_package_version():
+    # The re-sync mechanism compares `awiki --version` against the version
+    # stamped in the begin marker (agent_wiki.__version__). They must share one
+    # source, or "the version increased" can never be detected.
+    res = CliRunner().invoke(cli, ["--version"])
+    assert res.exit_code == 0
+    assert __version__ in res.output
+
+
+def test_block_describes_shared_vault():
+    # The vault is one machine-wide store shared across all projects and the
+    # assistant, not a per-project one. The directions must say so.
+    lower = render_block().lower()
+    assert "shared" in lower
+    assert "all your projects" in lower
 
 
 def test_block_only_references_real_commands():
