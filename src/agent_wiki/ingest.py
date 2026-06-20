@@ -3,7 +3,6 @@ import re
 import shutil
 from datetime import date
 from pathlib import Path
-import yaml
 
 from agent_wiki.config import load_vault_config
 from agent_wiki.page import (
@@ -95,6 +94,10 @@ def ingest_file(
     With ``update=True``, overwrites an existing ``raw/<basename>`` and rewrites
     the page linked to it via its ``sources`` frontmatter. Without it, an
     existing ``raw/<basename>`` raises ``FileExistsError``.
+    With ``force=True``, skips the drift guard and overwrites the page even if
+    it has diverged from its raw source. Without force, raises ``PageDriftError``
+    (with a ``.diff`` attribute containing a unified page-vs-raw diff) if the
+    existing page body has diverged from its current raw/<name>; leaves both untouched.
     Returns the path to the created/updated wiki page.
     """
     if not source.exists():
