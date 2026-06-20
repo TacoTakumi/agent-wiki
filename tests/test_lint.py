@@ -63,3 +63,26 @@ def test_lint_missing_frontmatter(tmp_vault):
     issues = lint_vault(tmp_vault)
     fm_issues = [i for i in issues if i["type"] == "missing_frontmatter"]
     assert len(fm_issues) == 1
+
+
+def test_lint_raw_page_drift_detected(tmp_vault, tmp_path):
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "d.md"
+    src.write_text("# D\n\noriginal\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    # No drift right after ingest.
+    assert [i for i in lint_vault(tmp_vault) if i["type"] == "raw_page_drift"] == []
+    # Hand-edit the page -> drift.
+    page.write_text(page.read_text().replace("original", "edited by hand"))
+    drift = [i for i in lint_vault(tmp_vault) if i["type"] == "raw_page_drift"]
+    assert len(drift) == 1
+    assert "raw/d.md" in drift[0]["detail"]
+
+
+def test_lint_raw_page_drift_skips_binary(tmp_vault):
+    (tmp_vault / "raw" / "blob.bin").write_bytes(b"\xff\xfe\x00\x01binary")
+    (tmp_vault / "research" / "blob.md").write_text(
+        "---\ntitle: Blob\ntopic: research\nsources:\n- raw/blob.bin\n---\n\nbody\n"
+    )
+    drift = [i for i in lint_vault(tmp_vault) if i["type"] == "raw_page_drift"]
+    assert drift == []

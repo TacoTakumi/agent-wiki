@@ -1,6 +1,6 @@
 from pathlib import Path
 from agent_wiki.config import load_vault_config
-from agent_wiki.page import parse_page, extract_wikilinks
+from agent_wiki.page import parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost
 
 
 def lint_vault(vault_path: Path) -> list[dict]:
@@ -34,6 +34,25 @@ def lint_vault(vault_path: Path) -> list[dict]:
             title = page["meta"].get("title", md_file.stem)
             all_titles.add(title)
             all_pages.append({"title": title, "path": rel})
+
+            # raw <-> page body drift (read-only; direction-neutral report)
+            for src in (page["meta"].get("sources") or []):
+                if not src.startswith("raw/"):
+                    continue
+                raw_path = vault_path / src
+                if not raw_path.is_file():
+                    continue
+                try:
+                    raw_text = raw_path.read_text()
+                except UnicodeDecodeError:
+                    continue  # binary raw isn't text-comparable
+                if page_raw_diverged(page["body"], raw_text):
+                    n = page_lines_lost(page["body"], raw_text)
+                    issues.append({
+                        "type": "raw_page_drift",
+                        "path": str(rel),
+                        "detail": f"{rel} body differs from {src} ({n} line(s))",
+                    })
 
             links = extract_wikilinks(page["body"])
             all_wikilinks[str(rel)] = links

@@ -226,7 +226,8 @@ def lint():
 
     for issue in issues:
         icon = {"broken_wikilink": "LINK", "orphan": "ORPHAN",
-                "raw_not_ingested": "RAW", "missing_frontmatter": "META"}
+                "raw_not_ingested": "RAW", "missing_frontmatter": "META",
+                "raw_page_drift": "DRIFT"}
         label = icon.get(issue["type"], issue["type"].upper())
         click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
 
