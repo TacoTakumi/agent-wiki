@@ -29,14 +29,18 @@ SET UP THE AGENT WIKI FOR THIS PROJECT
    its version from the `<!-- awiki:begin vX.Y.Z -->` marker. If that version is
    the same as (or newer than) the block below, the wiki is already set up —
    STOP, change nothing.
-3. If the existing block's version is OLDER than the block below, replace the old
-   block — everything from its `<!-- awiki:begin ... -->` through
-   `<!-- awiki:end -->` — with the block below. This is a version upgrade.
+3. If the existing block's version is OLDER than the block below, re-adapt it (a
+   version upgrade) — do NOT blindly overwrite. Treat the block below as the
+   source of truth for substance and for every `awiki ...` command and skill
+   name (copy those verbatim); fold its changes into the existing block while
+   PRESERVING the project-specific wording and customizations already there;
+   then update the version in the `<!-- awiki:begin vX.Y.Z -->` marker to match.
 4. If no block exists yet, append the block below. You SHOULD adapt the prose to
    this project (its name, domain, and the surrounding file's tone) — but keep
    every `awiki ...` command, skill name (awiki-save, awiki-ingest), and the
    awiki markers (including the version) EXACTLY as written; they are literal.
-5. Keep the awiki markers intact so this command stays idempotent.
+5. Keep the begin/end markers in place so this command stays idempotent — only
+   the version inside the begin marker changes, and only on an upgrade.
 """
 
 # Visible note appended inside the block so the version travels into the agent's

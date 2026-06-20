@@ -6,6 +6,7 @@ from pathlib import Path
 
 import click
 
+from agent_wiki import __version__
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
 from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
@@ -20,7 +21,7 @@ def _service():
 
 
 @click.group()
-@click.version_option(package_name="agent-wiki")
+@click.version_option(version=__version__, prog_name="awiki")
 def cli():
     """Agent Wiki - A personal knowledge base for AI agents."""
     pass
