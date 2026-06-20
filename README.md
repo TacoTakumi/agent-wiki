@@ -264,7 +264,9 @@ awiki directions          # prints a self-installing block: tell your agent to r
 awiki directions --raw    # prints just the block, for pasting into a memory file by hand
 ```
 
-`awiki directions` emits an agent-directed header plus a canonical wiki-usage block wrapped in `<!-- awiki:begin -->` / `<!-- awiki:end -->` markers. Point an agent at it ("set up awiki usage instructions") and it will adapt the wording to your project and append the block to the right memory file; the markers make re-running idempotent. The block tells the agent to search the wiki first, read full pages with `awiki show <path>`, and save findings with the `awiki-save` skill.
+`awiki directions` emits an agent-directed header plus a canonical wiki-usage block wrapped in `<!-- awiki:begin vX.Y.Z -->` / `<!-- awiki:end -->` markers. Point an agent at it ("set up awiki usage instructions") and it will adapt the wording to your project and append the block to the right memory file; the markers make re-running idempotent. The block tells the agent to search the wiki first, read full pages with `awiki show <path>`, and save findings with the `awiki-save` skill.
+
+The begin marker carries the awiki version, and the block ends with a note telling the agent to re-run `awiki directions` whenever `awiki --version` reports something newer than that marker. On re-run, the header instructs the agent to compare versions and replace an older block in place — so directions stay current as awiki evolves.
 
 ### Auto-Context Hook (UserPromptSubmit)
 
