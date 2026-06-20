@@ -12,7 +12,7 @@ from fastapi import (
 from fastapi.responses import Response
 
 from agent_wiki.server.schemas import (
-    AdaptRequest, ContextRequest, DoctorRequest, SyncRequest,
+    AdaptRequest, ContextRequest, DoctorRequest, ReingestRequest, SyncRequest,
 )
 
 
@@ -92,6 +92,10 @@ def build_router(svc, require) -> APIRouter:
             tmp = Path(d) / Path(name).name
             tmp.write_bytes(data)
             return svc.ingest(tmp, topic=topic, tags=tag_list, update=update, force=force)
+
+    @r.post("/reingest", status_code=201)
+    def reingest(body: ReingestRequest, _: str = Depends(require("writer"))):
+        return svc.reingest(body.name, force=body.force)
 
     @r.post("/conversations", status_code=201)
     async def conversations(
