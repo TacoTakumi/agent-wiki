@@ -30,6 +30,36 @@ def _extract_title(content: str, filename: str) -> str:
     return Path(filename).stem
 
 
+def resolve_raw(vault_path: Path, name: str) -> Path:
+    """Resolve a user-given raw name to a file in raw/.
+
+    Accepts 'foo', 'foo.md', or 'raw/foo.md'. Exact basename match wins; otherwise
+    a unique stem match is used. Raises FileNotFoundError if nothing matches and
+    ValueError if the name is ambiguous.
+    """
+    raw_dir = vault_path / "raw"
+    if not raw_dir.is_dir():
+        raise FileNotFoundError("vault has no raw/ directory")
+    name = name.strip()
+    if name.startswith("raw/"):
+        name = name[len("raw/"):]
+    name = Path(name).name  # drop any other path components
+    direct = raw_dir / name
+    if direct.is_file():
+        return direct
+    stem = Path(name).stem
+    candidates = sorted(
+        p for p in raw_dir.iterdir()
+        if p.is_file() and (p.name == name or p.stem == stem)
+    )
+    if len(candidates) == 1:
+        return candidates[0]
+    if len(candidates) > 1:
+        joined = ", ".join(p.name for p in candidates)
+        raise ValueError(f"ambiguous raw name {name!r}; matches: {joined}")
+    raise FileNotFoundError(f"no raw file matching {name!r} in raw/")
+
+
 def _find_pages_by_source(vault_path: Path, raw_ref: str, topics: list[str]) -> list[Path]:
     """Return page files whose frontmatter `sources` lists `raw_ref`."""
     matches: list[Path] = []

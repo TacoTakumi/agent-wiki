@@ -275,3 +275,26 @@ def test_reingest_after_raw_edit_refuses_then_force(tmp_vault, tmp_path):
         ingest_file(raw, tmp_vault, topic="research", update=True)
     result = ingest_file(raw, tmp_vault, topic="research", update=True, force=True)
     assert "v2 edited in raw" in parse_page(result)["body"]
+
+
+def test_resolve_raw_exact_prefixed_and_stem(tmp_vault):
+    from agent_wiki.ingest import resolve_raw
+    target = tmp_vault / "raw" / "doc.md"
+    target.write_text("x\n")
+    assert resolve_raw(tmp_vault, "doc.md") == target
+    assert resolve_raw(tmp_vault, "raw/doc.md") == target
+    assert resolve_raw(tmp_vault, "doc") == target          # stem match
+
+
+def test_resolve_raw_missing_raises(tmp_vault):
+    from agent_wiki.ingest import resolve_raw
+    with pytest.raises(FileNotFoundError):
+        resolve_raw(tmp_vault, "nope")
+
+
+def test_resolve_raw_ambiguous_raises(tmp_vault):
+    from agent_wiki.ingest import resolve_raw
+    (tmp_vault / "raw" / "doc.md").write_text("x\n")
+    (tmp_vault / "raw" / "doc.txt").write_text("y\n")
+    with pytest.raises(ValueError):
+        resolve_raw(tmp_vault, "doc")
