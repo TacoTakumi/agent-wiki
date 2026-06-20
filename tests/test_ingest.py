@@ -208,3 +208,70 @@ def test_service_ingest_update(tmp_vault):
     out = svc.ingest(src, topic="research", update=True)
     assert out["page"] == "research/in.md"
     assert (tmp_vault / "raw" / "in.md").read_text() == "# In\n\nv2\n"
+
+
+def test_reingest_samefile_does_not_crash(tmp_vault, tmp_path):
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+
+    raw = tmp_vault / "raw" / "notes.md"          # the vault's OWN raw path
+    result = ingest_file(raw, tmp_vault, topic="research", update=True)
+    assert result == page
+    assert raw.read_text() == "# Notes\n\nv1\n"   # raw untouched (no copy)
+    assert "v1" in parse_page(result)["body"]
+
+
+def test_update_refuses_diverged_page_without_force(tmp_vault, tmp_path):
+    from agent_wiki.ingest import ingest_file, PageDriftError
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    page.write_text(page.read_text().replace("v1", "v1\n\nextra hand detail"))
+
+    src.write_text("# Notes\n\nv2\n")
+    with pytest.raises(PageDriftError) as exc:
+        ingest_file(src, tmp_vault, topic="research", update=True)
+    assert exc.value.diff                         # carries a unified diff
+    assert "extra hand detail" in page.read_text()  # nothing overwritten
+    assert (tmp_vault / "raw" / "notes.md").read_text() == "# Notes\n\nv1\n"
+
+
+def test_update_force_overwrites_diverged_page(tmp_vault, tmp_path):
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    page.write_text(page.read_text().replace("v1", "v1\n\nextra hand detail"))
+
+    src.write_text("# Notes\n\nv2\n")
+    result = ingest_file(src, tmp_vault, topic="research", update=True, force=True)
+    assert "v2" in parse_page(result)["body"]
+    assert "extra hand detail" not in parse_page(result)["body"]
+    assert (tmp_vault / "raw" / "notes.md").read_text() == "# Notes\n\nv2\n"
+
+
+def test_update_clean_page_not_blocked(tmp_vault, tmp_path):
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    ingest_file(src, tmp_vault, topic="research")     # page faithful to raw
+    src.write_text("# Notes\n\nv2\n")
+    result = ingest_file(src, tmp_vault, topic="research", update=True)  # no force
+    assert "v2" in parse_page(result)["body"]
+
+
+def test_reingest_after_raw_edit_refuses_then_force(tmp_vault, tmp_path):
+    # The reingest case: edit the in-vault raw, then rebuild from it.
+    from agent_wiki.ingest import ingest_file, PageDriftError
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    ingest_file(src, tmp_vault, topic="research")
+    raw = tmp_vault / "raw" / "notes.md"
+    raw.write_text("# Notes\n\nv2 edited in raw\n")    # stale page now diverges
+
+    with pytest.raises(PageDriftError):
+        ingest_file(raw, tmp_vault, topic="research", update=True)
+    result = ingest_file(raw, tmp_vault, topic="research", update=True, force=True)
+    assert "v2 edited in raw" in parse_page(result)["body"]

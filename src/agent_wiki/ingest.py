@@ -1,3 +1,4 @@
+import os
 import re
 import shutil
 from datetime import date
@@ -5,8 +6,20 @@ from pathlib import Path
 import yaml
 
 from agent_wiki.config import load_vault_config
-from agent_wiki.page import slugify, render_page, parse_page
+from agent_wiki.page import (
+    slugify, render_page, parse_page,
+    page_raw_diverged, page_lines_lost, page_raw_diff,
+)
 from agent_wiki.log import append_log
+
+
+class PageDriftError(ValueError):
+    """A reingest/update would overwrite a page that has diverged from its raw,
+    and --force was not given. `diff` is a unified page-vs-raw diff for display."""
+
+    def __init__(self, message: str, diff: str = ""):
+        super().__init__(message)
+        self.diff = diff
 
 
 def _extract_title(content: str, filename: str) -> str:
@@ -44,6 +57,7 @@ def ingest_file(
     topic: str | None = None,
     tags: list[str] | None = None,
     update: bool = False,
+    force: bool = False,
 ) -> Path:
     """Ingest a source file into the wiki vault.
 
@@ -83,7 +97,29 @@ def ingest_file(
             raise ValueError(f"multiple pages link {raw_ref}; reconcile manually: {joined}")
         if existing:
             old_path = existing[0]
-            old_meta = parse_page(old_path)["meta"] or {}
+            parsed_old = parse_page(old_path)
+            old_meta = parsed_old["meta"] or {}
+            # Data-loss guard: pages are generated from raw, so a page that differs
+            # from its current raw is an anomaly. Refuse (with a diff) unless --force.
+            if not force and raw_dest.is_file():
+                try:
+                    existing_raw = raw_dest.read_text()
+                except UnicodeDecodeError:
+                    existing_raw = None  # binary raw isn't text-comparable
+                if existing_raw is not None and page_raw_diverged(parsed_old["body"], existing_raw):
+                    page_rel = old_path.relative_to(vault_path)
+                    lost = page_lines_lost(parsed_old["body"], existing_raw)
+                    diff = page_raw_diff(parsed_old["body"], existing_raw,
+                                         f"page:{page_rel}", f"raw:{raw_ref}")
+                    raise PageDriftError(
+                        f"page {page_rel} differs from {raw_ref}: {lost} page line(s) "
+                        f"are not in the raw. awiki treats pages as generated from raw, "
+                        f"so review before overwriting. Options: fold the page's changes "
+                        f"into {raw_ref} and reingest; pass --force to discard them and "
+                        f"rebuild from raw; or `awiki doctor --reconcile-raw` to adopt the "
+                        f"page as raw.",
+                        diff=diff,
+                    )
             eff_topic = topic or old_meta.get("topic") or vault_config.get("default_topic", "research")
             new_path = vault_path / eff_topic / f"{slug}.md"
             if new_path.resolve() != old_path.resolve() and new_path.exists():
@@ -91,7 +127,9 @@ def ingest_file(
                     f"cannot update: target page {new_path.relative_to(vault_path)} already exists"
                 )
 
-    shutil.copy2(source, raw_dest)
+    # Skip the copy when source IS the destination (in-place reingest); else copy.
+    if not (raw_dest.exists() and source.exists() and os.path.samefile(source, raw_dest)):
+        shutil.copy2(source, raw_dest)
 
     if update and old_path is not None:
         meta = {
