@@ -74,13 +74,14 @@ class RemoteVaultService(VaultService):
         return self._check(self._c.post("/v1/context", json={"prompt": prompt})).json()["block"]
 
     # --- writes ---
-    def ingest(self, source: Path, topic=None, tags=None, update=False) -> dict:
+    def ingest(self, source: Path, topic=None, tags=None, update=False, force=False) -> dict:
         return self.ingest_path_bytes(
             Path(source).name, Path(source).read_bytes(),
-            topic=topic, tags=tags, update=update,
+            topic=topic, tags=tags, update=update, force=force,
         )
 
-    def ingest_path_bytes(self, filename, data, topic=None, tags=None, update=False) -> dict:
+    def ingest_path_bytes(self, filename, data, topic=None, tags=None,
+                          update=False, force=False) -> dict:
         files = {"file": (filename, data, "application/octet-stream")}
         form = {}
         if topic:
@@ -89,6 +90,8 @@ class RemoteVaultService(VaultService):
             form["tags"] = ",".join(tags)
         if update:
             form["update"] = "true"
+        if force:
+            form["force"] = "true"
         return self._check(self._c.post("/v1/ingest", files=files, data=form)).json()
 
     def ingest_conversation(self, bundle: Path, no_summarize=False) -> dict:

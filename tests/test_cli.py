@@ -262,3 +262,37 @@ def test_cli_doctor_reconcile_raw_remote_refused(monkeypatch, tmp_path):
     res = CliRunner().invoke(cli, ["doctor", "--reconcile-raw"])
     assert res.exit_code != 0
     assert "must be run on the server" in res.output
+
+
+def test_ingest_update_same_raw_path_no_crash(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    src = tmp_path / "doc.md"
+    src.write_text("# Doc\n\nv1\n")
+    assert runner.invoke(cli, ["ingest", str(src), "--topic", "research"]).exit_code == 0
+    raw = vault / "raw" / "doc.md"             # the vault's OWN raw path
+    result = runner.invoke(cli, ["ingest", "--update", str(raw)])
+    assert result.exit_code == 0
+    assert "Traceback" not in result.output
+
+
+def test_ingest_update_refuses_diverged_then_force(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    src = tmp_path / "doc.md"
+    src.write_text("# Doc\n\nv1\n")
+    runner.invoke(cli, ["ingest", str(src), "--topic", "research"])
+    page = vault / "research" / "doc.md"
+    page.write_text(page.read_text().replace("v1", "v1\n\nhand edit"))
+    src.write_text("# Doc\n\nv2\n")
+
+    refused = runner.invoke(cli, ["ingest", "--update", str(src)])
+    assert refused.exit_code == 1
+    assert "differs from" in refused.output       # message
+    assert "hand edit" in refused.output          # inline diff (a '-' line)
+    assert "hand edit" in page.read_text()        # not overwritten
+
+    forced = runner.invoke(cli, ["ingest", "--update", "--force", str(src)])
+    assert forced.exit_code == 0
+    assert "v2" in page.read_text()
+    assert "hand edit" not in page.read_text()

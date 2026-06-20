@@ -9,6 +9,7 @@ import click
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
 from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
+from agent_wiki.ingest import PageDriftError
 from agent_wiki.vault import init_vault
 
 
@@ -78,8 +79,11 @@ def init(path, url, token, clear):
 @click.option("--topic", "-t", default=None, help="Target topic folder")
 @click.option("--tags", default=None, help="Comma-separated tags")
 @click.option("--update", is_flag=True, default=False,
-              help="Overwrite an existing raw file and update its wiki page")
-def ingest(files, topic, tags, update):
+              help="Update the page for an existing raw from an EXTERNAL file. "
+                   "To rebuild after editing the vault's own raw, use `awiki reingest`.")
+@click.option("--force", is_flag=True, default=False,
+              help="Overwrite even if the page has diverged from its raw source")
+def ingest(files, topic, tags, update, force):
     """Ingest files into the wiki vault."""
     svc = _service()
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
@@ -96,9 +100,14 @@ def ingest(files, topic, tags, update):
     for file_path in expanded:
         path = Path(file_path)
         try:
-            out = svc.ingest(path, topic=topic, tags=tag_list, update=update)
+            out = svc.ingest(path, topic=topic, tags=tag_list, update=update, force=force)
             verb = "Updated" if update else "Ingested"
             click.echo(f"{verb} {path.name} -> {out['page']}")
+        except PageDriftError as e:
+            click.echo(f"refused: {path.name}: {e}", err=True)
+            if e.diff:
+                click.echo(e.diff, err=True)
+            skipped += 1
         except FileExistsError:
             click.echo(f"skipped: {path.name} already exists — use --update to overwrite",
                        err=True)

@@ -11,6 +11,7 @@ class IngestJSON(BaseModel):
     topic: str | None = None
     tags: str | None = None     # comma-separated
     update: bool = False
+    force: bool = False
 
 
 class SyncRequest(BaseModel):
