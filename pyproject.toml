@@ -6,6 +6,8 @@ build-backend = "hatchling.build"
 name = "agent-wiki"
 dynamic = ["version"]
 description = "A personal knowledge base for AI agents"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.0",
