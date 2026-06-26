@@ -10,7 +10,7 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.page import (
     slugify, render_page, parse_page,
     page_raw_diverged, page_lines_lost, page_raw_diff,
-    sha256_bytes, save_sidecar,
+    sha256_bytes, load_sidecar, save_sidecar,
 )
 from agent_wiki.log import append_log
 
@@ -234,6 +234,32 @@ def ingest_file(
     return page_path
 
 
+# Content-type -> archived-asset extension. Unmapped text types get a sane
+# default (REQ-10 / asset-extension open question); PDF arrives with T-10.
+_ASSET_EXT = {"text/html": ".html", "application/pdf": ".pdf"}
+
+
+def _asset_ext(content_type: str) -> str:
+    return _ASSET_EXT.get(content_type, ".txt")
+
+
+def _archive_asset(vault_path: Path, name: str, body: bytes,
+                   content_type: str, raw_dest: Path) -> None:
+    """Archive the original fetched artifact byte-identically under raw/assets/
+    and record its own sha256 (and path) in the raw body's sidecar, alongside the
+    raw-body sha256."""
+    data = body if isinstance(body, bytes) else body.encode()
+    assets_dir = vault_path / "raw" / "assets"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+    asset_rel = f"raw/assets/{name}{_asset_ext(content_type)}"
+    (vault_path / asset_rel).write_bytes(data)
+
+    meta = load_sidecar(raw_dest)
+    meta["asset"] = asset_rel
+    meta["asset_sha256"] = sha256_bytes(data)
+    save_sidecar(raw_dest, meta)
+
+
 def url_to_name(url: str) -> str:
     """A filesystem-safe stem for a fetched URL's raw file and page, derived from
     the URL (last path segment, else host). Minimal v1; T-07 layers on full URL
@@ -273,8 +299,14 @@ def ingest_url(
     with tempfile.TemporaryDirectory() as td:
         staged = Path(td) / f"{name}.md"
         staged.write_text(extracted.markdown)
-        return ingest_file(
+        page_path = ingest_file(
             staged, vault_path, topic=topic, tags=tags, update=update, force=force,
             provenance_source=result.source_url, provenance_fetcher="http",
             extra_frontmatter={"source_url": result.source_url},
         )
+
+    # Archive the original fetched artifact next to the raw body and record its
+    # own sha256 in the sidecar.
+    raw_dest = vault_path / "raw" / f"{name}.md"
+    _archive_asset(vault_path, name, result.body, result.content_type, raw_dest)
+    return page_path

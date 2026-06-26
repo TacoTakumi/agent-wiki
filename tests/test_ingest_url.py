@@ -120,3 +120,21 @@ def test_reingest_url_keeps_inline_source_url(tmp_vault):
     page = ingest_url(url, tmp_vault, topic="research", fetcher=fetcher,
                       update=True, force=True)
     assert parse_page(page)["meta"]["source_url"] == url
+
+
+def test_ingest_url_archives_original_asset(tmp_vault):
+    url = "https://example.com/great-article"
+    fetcher = FakeFetcher(ARTICLE_HTML, source_url=url)
+    page = ingest_url(url, tmp_vault, topic="research", fetcher=fetcher)
+
+    asset = tmp_vault / "raw" / "assets" / "great-article.html"
+    assert asset.exists()
+    # The archived asset is byte-identical to the fetched original.
+    assert asset.read_bytes() == ARTICLE_HTML.encode()
+
+    raw_path = tmp_vault / parse_page(page)["meta"]["sources"][0]
+    sidecar = yaml.safe_load(sidecar_path(raw_path).read_text())
+    assert sidecar["asset"] == "raw/assets/great-article.html"
+    assert sidecar["asset_sha256"] == hashlib.sha256(asset.read_bytes()).hexdigest()
+    # The asset hash (original HTML) differs from the raw-body hash (extracted md).
+    assert sidecar["asset_sha256"] != sidecar["sha256"]
