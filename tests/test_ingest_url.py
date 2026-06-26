@@ -98,3 +98,25 @@ def test_url_to_name_basics():
 def test_extract_rejects_non_html_content_type():
     with pytest.raises(ValueError):
         extract(b"%PDF-1.4 fake pdf bytes", "application/pdf")
+
+
+def test_ingest_url_page_carries_inline_source_url(tmp_vault):
+    url = "https://example.com/great-article"
+    fetcher = FakeFetcher(ARTICLE_HTML, source_url=url)
+    page = ingest_url(url, tmp_vault, topic="research", fetcher=fetcher)
+
+    meta = parse_page(page)["meta"]
+    assert meta["source_url"] == url
+    # Operational provenance stays in the sidecar, never on the page.
+    for op in ("sha256", "fetcher", "ingested", "asset_sha256"):
+        assert op not in meta
+
+
+def test_reingest_url_keeps_inline_source_url(tmp_vault):
+    url = "https://example.com/great-article"
+    fetcher = FakeFetcher(ARTICLE_HTML, source_url=url)
+    ingest_url(url, tmp_vault, topic="research", fetcher=fetcher)
+    # Re-ingesting the same URL still carries source_url on the page.
+    page = ingest_url(url, tmp_vault, topic="research", fetcher=fetcher,
+                      update=True, force=True)
+    assert parse_page(page)["meta"]["source_url"] == url
