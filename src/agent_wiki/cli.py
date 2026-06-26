@@ -237,9 +237,12 @@ def index_cmd():
 
 
 @cli.command()
-def lint():
+@click.option("--refetch", is_flag=True,
+              help="Re-fetch URL sources and flag any whose upstream content "
+                   "changed (network; off by default). Local vaults only.")
+def lint(refetch):
     """Audit the wiki vault for issues."""
-    issues = _service().lint()
+    issues = _service().lint(refetch=refetch)
 
     if not issues:
         click.echo("No issues found.")
@@ -248,7 +251,8 @@ def lint():
     for issue in issues:
         icon = {"broken_wikilink": "LINK", "orphan": "ORPHAN",
                 "raw_not_ingested": "RAW", "missing_frontmatter": "META",
-                "raw_page_drift": "DRIFT", "source_drift": "SOURCE"}
+                "raw_page_drift": "DRIFT", "source_drift": "SOURCE",
+                "upstream_changed": "UPSTREAM"}
         label = icon.get(issue["type"], issue["type"].upper())
         click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
 

@@ -59,7 +59,7 @@ class VaultService(ABC):
     def log(self, last: int | None = None) -> list[str]: ...
 
     @abstractmethod
-    def lint(self) -> list[dict]: ...
+    def lint(self, refetch: bool = False) -> list[dict]: ...
 
     @abstractmethod
     def context(self, prompt: str) -> str: ...
@@ -156,8 +156,8 @@ class LocalVaultService(VaultService):
     def log(self, last: int | None = None) -> list[str]:
         return read_log(self.vault_path, last=last)
 
-    def lint(self) -> list[dict]:
-        return lint_vault(self.vault_path)
+    def lint(self, refetch: bool = False) -> list[dict]:
+        return lint_vault(self.vault_path, refetch=refetch)
 
     def context(self, prompt: str) -> str:
         return run_context(prompt, self.vault_path) or ""

@@ -1,13 +1,23 @@
 from pathlib import Path
 from agent_wiki.config import load_vault_config
+from agent_wiki.fetch import Fetcher, FetchError, HttpFetcher, is_url
 from agent_wiki.page import (
     parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost, is_sidecar,
     load_sidecar, sha256_bytes,
 )
 
 
-def lint_vault(vault_path: Path) -> list[dict]:
-    """Audit the vault for issues. Returns a list of issue dicts."""
+def lint_vault(vault_path: Path, *, refetch: bool = False,
+               fetcher: Fetcher | None = None) -> list[dict]:
+    """Audit the vault for issues. Returns a list of issue dicts.
+
+    ``refetch`` is opt-in and the *only* path on which lint touches the network:
+    it re-fetches each URL-sourced raw and flags one whose upstream bytes no
+    longer match the asset sha256 recorded at ingest (REQ-20). With ``refetch``
+    off (the default), lint makes zero network calls. ``fetcher`` is injectable
+    for tests; in normal use a real ``HttpFetcher`` is built only when needed."""
+    if refetch and fetcher is None:
+        fetcher = HttpFetcher()
     vault_config = load_vault_config(vault_path)
     topics = vault_config.get("topics", [])
     issues = []
@@ -98,18 +108,37 @@ def lint_vault(vault_path: Path) -> list[dict]:
         for raw_file in raw_dir.iterdir():
             if raw_file.is_file() and not is_sidecar(raw_file):
                 raw_ref = f"raw/{raw_file.name}"
+                sidecar = load_sidecar(raw_file)
 
                 # source-drift: a raw edited in place no longer matches the sha256
                 # its sidecar recorded at ingest. Unlike raw_page_drift (page vs
                 # raw, direction-neutral), this pinpoints the raw as the changed
                 # side. Pure byte-hash, so it covers binary raws too.
-                recorded = load_sidecar(raw_file).get("sha256")
+                recorded = sidecar.get("sha256")
                 if recorded is not None and sha256_bytes(raw_file.read_bytes()) != recorded:
                     issues.append({
                         "type": "source_drift",
                         "path": raw_ref,
                         "detail": f"{raw_ref} edited in place — body no longer matches recorded sha256",
                     })
+
+                # upstream-changed (opt-in): re-fetch a URL source and compare its
+                # bytes to the asset sha256 recorded at ingest. A network hiccup
+                # isn't an upstream change, so a FetchError is skipped, not flagged.
+                src_url = sidecar.get("source")
+                asset_hash = sidecar.get("asset_sha256")
+                if refetch and asset_hash and src_url and is_url(src_url):
+                    try:
+                        fetched = fetcher.fetch(src_url)
+                    except FetchError:
+                        pass
+                    else:
+                        if sha256_bytes(fetched.body) != asset_hash:
+                            issues.append({
+                                "type": "upstream_changed",
+                                "path": raw_ref,
+                                "detail": f"{raw_ref} upstream source changed since ingest: {src_url}",
+                            })
 
                 if raw_ref not in referenced_raw:
                     issues.append({
