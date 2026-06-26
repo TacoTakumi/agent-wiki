@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from datetime import date, datetime
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from agent_wiki.config import load_vault_config
 from agent_wiki.page import (
@@ -104,6 +104,7 @@ def ingest_file(
     provenance_source: str | None = None,
     provenance_fetcher: str = "local",
     extra_frontmatter: dict | None = None,
+    slug_override: str | None = None,
 ) -> Path:
     """Ingest a source file into the wiki vault.
 
@@ -120,6 +121,8 @@ def ingest_file(
     ``http`` so the sidecar reflects the true origin rather than the temp file.
     ``extra_frontmatter`` is merged onto the page's frontmatter (e.g. inline
     ``source_url`` for a fetched page); operational provenance never goes here.
+    ``slug_override`` forces the page filename stem (URL ingest passes a
+    URL-derived stem so a re-fetch with a changed title maps to the same page).
     Returns the path to the created/updated wiki page.
     """
     if not source.exists():
@@ -136,7 +139,7 @@ def ingest_file(
 
     content = source.read_text()
     title = _extract_title(content, source.name)
-    slug = slugify(title)
+    slug = slug_override or slugify(title)
     today = date.today().isoformat()
 
     # On update, resolve the target page and run ALL pre-flight checks BEFORE
@@ -260,11 +263,27 @@ def _archive_asset(vault_path: Path, name: str, body: bytes,
     save_sidecar(raw_dest, meta)
 
 
+def normalize_url(url: str) -> str:
+    """Canonicalize a URL for naming + dedup (REQ-14): lowercase scheme and host,
+    strip the default port, drop the fragment, and trim a single trailing slash.
+    The query string is kept verbatim for v1."""
+    parsed = urlparse(url)
+    scheme = parsed.scheme.lower()
+    host = (parsed.hostname or "").lower()
+    port = parsed.port
+    default = (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
+    netloc = f"{host}:{port}" if (port and not default) else host
+    path = parsed.path
+    if len(path) > 1 and path.endswith("/"):
+        path = path.rstrip("/")
+    return urlunparse((scheme, netloc, path, parsed.params, parsed.query, ""))
+
+
 def url_to_name(url: str) -> str:
     """A filesystem-safe stem for a fetched URL's raw file and page, derived from
-    the URL (last path segment, else host). Minimal v1; T-07 layers on full URL
-    normalization and a dedup match key."""
-    parsed = urlparse(url)
+    the normalized URL (last path segment, else host) — never from the page title,
+    so it is stable across title changes."""
+    parsed = urlparse(normalize_url(url))
     segments = [s for s in parsed.path.split("/") if s]
     base = segments[-1] if segments else parsed.netloc
     base = re.sub(r"\.(html?|php|aspx?)$", "", base, flags=re.IGNORECASE)
@@ -294,7 +313,16 @@ def ingest_url(
     fetcher = fetcher or HttpFetcher()
     result = fetcher.fetch(url)
     extracted = extract(result.body, result.content_type)
-    name = url_to_name(result.source_url)
+    canonical = normalize_url(result.source_url)
+    name = url_to_name(canonical)
+    raw_dest = vault_path / "raw" / f"{name}.md"
+
+    # Dedup: re-fetching the same URL updates its page in place rather than
+    # orphaning a title-named duplicate. The match key is the normalized URL.
+    if raw_dest.exists() and not update:
+        prior = load_sidecar(raw_dest).get("source")
+        if prior is not None and normalize_url(prior) == canonical:
+            update = True
 
     with tempfile.TemporaryDirectory() as td:
         staged = Path(td) / f"{name}.md"
@@ -303,6 +331,7 @@ def ingest_url(
             staged, vault_path, topic=topic, tags=tags, update=update, force=force,
             provenance_source=result.source_url, provenance_fetcher="http",
             extra_frontmatter={"source_url": result.source_url},
+            slug_override=name,
         )
 
     # Archive the original fetched artifact next to the raw body and record its
