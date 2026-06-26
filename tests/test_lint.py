@@ -56,6 +56,21 @@ def test_lint_un_ingested_raw(tmp_vault):
     assert "stray-file.md" in raw_issues[0]["detail"]
 
 
+def test_lint_ignores_sidecar_files(tmp_vault, tmp_path):
+    # A freshly-ingested file writes raw/<name>.meta.yaml; that provenance sidecar
+    # is metadata, never an un-ingested raw source nor an orphan.
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "note.md"
+    src.write_text("# Note\n\nbody\n")
+    ingest_file(src, tmp_vault, topic="research")
+    assert (tmp_vault / "raw" / "note.meta.yaml").exists()  # guard the premise
+
+    issues = lint_vault(tmp_vault)
+    offending = [i for i in issues
+                 if i["path"].endswith(".meta.yaml") or "meta.yaml" in i.get("detail", "")]
+    assert offending == [], offending
+
+
 def test_lint_missing_frontmatter(tmp_vault):
     page_path = tmp_vault / "research" / "bare.md"
     page_path.write_text("# No Frontmatter\n\nJust content.\n")

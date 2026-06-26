@@ -1,6 +1,8 @@
 from pathlib import Path
 from agent_wiki.config import load_vault_config
-from agent_wiki.page import parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost
+from agent_wiki.page import (
+    parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost, is_sidecar,
+)
 
 
 def lint_vault(vault_path: Path) -> list[dict]:
@@ -93,7 +95,7 @@ def lint_vault(vault_path: Path) -> list[dict]:
                     referenced_raw.add(src)
 
         for raw_file in raw_dir.iterdir():
-            if raw_file.is_file():
+            if raw_file.is_file() and not is_sidecar(raw_file):
                 raw_ref = f"raw/{raw_file.name}"
                 if raw_ref not in referenced_raw:
                     issues.append({
