@@ -103,6 +103,7 @@ def ingest_file(
     force: bool = False,
     provenance_source: str | None = None,
     provenance_fetcher: str = "local",
+    extra_frontmatter: dict | None = None,
 ) -> Path:
     """Ingest a source file into the wiki vault.
 
@@ -117,6 +118,8 @@ def ingest_file(
     ``provenance_source``/``provenance_fetcher`` override what the sidecar records
     (default: the local source path and ``local``); URL ingest passes the URL and
     ``http`` so the sidecar reflects the true origin rather than the temp file.
+    ``extra_frontmatter`` is merged onto the page's frontmatter (e.g. inline
+    ``source_url`` for a fetched page); operational provenance never goes here.
     Returns the path to the created/updated wiki page.
     """
     if not source.exists():
@@ -203,6 +206,8 @@ def ingest_file(
             "updated": today,
             "sources": _merge_sources(old_meta.get("sources"), raw_ref),
         })
+        if extra_frontmatter:
+            meta.update(extra_frontmatter)
         new_path.parent.mkdir(parents=True, exist_ok=True)
         new_path.write_text(render_page(meta, content))
         if new_path.resolve() != old_path.resolve():
@@ -219,6 +224,8 @@ def ingest_file(
         "updated": today,
         "sources": [raw_ref],
     }
+    if extra_frontmatter:
+        meta.update(extra_frontmatter)
     page_path = vault_path / eff_topic / f"{slug}.md"
     page_path.parent.mkdir(parents=True, exist_ok=True)
     page_path.write_text(render_page(meta, content))
@@ -269,4 +276,5 @@ def ingest_url(
         return ingest_file(
             staged, vault_path, topic=topic, tags=tags, update=update, force=force,
             provenance_source=result.source_url, provenance_fetcher="http",
+            extra_frontmatter={"source_url": result.source_url},
         )
