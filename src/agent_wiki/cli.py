@@ -253,7 +253,7 @@ def lint(refetch):
                 "raw_not_ingested": "RAW", "missing_frontmatter": "META",
                 "raw_page_drift": "DRIFT", "source_drift": "SOURCE",
                 "upstream_changed": "UPSTREAM", "stale_content": "STALE",
-                "page_size": "SIZE"}
+                "page_size": "SIZE", "index_incomplete": "INDEX"}
         label = icon.get(issue["type"], issue["type"].upper())
         click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
 

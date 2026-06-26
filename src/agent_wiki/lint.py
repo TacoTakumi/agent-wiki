@@ -2,6 +2,7 @@ from datetime import date, datetime
 from pathlib import Path
 from agent_wiki.config import load_vault_config
 from agent_wiki.fetch import Fetcher, FetchError, HttpFetcher, is_url
+from agent_wiki.index import indexed_paths
 from agent_wiki.page import (
     parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost, is_sidecar,
     load_sidecar, sha256_bytes, page_body_for_raw,
@@ -41,6 +42,7 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
     vault_config = load_vault_config(vault_path)
     topics = vault_config.get("topics", [])
     issues = []
+    listed_in_index = indexed_paths(vault_path)
 
     # Collect all pages and their titles
     all_pages = []
@@ -67,6 +69,17 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
             title = page["meta"].get("title", md_file.stem)
             all_titles.add(title)
             all_pages.append({"title": title, "path": rel})
+
+            # index-completeness: a frontmatter-bearing page should appear in
+            # index.md. Guarded on meta because rebuild_index only lists pages
+            # with frontmatter — a frontmatterless page is a META issue and
+            # would never clear here even after a rebuild.
+            if page["meta"] and str(rel) not in listed_in_index:
+                issues.append({
+                    "type": "index_incomplete",
+                    "path": str(rel),
+                    "detail": f"{rel} is not listed in index.md (rebuild the index)",
+                })
 
             # raw <-> page body drift (read-only; direction-neutral report)
             for src in (page["meta"].get("sources") or []):
