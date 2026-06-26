@@ -318,6 +318,88 @@ def url_to_name(url: str) -> str:
     return slugify(base) or slugify(parsed.netloc) or "page"
 
 
+def fetch_and_extract(url: str, fetcher=None, pdf_extractor: str = "pymupdf4llm"):
+    """Client-side half of URL ingest (D-17/REQ-09): reach the network through a
+    ``Fetcher`` and extract clean main-content markdown from the fetched bytes.
+
+    Touches no vault — its outputs (the canonical/redirected URL, content type,
+    original asset bytes, extracted markdown, and extractor title) are exactly what
+    a remote client ships to the server for ``ingest_extracted``, so fetch+extract
+    stays client-side and the server performs no outbound request. Network access
+    happens only through ``fetcher`` (defaults to the built-in ``HttpFetcher``).
+    Returns ``(FetchResult, ExtractResult)``.
+    """
+    from agent_wiki.fetch import HttpFetcher, extract
+
+    fetcher = fetcher or HttpFetcher()
+    result = fetcher.fetch(url)
+    extracted = extract(result.body, result.content_type, pdf_extractor=pdf_extractor)
+    return result, extracted
+
+
+def ingest_extracted(
+    vault_path: Path,
+    source_url: str,
+    content_type: str,
+    asset: bytes,
+    markdown: str,
+    extractor_title: str | None = None,
+    topic: str | None = None,
+    tags: list[str] | None = None,
+    update: bool = False,
+    force: bool = False,
+) -> Path:
+    """Server-side half of URL ingest: ingest already-fetched, already-extracted
+    content into ``raw/<name>.md`` with an http-provenance sidecar.
+
+    Makes NO network call and constructs no ``Fetcher`` — this is the seam the
+    awiki server runs so it performs no outbound fetch (D-17/REQ-09). ``markdown``
+    is the extracted body; ``asset``/``content_type`` are the original fetched
+    artifact, archived byte-identically under ``raw/assets/``. Dedup keys on the
+    normalized ``source_url``; an unchanged body (matching the stored sidecar
+    sha256) raises ``UnchangedURLSkip`` unless ``force``. The extracted markdown is
+    staged as a temp file and handed to ``ingest_file`` so URL ingest reuses the
+    page/sidecar/log machinery, overriding only the recorded provenance.
+    Returns the path to the created/updated wiki page.
+    """
+    canonical = normalize_url(source_url)
+    name = url_to_name(canonical)
+    raw_dest = vault_path / "raw" / f"{name}.md"
+
+    # Dedup: re-fetching the same URL updates its page in place rather than
+    # orphaning a title-named duplicate. The match key is the normalized URL; an
+    # unchanged body (matching the stored sidecar sha256) is a no-op skip unless
+    # --force.
+    if raw_dest.exists():
+        prior = load_sidecar(raw_dest)
+        prior_source = prior.get("source")
+        if prior_source is not None and normalize_url(prior_source) == canonical:
+            if not force and prior.get("sha256") == sha256_bytes(markdown.encode()):
+                pages = _find_pages_by_source(
+                    vault_path, f"raw/{name}.md",
+                    load_vault_config(vault_path).get("topics", []))
+                raise UnchangedURLSkip(canonical, pages[0] if pages else None)
+            update = True  # same URL, changed body (or forced) -> update in place
+
+    title = _resolve_title(extractor_title, markdown, name)
+
+    with tempfile.TemporaryDirectory() as td:
+        staged = Path(td) / f"{name}.md"
+        staged.write_text(markdown)
+        page_path = ingest_file(
+            staged, vault_path, topic=topic, tags=tags, update=update, force=force,
+            provenance_source=source_url, provenance_fetcher="http",
+            extra_frontmatter={"source_url": source_url},
+            slug_override=name, title_override=title,
+        )
+
+    # Archive the original fetched artifact next to the raw body and record its
+    # own sha256 in the sidecar.
+    raw_dest = vault_path / "raw" / f"{name}.md"
+    _archive_asset(vault_path, name, asset, content_type, raw_dest)
+    return page_path
+
+
 def ingest_url(
     url: str,
     vault_path: Path,
@@ -330,51 +412,19 @@ def ingest_url(
     """Fetch a URL, extract clean main-content markdown, and ingest it as
     ``raw/<name>.md`` with an http-provenance sidecar.
 
-    Network access happens only through ``fetcher`` (defaults to the built-in
-    ``HttpFetcher``); extraction runs on the already-fetched bytes. The extracted
-    markdown is staged as a temp file and handed to ``ingest_file`` so URL ingest
-    reuses the page/sidecar/log machinery, overriding only the recorded provenance.
-    Returns the path to the created/updated wiki page.
+    The whole-pipeline convenience used for a local vault (fetch + extract +
+    ingest in one process). Remote clients instead call ``fetch_and_extract``
+    client-side and ship the result to the server's ``ingest_extracted`` so the
+    server never fetches (D-17/REQ-09). Returns the created/updated wiki page.
     """
-    from agent_wiki.fetch import HttpFetcher, extract
-
-    fetcher = fetcher or HttpFetcher()
-    result = fetcher.fetch(url)
     pdf_extractor = load_vault_config(vault_path).get("pdf_extractor", "pymupdf4llm")
-    extracted = extract(result.body, result.content_type, pdf_extractor=pdf_extractor)
-    canonical = normalize_url(result.source_url)
-    name = url_to_name(canonical)
-    raw_dest = vault_path / "raw" / f"{name}.md"
-
-    # Dedup: re-fetching the same URL updates its page in place rather than
-    # orphaning a title-named duplicate. The match key is the normalized URL; an
-    # unchanged body (matching the stored sidecar sha256) is a no-op skip unless
-    # --force.
-    if raw_dest.exists():
-        prior = load_sidecar(raw_dest)
-        prior_source = prior.get("source")
-        if prior_source is not None and normalize_url(prior_source) == canonical:
-            if not force and prior.get("sha256") == sha256_bytes(extracted.markdown.encode()):
-                pages = _find_pages_by_source(
-                    vault_path, f"raw/{name}.md",
-                    load_vault_config(vault_path).get("topics", []))
-                raise UnchangedURLSkip(canonical, pages[0] if pages else None)
-            update = True  # same URL, changed body (or forced) -> update in place
-
-    title = _resolve_title(extracted.title, extracted.markdown, name)
-
-    with tempfile.TemporaryDirectory() as td:
-        staged = Path(td) / f"{name}.md"
-        staged.write_text(extracted.markdown)
-        page_path = ingest_file(
-            staged, vault_path, topic=topic, tags=tags, update=update, force=force,
-            provenance_source=result.source_url, provenance_fetcher="http",
-            extra_frontmatter={"source_url": result.source_url},
-            slug_override=name, title_override=title,
-        )
-
-    # Archive the original fetched artifact next to the raw body and record its
-    # own sha256 in the sidecar.
-    raw_dest = vault_path / "raw" / f"{name}.md"
-    _archive_asset(vault_path, name, result.body, result.content_type, raw_dest)
-    return page_path
+    result, extracted = fetch_and_extract(url, fetcher=fetcher, pdf_extractor=pdf_extractor)
+    return ingest_extracted(
+        vault_path,
+        source_url=result.source_url,
+        content_type=result.content_type,
+        asset=result.body,
+        markdown=extracted.markdown,
+        extractor_title=extracted.title,
+        topic=topic, tags=tags, update=update, force=force,
+    )

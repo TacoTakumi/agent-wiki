@@ -18,7 +18,7 @@ from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
 from agent_wiki.conversation import ingest_conversation as _ingest_conversation
 from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
 from agent_wiki.index import rebuild_index as _rebuild_index
-from agent_wiki.ingest import ingest_file, ingest_url, resolve_raw
+from agent_wiki.ingest import ingest_extracted, ingest_file, ingest_url, resolve_raw
 from agent_wiki.lint import lint_vault
 from agent_wiki.locking import file_lock
 from agent_wiki.log import read_log
@@ -72,8 +72,8 @@ class VaultService(ABC):
     def ingest_url(self, url: str, topic: str | None = None,
                    tags: list[str] | None = None, update: bool = False,
                    force: bool = False) -> dict:
-        # Concrete default so non-local services stay instantiable; remote/server
-        # parity (client-side fetch) is threaded in a later task (REQ-17).
+        # Concrete default so any non-overriding service stays instantiable; both
+        # the local facade and the remote client implement it (REQ-17).
         raise NotImplementedError("URL ingest is not available for this service")
 
     @abstractmethod
@@ -169,13 +169,7 @@ class LocalVaultService(VaultService):
         with file_lock(self.vault_path, "log"):
             page_path = ingest_file(source, self.vault_path, topic=topic,
                                     tags=tags, update=update, force=force)
-        meta = parse_page(page_path)["meta"] or {}
-        return {
-            "page": str(page_path.relative_to(self.vault_path)),
-            "title": meta.get("title", page_path.stem),
-            "topic": meta.get("topic", topic),
-            "sources": meta.get("sources", []),
-        }
+        return self._page_result(page_path, topic)
 
     def ingest_url(self, url: str, topic: str | None = None,
                    tags: list[str] | None = None, update: bool = False,
@@ -183,6 +177,24 @@ class LocalVaultService(VaultService):
         with file_lock(self.vault_path, "log"):
             page_path = ingest_url(url, self.vault_path, topic=topic, tags=tags,
                                    update=update, force=force)
+        return self._page_result(page_path, topic)
+
+    def ingest_extracted(self, source_url: str, content_type: str, asset: bytes,
+                         markdown: str, extractor_title: str | None = None,
+                         topic: str | None = None, tags: list[str] | None = None,
+                         update: bool = False, force: bool = False) -> dict:
+        # Server-side seam (D-17/REQ-09): ingest already-fetched, already-extracted
+        # content. No Fetcher is constructed here, so the server makes no outbound
+        # request — the remote client did the fetch+extract.
+        with file_lock(self.vault_path, "log"):
+            page_path = ingest_extracted(
+                self.vault_path, source_url=source_url, content_type=content_type,
+                asset=asset, markdown=markdown, extractor_title=extractor_title,
+                topic=topic, tags=tags, update=update, force=force,
+            )
+        return self._page_result(page_path, topic)
+
+    def _page_result(self, page_path: Path, topic: str | None) -> dict:
         meta = parse_page(page_path)["meta"] or {}
         return {
             "page": str(page_path.relative_to(self.vault_path)),

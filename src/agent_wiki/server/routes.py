@@ -93,6 +93,29 @@ def build_router(svc, require) -> APIRouter:
             tmp.write_bytes(data)
             return svc.ingest(tmp, topic=topic, tags=tag_list, update=update, force=force)
 
+    # Client-side fetch + extract (D-17/REQ-09): the client sends already-extracted
+    # markdown plus the original asset; this handler ingests them and NEVER fetches.
+    @r.post("/ingest_url", status_code=201)
+    async def ingest_url(
+        source_url: str = Form(...),
+        markdown: str = Form(...),
+        content_type: str = Form(""),
+        title: str | None = Form(None),
+        topic: str | None = Form(None),
+        tags: str | None = Form(None),
+        update: bool = Form(False),
+        force: bool = Form(False),
+        asset: UploadFile | None = File(None),
+        _: str = Depends(require("writer")),
+    ):
+        data = await asset.read() if asset is not None else b""
+        tag_list = [s.strip() for s in tags.split(",")] if tags else None
+        return svc.ingest_extracted(
+            source_url, content_type=content_type, asset=data, markdown=markdown,
+            extractor_title=title, topic=topic, tags=tag_list,
+            update=update, force=force,
+        )
+
     @r.post("/reingest", status_code=201)
     def reingest(body: ReingestRequest, _: str = Depends(require("writer"))):
         return svc.reingest(body.name, force=body.force)

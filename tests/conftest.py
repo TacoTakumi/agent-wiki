@@ -4,6 +4,46 @@ import yaml
 import json as _json
 
 
+# A small HTML page (real article wrapped in nav/footer boilerplate) used by the
+# URL-ingest service/parity tests. A unique body marker proves main-content
+# extraction ran; NAV/FOOT markers prove boilerplate was stripped.
+URL_SAMPLE_HTML = (
+    "<html><head><title>Sample URL Page</title></head>\n"
+    "<body>\n"
+    "<nav>Home About Contact NAVZZZ</nav>\n"
+    "<main><article>\n"
+    "<h1>Sample URL Page</h1>\n"
+    "<p>A unique body marker about parity widgets for the url ingest test, "
+    "exploring how they interconnect across the remote and local paths.</p>\n"
+    "<h2>Background</h2>\n"
+    "<p>A second paragraph with more substance so the main-content extractor has "
+    "enough to anchor on and confidently drop the surrounding chrome.</p>\n"
+    "<ul><li>First point worth noting</li><li>Second point worth noting</li></ul>\n"
+    "</article></main>\n"
+    "<footer>Copyright 2026 FOOTZZZ</footer>\n"
+    "</body></html>"
+)
+
+
+@pytest.fixture
+def url_fetcher_cls():
+    """A Fetcher class (constructor-compatible with HttpFetcher) returning canned
+    HTML with no network — monkeypatch agent_wiki.fetch.HttpFetcher with it so the
+    CLIENT-side fetch is stubbed while the SERVER still performs no fetch at all."""
+    from agent_wiki.fetch import Fetcher, FetchResult
+
+    class _CannedFetcher(Fetcher):
+        HTML = URL_SAMPLE_HTML  # the original bytes the server should archive
+
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def fetch(self, url):
+            return FetchResult(URL_SAMPLE_HTML.encode(), "text/html", url)
+
+    return _CannedFetcher
+
+
 @pytest.fixture
 def tmp_vault(tmp_path):
     """Create a temporary vault directory with wiki.yaml and standard structure."""
