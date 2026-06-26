@@ -267,3 +267,17 @@ def test_reconcile_raw_rewrites_from_page(tmp_vault, tmp_path):
     vault = _drift_vault(tmp_vault, tmp_path)
     LocalVaultService(vault).doctor(reconcile_raw=True)
     assert "edited by hand" in (vault / "raw" / "d.md").read_text()
+
+
+def test_reconcile_sidecar_refresh_keeps_invariant(tmp_vault, tmp_path):
+    # reconcile-raw rewrites the raw body, so it must also refresh the sidecar
+    # sha256 (REQ-02 invariant) -- otherwise the sanctioned fix leaves a stale
+    # sidecar and lint's source_drift false-fires on a just-reconciled raw.
+    from agent_wiki.service import LocalVaultService
+    from agent_wiki.page import load_sidecar, sha256_bytes
+    from agent_wiki.lint import lint_vault
+    vault = _drift_vault(tmp_vault, tmp_path)
+    LocalVaultService(vault).doctor(reconcile_raw=True)
+    raw = vault / "raw" / "d.md"
+    assert load_sidecar(raw).get("sha256") == sha256_bytes(raw.read_bytes())
+    assert [i for i in lint_vault(vault) if i["type"] == "source_drift"] == []
