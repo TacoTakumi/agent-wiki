@@ -1,15 +1,27 @@
 import os
 import re
 import shutil
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from agent_wiki.config import load_vault_config
 from agent_wiki.page import (
     slugify, render_page, parse_page,
     page_raw_diverged, page_lines_lost, page_raw_diff,
+    sha256_bytes, save_sidecar,
 )
 from agent_wiki.log import append_log
+
+
+def _write_sidecar(raw_dest: Path, source: str, fetcher: str) -> None:
+    """Write the provenance sidecar (raw/<name>.meta.yaml) for the just-stored raw
+    file, hashing the stored body so sha256 always matches the raw on disk."""
+    save_sidecar(raw_dest, {
+        "source": source,
+        "fetcher": fetcher,
+        "ingested": datetime.now().isoformat(timespec="seconds"),
+        "sha256": sha256_bytes(raw_dest.read_bytes()),
+    })
 
 
 class PageDriftError(ValueError):
@@ -163,6 +175,9 @@ def ingest_file(
     # Skip the copy when source IS the destination (in-place reingest); else copy.
     if not (raw_dest.exists() and source.exists() and os.path.samefile(source, raw_dest)):
         shutil.copy2(source, raw_dest)
+
+    # Every ingest writes a provenance sidecar next to the (now-final) raw body.
+    _write_sidecar(raw_dest, source=str(source), fetcher="local")
 
     if update and old_path is not None:
         meta = {

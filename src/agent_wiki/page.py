@@ -1,7 +1,50 @@
 import difflib
+import hashlib
 import re
 from pathlib import Path
 import yaml
+
+
+SIDECAR_SUFFIX = ".meta.yaml"
+
+
+def sha256_bytes(data: bytes) -> str:
+    """Hex SHA-256 digest of raw bytes — the canonical hash for raw bodies/assets."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def sidecar_path(raw_path: Path) -> Path:
+    """Provenance sidecar path for a raw file: raw/<name>.md -> raw/<name>.meta.yaml."""
+    return raw_path.with_suffix(SIDECAR_SUFFIX)
+
+
+def is_sidecar(path: Path) -> bool:
+    """True if path is a provenance sidecar (raw/<name>.meta.yaml) rather than a raw
+    source. The single predicate for telling sidecars apart from raw bodies, so raw
+    enumeration/counting never mistakes the metadata for a source."""
+    return path.name.endswith(SIDECAR_SUFFIX)
+
+
+def load_sidecar(raw_path: Path) -> dict:
+    """Read a raw file's provenance sidecar via the canonical YAML reader.
+
+    Returns {} when no sidecar exists. This is the single sanctioned reader of
+    *.meta.yaml — no other module parses sidecars by hand.
+    """
+    sc = sidecar_path(raw_path)
+    if not sc.is_file():
+        return {}
+    return yaml.safe_load(sc.read_text()) or {}
+
+
+def save_sidecar(raw_path: Path, meta: dict) -> Path:
+    """Write a raw file's provenance sidecar via the canonical YAML dumper.
+
+    Returns the sidecar path. This is the single sanctioned writer of *.meta.yaml.
+    """
+    sc = sidecar_path(raw_path)
+    sc.write_text(yaml.dump(meta, default_flow_style=False, sort_keys=False))
+    return sc
 
 
 def slugify(text: str) -> str:

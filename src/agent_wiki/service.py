@@ -22,7 +22,7 @@ from agent_wiki.ingest import ingest_file, resolve_raw
 from agent_wiki.lint import lint_vault
 from agent_wiki.locking import file_lock
 from agent_wiki.log import read_log
-from agent_wiki.page import parse_page, render_page
+from agent_wiki.page import is_sidecar, parse_page, render_page
 from agent_wiki.search import search_vault
 from agent_wiki.show import read_vault_bytes, read_vault_file
 from agent_wiki.sync import sync as _sync
@@ -131,7 +131,8 @@ class LocalVaultService(VaultService):
             total += count
             topics_out.append({"topic": topic, "count": count})
         raw_dir = vault / "raw"
-        raw = len([p for p in raw_dir.iterdir() if p.is_file()]) if raw_dir.is_dir() else 0
+        raw = (len([p for p in raw_dir.iterdir() if p.is_file() and not is_sidecar(p)])
+               if raw_dir.is_dir() else 0)
         sessions_dir = vault / BUNDLE_SUBDIR
         bundles = len(list(sessions_dir.glob("*.md"))) if sessions_dir.is_dir() else 0
         recent = read_log(vault, last=1)
