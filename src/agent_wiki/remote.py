@@ -94,6 +94,36 @@ class RemoteVaultService(VaultService):
             form["force"] = "true"
         return self._check(self._c.post("/v1/ingest", files=files, data=form)).json()
 
+    def ingest_url(self, url, topic=None, tags=None, update=False, force=False) -> dict:
+        # Client-side fetch + extract (D-17/REQ-09): we ship the extracted markdown
+        # plus the original asset to the server, which never fetches. Note the fetch
+        # is delegated to fetch_and_extract — no Fetcher is referenced inline here.
+        from agent_wiki.ingest import UnchangedURLSkip, fetch_and_extract
+
+        result, extracted = fetch_and_extract(url)
+        files = {"asset": ("asset", result.body, "application/octet-stream")}
+        form = {
+            "source_url": result.source_url,
+            "content_type": result.content_type,
+            "markdown": extracted.markdown,
+        }
+        if extracted.title:
+            form["title"] = extracted.title
+        if topic:
+            form["topic"] = topic
+        if tags:
+            form["tags"] = ",".join(tags)
+        if update:
+            form["update"] = "true"
+        if force:
+            form["force"] = "true"
+        out = self._check(self._c.post("/v1/ingest_url", files=files, data=form)).json()
+        if out.get("unchanged"):
+            # Same URL, unchanged body: the server skipped — re-raise so the CLI's
+            # existing UnchangedURLSkip handling fires for remote vaults too.
+            raise UnchangedURLSkip(out.get("url", url))
+        return out
+
     def reingest(self, name: str, force: bool = False) -> dict:
         return self._check(self._c.post("/v1/reingest", json={
             "name": name, "force": force,

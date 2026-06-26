@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from agent_wiki.ingest import UnchangedURLSkip
 from agent_wiki.service import LocalVaultService
 from agent_wiki.server.auth import make_require
 from agent_wiki.server.routes import build_router
@@ -24,6 +25,12 @@ def create_app(vault_path: Path, server_config: dict) -> FastAPI:
     @app.exception_handler(FileExistsError)
     async def _conflict(request, exc):
         return JSONResponse(status_code=409, content={"detail": str(exc)})
+
+    @app.exception_handler(UnchangedURLSkip)
+    async def _unchanged_url(request, exc):
+        # Not an error: a re-ingest of an unchanged URL. 200 + sentinel so the
+        # remote client re-raises UnchangedURLSkip (symmetric with local skip).
+        return JSONResponse(status_code=200, content={"unchanged": True, "url": exc.url})
 
     @app.exception_handler(ValueError)
     async def _value_error(request, exc):

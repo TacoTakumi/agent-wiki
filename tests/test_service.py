@@ -104,6 +104,39 @@ def test_ingest_returns_structured_result(tmp_vault):
     assert (tmp_vault / "research" / "doc-title.md").exists()
 
 
+def test_ingest_url_returns_structured_result(tmp_vault, monkeypatch, url_fetcher_cls):
+    # The local facade fetches+extracts client-side and returns the same structured
+    # shape as ingest (page/title/topic/sources), with no operational provenance.
+    import agent_wiki.fetch as fetchmod
+    monkeypatch.setattr(fetchmod, "HttpFetcher", url_fetcher_cls)
+    out = _svc(tmp_vault).ingest_url("https://example.com/sample", topic="research")
+    assert out["page"] == "research/sample.md"
+    assert out["title"] == "Sample URL Page"
+    assert out["topic"] == "research"
+    assert out["sources"] == ["raw/sample.md"]
+    assert "fetcher" not in out and "sha256" not in out
+
+
+def test_ingest_extracted_url_writes_page_without_fetching(tmp_vault):
+    # The server-side seam ingests already-extracted markdown + asset directly — no
+    # URL fetch, no Fetcher. It carries http provenance and archives the supplied asset.
+    out = _svc(tmp_vault).ingest_extracted(
+        source_url="https://example.com/sample",
+        content_type="text/html",
+        asset=b"<html>original</html>",
+        markdown="# Sample URL Page\n\nextracted body marker\n",
+        topic="research",
+    )
+    assert out["page"] == "research/sample.md"
+    assert out["sources"] == ["raw/sample.md"]
+    page = tmp_vault / "research" / "sample.md"
+    from agent_wiki.page import parse_page as _pp
+    assert "extracted body marker" in _pp(page)["body"]
+    assert _pp(page)["meta"]["source_url"] == "https://example.com/sample"
+    # The supplied original asset was archived byte-identically by the seam.
+    assert (tmp_vault / "raw" / "assets" / "sample.html").read_bytes() == b"<html>original</html>"
+
+
 def test_ingest_conversation_returns_page(tmp_vault):
     bundle = tmp_vault / "raw" / "sessions" / "claude-abc.md"
     bundle.parent.mkdir(parents=True, exist_ok=True)
