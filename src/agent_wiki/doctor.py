@@ -19,7 +19,10 @@ from typing import Any
 import yaml
 
 from agent_wiki.config import load_vault_config
-from agent_wiki.page import parse_page, page_body_for_raw, page_raw_diverged
+from agent_wiki.page import (
+    parse_page, page_body_for_raw, page_raw_diverged,
+    load_sidecar, save_sidecar, sha256_bytes,
+)
 from agent_wiki.vault import DEFAULT_TOPICS, _default_sources_config
 
 
@@ -269,6 +272,13 @@ class RawContentDrift(Check):
         drifted = self._drifted(vault_path)
         for raw_path, canonical in drifted:
             raw_path.write_text(canonical)
+            # Keep the sidecar sha256 in lock-step with the rewritten body
+            # (REQ-02): a stale hash would otherwise make lint's source_drift
+            # check false-fire on a raw this very fix just reconciled.
+            meta = load_sidecar(raw_path)
+            if meta:
+                meta["sha256"] = sha256_bytes(raw_path.read_bytes())
+                save_sidecar(raw_path, meta)
         return f"rewrote {len(drifted)} raw file(s) from pages"
 
 
