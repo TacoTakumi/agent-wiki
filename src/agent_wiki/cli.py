@@ -21,10 +21,59 @@ def _service():
     return get_backend()
 
 
+def _repair_stale_config_if_needed(fix, dry_run):
+    """If the configured local vault_path is stale (missing), help fix the config.
+
+    Runs before doctor resolves the vault, since a stale path otherwise hard-stops
+    every command. With an override (--vault/AWIKI_VAULT) pointing at a real vault,
+    offer to persist it as the new vault_path; without one, there's nothing to
+    repair to — report and stop with a friendly, actionable error."""
+    from pathlib import Path
+    from agent_wiki.config import (
+        get_config_dir, load_user_config, resolve_vault_override, save_user_config,
+    )
+
+    config = load_user_config()
+    if (config.get("server") or {}).get("url"):
+        return  # remote-configured; a local vault_path is not in play
+    vault_path = config.get("vault_path")
+    if not vault_path or Path(vault_path).expanduser().exists():
+        return  # nothing configured, or the configured vault is fine
+
+    config_file = get_config_dir() / "config.yaml"
+    click.echo(
+        f"Configured vault is stale: vault_path in {config_file} points at "
+        f"{vault_path}, which does not exist."
+    )
+    override = resolve_vault_override()
+    if override is None:
+        raise click.ClickException(
+            "Re-run with --vault PATH (or set AWIKI_VAULT) pointing at the correct "
+            "vault to repair the config, or run 'awiki init <path>'."
+        )
+    if not override.exists():
+        raise click.ClickException(
+            f"--vault/AWIKI_VAULT points at {override}, which also does not exist."
+        )
+    if dry_run:
+        click.echo(f"    → would update vault_path to {override}")
+        return
+    if fix or click.confirm(f"    Update vault_path to {override}?", default=True):
+        config["vault_path"] = str(override)
+        save_user_config(config)
+        click.echo(f"    ✓ updated vault_path to {override}")
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="awiki")
-def cli():
+@click.option("--vault", default=None, type=click.Path(),
+              metavar="PATH",
+              help="Use this vault for this invocation, overriding the configured "
+                   "one (also settable via AWIKI_VAULT). Forces a local vault.")
+def cli(vault):
     """Agent Wiki - A personal knowledge base for AI agents."""
+    # `vault` is read back from the root context by config.resolve_vault_override();
+    # nothing to do here beyond letting click record it on the context.
     pass
 
 
@@ -342,6 +391,7 @@ def adapt(source, ref, output):
               help="Rewrite raw/ from drifted pages (server-local only)")
 def doctor(fix, dry_run, reconcile_raw):
     """Inspect the vault and offer to fix drift from current schema."""
+    _repair_stale_config_if_needed(fix, dry_run)
     svc = _service()
     from agent_wiki.remote import RemoteVaultService
     if reconcile_raw and isinstance(svc, RemoteVaultService):
