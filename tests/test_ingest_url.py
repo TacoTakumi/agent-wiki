@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from agent_wiki.fetch import (
-    Fetcher, FetchResult, UnsupportedContentType, extract, is_url,
+    Fetcher, FetchError, FetchResult, UnsupportedContentType, extract, is_url,
 )
 from agent_wiki.ingest import (
     UnchangedURLSkip, _resolve_title, ingest_url, normalize_url, url_to_name,
@@ -148,6 +148,49 @@ def test_unsupported_html_still_ingests(tmp_vault):
     page = ingest_url(url, tmp_vault, topic="research",
                       fetcher=FakeFetcher(ARTICLE_HTML, source_url=url))
     assert page.exists()
+
+
+def _run_url_ingest_cli(monkeypatch, fake_fetcher_cls):
+    from click.testing import CliRunner
+    import agent_wiki.fetch as fetchmod
+    from agent_wiki.cli import cli
+
+    monkeypatch.setattr(fetchmod, "HttpFetcher", fake_fetcher_cls)
+    return CliRunner().invoke(cli, ["ingest", "https://example.com/x", "-t", "research"])
+
+
+def _assert_friendly_error(result):
+    assert result.exit_code != 0
+    # Handled gracefully: a clean exit, not an unhandled error bubbling up.
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "Traceback" not in result.output
+    # A single human-readable error line.
+    lines = [ln for ln in result.output.splitlines() if ln.strip()]
+    assert len(lines) == 1, result.output
+
+
+def test_errors_network_failure_is_friendly(tmp_config, monkeypatch):
+    class Boom:
+        def fetch(self, url):
+            raise FetchError("could not fetch https://example.com/x: connection refused")
+
+    _assert_friendly_error(_run_url_ingest_cli(monkeypatch, Boom))
+
+
+def test_errors_unsupported_content_type_is_friendly(tmp_config, monkeypatch):
+    class Media:
+        def fetch(self, url):
+            return FetchResult(b"\x00\x01binary", "image/png", url)
+
+    _assert_friendly_error(_run_url_ingest_cli(monkeypatch, Media))
+
+
+def test_errors_extractor_failure_is_friendly(tmp_config, monkeypatch):
+    class Empty:
+        def fetch(self, url):
+            return FetchResult(b"<html><body></body></html>", "text/html", url)
+
+    _assert_friendly_error(_run_url_ingest_cli(monkeypatch, Empty))
 
 
 def test_dedup_unchanged_url_skips_without_rewrite(tmp_vault):
