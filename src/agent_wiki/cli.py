@@ -11,7 +11,7 @@ from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
 from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
 from agent_wiki.fetch import is_url
-from agent_wiki.ingest import PageDriftError
+from agent_wiki.ingest import PageDriftError, UnchangedURLSkip
 from agent_wiki.vault import init_vault
 
 
@@ -109,6 +109,9 @@ def ingest(files, topic, tags, update, force):
                                      update=update, force=force)
                 verb = "Updated" if update else "Ingested"
                 click.echo(f"{verb} {file_path} -> {out['page']}")
+            except UnchangedURLSkip:
+                # Not an error: nothing changed upstream, so exit 0.
+                click.echo(f"unchanged: {file_path} (already up to date; --force to re-render)")
             except (ValueError, FileExistsError) as e:
                 click.echo(f"skipped: {file_path}: {e}", err=True)
                 skipped += 1
