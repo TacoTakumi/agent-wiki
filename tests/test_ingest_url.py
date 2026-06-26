@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from agent_wiki.fetch import Fetcher, FetchResult, extract, is_url
-from agent_wiki.ingest import ingest_url, normalize_url, url_to_name
+from agent_wiki.ingest import _resolve_title, ingest_url, normalize_url, url_to_name
 from agent_wiki.page import parse_page, sidecar_path
 
 # A small HTML page: real article content wrapped in nav/footer boilerplate that a
@@ -93,6 +93,32 @@ def test_url_to_name_basics():
     assert url_to_name("https://example.com/foo/bar-baz") == "bar-baz"
     assert url_to_name("https://example.com/page.html") == "page"
     assert url_to_name("https://example.com/") == "examplecom"
+
+
+def test_title_precedence_extractor_metadata_first(tmp_vault):
+    # Fixture 1: extractor title metadata present -> it wins over H1 and slug.
+    assert _resolve_title("Extractor Title", "# An H1 Heading\n\nbody", "url-slug") \
+        == "Extractor Title"
+
+
+def test_title_precedence_falls_back_to_h1(tmp_vault):
+    # Fixture 2: no extractor metadata, but a markdown H1 -> the H1 wins over slug.
+    assert _resolve_title(None, "# An H1 Heading\n\nbody", "url-slug") == "An H1 Heading"
+    assert _resolve_title("   ", "# An H1 Heading\n\nbody", "url-slug") == "An H1 Heading"
+
+
+def test_title_precedence_falls_back_to_url_slug(tmp_vault):
+    # Fixture 3: neither metadata nor H1 -> the URL-derived slug is the title.
+    assert _resolve_title(None, "plain body with no heading at all", "url-slug") == "url-slug"
+
+
+def test_ingest_url_page_title_uses_extractor_metadata(tmp_vault):
+    # End-to-end: when the extractor reports a title, the page title equals it.
+    url = "https://example.com/great-article"
+    fetcher = FakeFetcher(ARTICLE_HTML, source_url=url)
+    expected = extract(ARTICLE_HTML, "text/html").title
+    page = ingest_url(url, tmp_vault, topic="research", fetcher=fetcher)
+    assert parse_page(page)["meta"]["title"] == expected
 
 
 def test_extract_rejects_non_html_content_type():

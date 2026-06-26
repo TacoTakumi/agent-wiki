@@ -43,6 +43,20 @@ def _extract_title(content: str, filename: str) -> str:
     return Path(filename).stem
 
 
+def _first_h1(markdown: str) -> str | None:
+    """The first markdown H1 heading text, or None."""
+    match = re.search(r"^#\s+(.+)$", markdown, re.MULTILINE)
+    return match.group(1).strip() if match else None
+
+
+def _resolve_title(extractor_title: str | None, markdown: str, slug: str) -> str:
+    """Fetched-page title precedence (REQ-15): extractor title metadata, then the
+    first markdown H1, then the URL-derived slug."""
+    if extractor_title and extractor_title.strip():
+        return extractor_title.strip()
+    return _first_h1(markdown) or slug
+
+
 def resolve_raw(vault_path: Path, name: str) -> Path:
     """Resolve a user-given raw name to a file in raw/.
 
@@ -105,6 +119,7 @@ def ingest_file(
     provenance_fetcher: str = "local",
     extra_frontmatter: dict | None = None,
     slug_override: str | None = None,
+    title_override: str | None = None,
 ) -> Path:
     """Ingest a source file into the wiki vault.
 
@@ -123,6 +138,8 @@ def ingest_file(
     ``source_url`` for a fetched page); operational provenance never goes here.
     ``slug_override`` forces the page filename stem (URL ingest passes a
     URL-derived stem so a re-fetch with a changed title maps to the same page).
+    ``title_override`` forces the page title (URL ingest resolves it by precedence
+    before calling); otherwise the title comes from the first heading or filename.
     Returns the path to the created/updated wiki page.
     """
     if not source.exists():
@@ -138,7 +155,7 @@ def ingest_file(
         )
 
     content = source.read_text()
-    title = _extract_title(content, source.name)
+    title = title_override or _extract_title(content, source.name)
     slug = slug_override or slugify(title)
     today = date.today().isoformat()
 
@@ -324,6 +341,8 @@ def ingest_url(
         if prior is not None and normalize_url(prior) == canonical:
             update = True
 
+    title = _resolve_title(extracted.title, extracted.markdown, name)
+
     with tempfile.TemporaryDirectory() as td:
         staged = Path(td) / f"{name}.md"
         staged.write_text(extracted.markdown)
@@ -331,7 +350,7 @@ def ingest_url(
             staged, vault_path, topic=topic, tags=tags, update=update, force=force,
             provenance_source=result.source_url, provenance_fetcher="http",
             extra_frontmatter={"source_url": result.source_url},
-            slug_override=name,
+            slug_override=name, title_override=title,
         )
 
     # Archive the original fetched artifact next to the raw body and record its
