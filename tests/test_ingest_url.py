@@ -4,7 +4,9 @@ import pytest
 import yaml
 
 from agent_wiki.fetch import Fetcher, FetchResult, extract, is_url
-from agent_wiki.ingest import _resolve_title, ingest_url, normalize_url, url_to_name
+from agent_wiki.ingest import (
+    UnchangedURLSkip, _resolve_title, ingest_url, normalize_url, url_to_name,
+)
 from agent_wiki.page import parse_page, sidecar_path
 
 # A small HTML page: real article content wrapped in nav/footer boilerplate that a
@@ -124,6 +126,59 @@ def test_ingest_url_page_title_uses_extractor_metadata(tmp_vault):
 def test_extract_rejects_non_html_content_type():
     with pytest.raises(ValueError):
         extract(b"%PDF-1.4 fake pdf bytes", "application/pdf")
+
+
+def test_dedup_unchanged_url_skips_without_rewrite(tmp_vault):
+    url = "https://example.com/great-article"
+    page = ingest_url(url, tmp_vault, topic="research",
+                      fetcher=FakeFetcher(ARTICLE_HTML, source_url=url))
+    before = page.read_text()
+
+    with pytest.raises(UnchangedURLSkip):
+        ingest_url(url, tmp_vault, topic="research",
+                   fetcher=FakeFetcher(ARTICLE_HTML, source_url=url))
+    assert page.read_text() == before  # page not rewritten
+
+
+def test_dedup_force_rewrites_even_when_unchanged(tmp_vault):
+    url = "https://example.com/great-article"
+    ingest_url(url, tmp_vault, topic="research",
+               fetcher=FakeFetcher(ARTICLE_HTML, source_url=url))
+    page = ingest_url(url, tmp_vault, topic="research",
+                      fetcher=FakeFetcher(ARTICLE_HTML, source_url=url), force=True)
+    assert page.exists()
+    assert "widgets and gadgets" in page.read_text()
+
+
+def test_dedup_changed_body_rewrites(tmp_vault):
+    url = "https://example.com/great-article"
+    ingest_url(url, tmp_vault, topic="research",
+               fetcher=FakeFetcher(ARTICLE_HTML, source_url=url))
+    changed = ARTICLE_HTML.replace("meaningful article body about widgets and gadgets",
+                                   "a substantially different body of text now")
+    page = ingest_url(url, tmp_vault, topic="research",
+                      fetcher=FakeFetcher(changed, source_url=url))
+    assert "a substantially different body of text now" in page.read_text()
+
+
+def test_dedup_cli_unchanged_skips_with_exit_zero(tmp_config, monkeypatch):
+    from click.testing import CliRunner
+    import agent_wiki.fetch as fetchmod
+    from agent_wiki.cli import cli
+
+    class CannedFetcher:
+        def fetch(self, url):
+            return FetchResult(ARTICLE_HTML.encode(), "text/html", url)
+
+    monkeypatch.setattr(fetchmod, "HttpFetcher", CannedFetcher)
+
+    runner = CliRunner()
+    url = "https://example.com/great-article"
+    first = runner.invoke(cli, ["ingest", url, "-t", "research"])
+    assert first.exit_code == 0, first.output
+    again = runner.invoke(cli, ["ingest", url, "-t", "research"])
+    assert again.exit_code == 0, again.output
+    assert "unchanged" in again.output.lower()
 
 
 def test_ingest_url_page_carries_inline_source_url(tmp_vault):

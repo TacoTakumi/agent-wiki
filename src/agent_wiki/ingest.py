@@ -26,6 +26,17 @@ def _write_sidecar(raw_dest: Path, source: str, fetcher: str) -> None:
     })
 
 
+class UnchangedURLSkip(Exception):
+    """A re-ingest of a URL whose freshly-extracted body matches the stored
+    sidecar sha256 — nothing was rewritten. Not an error: callers report it and
+    exit 0. ``url`` is the normalized URL; ``page`` is the existing page if known."""
+
+    def __init__(self, url: str, page: Path | None = None):
+        super().__init__(f"unchanged since last ingest: {url}")
+        self.url = url
+        self.page = page
+
+
 class PageDriftError(ValueError):
     """A reingest/update would overwrite a page that has diverged from its raw,
     and --force was not given. `diff` is a unified page-vs-raw diff for display."""
@@ -335,11 +346,19 @@ def ingest_url(
     raw_dest = vault_path / "raw" / f"{name}.md"
 
     # Dedup: re-fetching the same URL updates its page in place rather than
-    # orphaning a title-named duplicate. The match key is the normalized URL.
-    if raw_dest.exists() and not update:
-        prior = load_sidecar(raw_dest).get("source")
-        if prior is not None and normalize_url(prior) == canonical:
-            update = True
+    # orphaning a title-named duplicate. The match key is the normalized URL; an
+    # unchanged body (matching the stored sidecar sha256) is a no-op skip unless
+    # --force.
+    if raw_dest.exists():
+        prior = load_sidecar(raw_dest)
+        prior_source = prior.get("source")
+        if prior_source is not None and normalize_url(prior_source) == canonical:
+            if not force and prior.get("sha256") == sha256_bytes(extracted.markdown.encode()):
+                pages = _find_pages_by_source(
+                    vault_path, f"raw/{name}.md",
+                    load_vault_config(vault_path).get("topics", []))
+                raise UnchangedURLSkip(canonical, pages[0] if pages else None)
+            update = True  # same URL, changed body (or forced) -> update in place
 
     title = _resolve_title(extracted.title, extracted.markdown, name)
 
