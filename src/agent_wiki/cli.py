@@ -252,7 +252,7 @@ def lint(refetch):
         icon = {"broken_wikilink": "LINK", "orphan": "ORPHAN",
                 "raw_not_ingested": "RAW", "missing_frontmatter": "META",
                 "raw_page_drift": "DRIFT", "source_drift": "SOURCE",
-                "upstream_changed": "UPSTREAM"}
+                "upstream_changed": "UPSTREAM", "stale_content": "STALE"}
         label = icon.get(issue["type"], issue["type"].upper())
         click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
 
