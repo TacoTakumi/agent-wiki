@@ -101,3 +101,46 @@ def test_lint_raw_page_drift_skips_binary(tmp_vault):
     )
     drift = [i for i in lint_vault(tmp_vault) if i["type"] == "raw_page_drift"]
     assert drift == []
+
+
+def test_lint_source_drift_detected(tmp_vault, tmp_path):
+    # A raw edited in place no longer matches the sha256 its sidecar recorded.
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "s.md"
+    src.write_text("# S\n\noriginal\n")
+    ingest_file(src, tmp_vault, topic="research")
+    raw = tmp_vault / "raw" / "s.md"
+    # Unedited: recomputed sha256 still matches the sidecar -> not flagged.
+    assert [i for i in lint_vault(tmp_vault) if i["type"] == "source_drift"] == []
+    # Edit the raw body in place -> recomputed sha256 diverges from the sidecar.
+    raw.write_text(raw.read_text().replace("original", "tampered"))
+    drift = [i for i in lint_vault(tmp_vault) if i["type"] == "source_drift"]
+    assert len(drift) == 1
+    assert drift[0]["path"] == "raw/s.md"
+
+
+def test_lint_source_drift_unedited_not_flagged(tmp_vault, tmp_path):
+    # A freshly-ingested, untouched raw matches its sidecar sha256 exactly.
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "u.md"
+    src.write_text("# U\n\nbody\n")
+    ingest_file(src, tmp_vault, topic="research")
+    assert [i for i in lint_vault(tmp_vault) if i["type"] == "source_drift"] == []
+
+
+def test_lint_source_drift_distinct_from_raw_page_drift(tmp_vault, tmp_path):
+    # Editing a raw in place fires BOTH checks; the two issues stay clear --
+    # source_drift points at the raw (it changed), raw_page_drift at the page.
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "b.md"
+    src.write_text("# B\n\noriginal\n")
+    ingest_file(src, tmp_vault, topic="research")
+    raw = tmp_vault / "raw" / "b.md"
+    raw.write_text(raw.read_text().replace("original", "tampered in raw"))
+    issues = lint_vault(tmp_vault)
+    src_drift = [i for i in issues if i["type"] == "source_drift"]
+    page_drift = [i for i in issues if i["type"] == "raw_page_drift"]
+    assert len(src_drift) == 1
+    assert len(page_drift) == 1
+    assert src_drift[0]["path"] == "raw/b.md"
+    assert page_drift[0]["path"] != "raw/b.md"
