@@ -236,6 +236,22 @@ def index_cmd():
     click.echo("Index rebuilt.")
 
 
+# Canonical lint-type -> CLI label mapping. One distinct label per lint type;
+# every type lint.py can emit (lint.LINT_TYPES) must have an entry here.
+LINT_LABELS = {
+    "broken_wikilink": "LINK",
+    "orphan": "ORPHAN",
+    "raw_not_ingested": "RAW",
+    "missing_frontmatter": "META",
+    "raw_page_drift": "DRIFT",
+    "source_drift": "SOURCE",
+    "upstream_changed": "UPSTREAM",
+    "stale_content": "STALE",
+    "page_size": "SIZE",
+    "index_incomplete": "INDEX",
+}
+
+
 @cli.command()
 @click.option("--refetch", is_flag=True,
               help="Re-fetch URL sources and flag any whose upstream content "
@@ -249,12 +265,7 @@ def lint(refetch):
         return
 
     for issue in issues:
-        icon = {"broken_wikilink": "LINK", "orphan": "ORPHAN",
-                "raw_not_ingested": "RAW", "missing_frontmatter": "META",
-                "raw_page_drift": "DRIFT", "source_drift": "SOURCE",
-                "upstream_changed": "UPSTREAM", "stale_content": "STALE",
-                "page_size": "SIZE", "index_incomplete": "INDEX"}
-        label = icon.get(issue["type"], issue["type"].upper())
+        label = LINT_LABELS.get(issue["type"], issue["type"].upper())
         click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
 
     click.echo(f"\n{len(issues)} issue(s) found.")
