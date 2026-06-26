@@ -11,6 +11,22 @@ from agent_wiki.page import (
 STALE_DAYS = 90  # a page more than this many days behind its newest source is stale
 PAGE_MAX_LINES = 200  # a page body longer than this is a split candidate
 
+# Every issue "type" lint_vault can emit. The canonical manifest: each entry must
+# have a distinct CLI label in cli.LINT_LABELS (enforced by tests). Add a new
+# check's type here and a label there together.
+LINT_TYPES = (
+    "broken_wikilink",
+    "orphan",
+    "raw_not_ingested",
+    "missing_frontmatter",
+    "raw_page_drift",
+    "source_drift",
+    "upstream_changed",
+    "stale_content",
+    "page_size",
+    "index_incomplete",
+)
+
 
 def _as_date(value) -> date | None:
     """Coerce a frontmatter/sidecar date value to a ``date``. Handles ``date``,

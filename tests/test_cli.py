@@ -313,3 +313,34 @@ def test_reingest_command_refuses_then_force(tmp_path, monkeypatch):
     forced = runner.invoke(cli, ["reingest", "doc", "--force"])
     assert forced.exit_code == 0
     assert "v2 in raw" in (vault / "research" / "doc.md").read_text()
+
+
+# --- lint type/label mapping (REQ-24) ----------------------------------------
+
+def test_lint_labels_are_distinct():
+    # Each lint type maps to its own CLI label -- no two share one, so output
+    # never conflates two different checks under the same tag.
+    from agent_wiki.cli import LINT_LABELS
+    labels = list(LINT_LABELS.values())
+    assert len(set(labels)) == len(labels), labels
+
+
+def test_lint_labels_cover_every_lint_type():
+    # Every type lint can emit has an explicit label (none falls back to the
+    # generic .upper()); the two manifests stay in lockstep.
+    from agent_wiki.cli import LINT_LABELS
+    from agent_wiki.lint import LINT_TYPES
+    assert set(LINT_TYPES) == set(LINT_LABELS), (
+        set(LINT_TYPES).symmetric_difference(LINT_LABELS))
+
+
+def test_lint_label_renders_in_output(tmp_path, monkeypatch):
+    # The mapping is actually used: an over-long page surfaces under [SIZE].
+    vault = _setup_vault(tmp_path, monkeypatch)
+    body = "\n".join(f"line {i}" for i in range(201)) + "\n"
+    meta = {"title": "Big", "topic": "research", "tags": [],
+            "created": "2026-04-14", "updated": "2026-04-14", "sources": []}
+    (vault / "research" / "big.md").write_text(render_page(meta, body))
+    result = CliRunner().invoke(cli, ["lint"])
+    assert result.exit_code == 0
+    assert "[SIZE]" in result.output
