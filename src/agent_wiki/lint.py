@@ -1,3 +1,4 @@
+from datetime import date, datetime
 from pathlib import Path
 from agent_wiki.config import load_vault_config
 from agent_wiki.fetch import Fetcher, FetchError, HttpFetcher, is_url
@@ -5,6 +6,24 @@ from agent_wiki.page import (
     parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost, is_sidecar,
     load_sidecar, sha256_bytes,
 )
+
+STALE_DAYS = 90  # a page more than this many days behind its newest source is stale
+
+
+def _as_date(value) -> date | None:
+    """Coerce a frontmatter/sidecar date value to a ``date``. Handles ``date``,
+    ``datetime`` (YAML parses ISO timestamps into these), and ISO strings;
+    returns None for anything unparseable."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return date.fromisoformat(value[:10])
+        except ValueError:
+            return None
+    return None
 
 
 def lint_vault(vault_path: Path, *, refetch: bool = False,
@@ -65,6 +84,28 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
                         "type": "raw_page_drift",
                         "path": str(rel),
                         "detail": f"{rel} body differs from {src} ({n} line(s))",
+                    })
+
+            # stale-content: the page hasn't been updated since its newest source
+            # moved on. "Newest source" is the max sidecar `ingested` across the
+            # page's raw sources (binary sources count too — sidecar-only, so it
+            # runs independent of the text-comparison above).
+            updated = _as_date(page["meta"].get("updated"))
+            source_dates = []
+            for src in (page["meta"].get("sources") or []):
+                if src.startswith("raw/"):
+                    d = _as_date(load_sidecar(vault_path / src).get("ingested"))
+                    if d is not None:
+                        source_dates.append(d)
+            if updated is not None and source_dates:
+                newest = max(source_dates)
+                behind = (newest - updated).days
+                if behind > STALE_DAYS:
+                    issues.append({
+                        "type": "stale_content",
+                        "path": str(rel),
+                        "detail": f"{rel} updated {updated.isoformat()}, "
+                                  f"{behind} days behind newest source ({newest.isoformat()})",
                     })
 
             links = extract_wikilinks(page["body"])

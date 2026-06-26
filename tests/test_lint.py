@@ -207,3 +207,51 @@ def test_lint_without_refetch_makes_no_network(tmp_vault):
     # Default (refetch off): the fetcher must never be touched, even when supplied.
     issues = lint_vault(tmp_vault, fetcher=_BoomFetcher())
     assert [i for i in issues if i["type"] == "upstream_changed"] == []
+
+
+# --- stale-content (REQ-21) --------------------------------------------------
+
+def _seed_sourced_page(vault, slug, updated, ingested):
+    """A page with sources whose sidecars carry the given ``ingested`` dates.
+    ``ingested`` is a list of ISO date/datetime strings (one raw+sidecar each)."""
+    from agent_wiki.page import save_sidecar, sha256_bytes, render_page
+    sources = []
+    for i, ing in enumerate(ingested):
+        raw = vault / "raw" / f"{slug}-{i}.md"
+        raw.write_text(f"# {slug} {i}\n\nbody\n")
+        save_sidecar(raw, {"source": f"file:{slug}-{i}", "fetcher": "file",
+                           "ingested": ing, "sha256": sha256_bytes(raw.read_bytes())})
+        sources.append(f"raw/{slug}-{i}.md")
+    meta = {"title": slug, "topic": "research", "tags": [],
+            "created": "2026-01-01", "updated": updated, "sources": sources}
+    (vault / "research" / f"{slug}.md").write_text(
+        render_page(meta, f"# {slug}\n\nbody\n"))
+
+
+def test_lint_stale_content_flagged(tmp_vault):
+    from datetime import date, timedelta
+    newest = date(2026, 6, 1)
+    updated = newest - timedelta(days=91)  # 91 days behind -> stale
+    _seed_sourced_page(tmp_vault, "old", updated.isoformat(), [newest.isoformat()])
+    stale = [i for i in lint_vault(tmp_vault) if i["type"] == "stale_content"]
+    assert len(stale) == 1
+    assert stale[0]["path"] == "research/old.md"
+
+
+def test_lint_stale_content_within_90_not_flagged(tmp_vault):
+    from datetime import date, timedelta
+    newest = date(2026, 6, 1)
+    updated = newest - timedelta(days=90)  # exactly 90 -> not stale
+    _seed_sourced_page(tmp_vault, "fresh", updated.isoformat(), [newest.isoformat()])
+    stale = [i for i in lint_vault(tmp_vault) if i["type"] == "stale_content"]
+    assert stale == []
+
+
+def test_lint_stale_content_uses_newest_source(tmp_vault):
+    # Page updated 2026-03-01; one source is 14 days newer (not stale on its own),
+    # another is far newer -> the newest source decides, so the page is stale.
+    _seed_sourced_page(tmp_vault, "multi", "2026-03-01",
+                       ["2026-03-15T00:00:00", "2026-09-01T00:00:00"])
+    stale = [i for i in lint_vault(tmp_vault) if i["type"] == "stale_content"]
+    assert len(stale) == 1
+    assert stale[0]["path"] == "research/multi.md"
