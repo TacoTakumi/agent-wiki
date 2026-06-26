@@ -18,7 +18,7 @@ from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
 from agent_wiki.conversation import ingest_conversation as _ingest_conversation
 from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
 from agent_wiki.index import rebuild_index as _rebuild_index
-from agent_wiki.ingest import ingest_file, resolve_raw
+from agent_wiki.ingest import ingest_file, ingest_url, resolve_raw
 from agent_wiki.lint import lint_vault
 from agent_wiki.locking import file_lock
 from agent_wiki.log import read_log
@@ -68,6 +68,13 @@ class VaultService(ABC):
     def ingest(self, source: Path, topic: str | None = None,
                tags: list[str] | None = None, update: bool = False,
                force: bool = False) -> dict: ...
+
+    def ingest_url(self, url: str, topic: str | None = None,
+                   tags: list[str] | None = None, update: bool = False,
+                   force: bool = False) -> dict:
+        # Concrete default so non-local services stay instantiable; remote/server
+        # parity (client-side fetch) is threaded in a later task (REQ-17).
+        raise NotImplementedError("URL ingest is not available for this service")
 
     @abstractmethod
     def ingest_conversation(self, bundle: Path, no_summarize: bool = False) -> dict: ...
@@ -162,6 +169,20 @@ class LocalVaultService(VaultService):
         with file_lock(self.vault_path, "log"):
             page_path = ingest_file(source, self.vault_path, topic=topic,
                                     tags=tags, update=update, force=force)
+        meta = parse_page(page_path)["meta"] or {}
+        return {
+            "page": str(page_path.relative_to(self.vault_path)),
+            "title": meta.get("title", page_path.stem),
+            "topic": meta.get("topic", topic),
+            "sources": meta.get("sources", []),
+        }
+
+    def ingest_url(self, url: str, topic: str | None = None,
+                   tags: list[str] | None = None, update: bool = False,
+                   force: bool = False) -> dict:
+        with file_lock(self.vault_path, "log"):
+            page_path = ingest_url(url, self.vault_path, topic=topic, tags=tags,
+                                   update=update, force=force)
         meta = parse_page(page_path)["meta"] or {}
         return {
             "page": str(page_path.relative_to(self.vault_path)),
