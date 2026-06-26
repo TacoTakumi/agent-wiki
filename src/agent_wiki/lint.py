@@ -2,6 +2,7 @@ from pathlib import Path
 from agent_wiki.config import load_vault_config
 from agent_wiki.page import (
     parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost, is_sidecar,
+    load_sidecar, sha256_bytes,
 )
 
 
@@ -97,6 +98,19 @@ def lint_vault(vault_path: Path) -> list[dict]:
         for raw_file in raw_dir.iterdir():
             if raw_file.is_file() and not is_sidecar(raw_file):
                 raw_ref = f"raw/{raw_file.name}"
+
+                # source-drift: a raw edited in place no longer matches the sha256
+                # its sidecar recorded at ingest. Unlike raw_page_drift (page vs
+                # raw, direction-neutral), this pinpoints the raw as the changed
+                # side. Pure byte-hash, so it covers binary raws too.
+                recorded = load_sidecar(raw_file).get("sha256")
+                if recorded is not None and sha256_bytes(raw_file.read_bytes()) != recorded:
+                    issues.append({
+                        "type": "source_drift",
+                        "path": raw_ref,
+                        "detail": f"{raw_ref} edited in place — body no longer matches recorded sha256",
+                    })
+
                 if raw_ref not in referenced_raw:
                     issues.append({
                         "type": "raw_not_ingested",
