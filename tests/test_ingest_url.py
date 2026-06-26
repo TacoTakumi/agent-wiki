@@ -3,7 +3,9 @@ import hashlib
 import pytest
 import yaml
 
-from agent_wiki.fetch import Fetcher, FetchResult, extract, is_url
+from agent_wiki.fetch import (
+    Fetcher, FetchResult, UnsupportedContentType, extract, is_url,
+)
 from agent_wiki.ingest import (
     UnchangedURLSkip, _resolve_title, ingest_url, normalize_url, url_to_name,
 )
@@ -126,6 +128,26 @@ def test_ingest_url_page_title_uses_extractor_metadata(tmp_vault):
 def test_extract_rejects_non_html_content_type():
     with pytest.raises(ValueError):
         extract(b"%PDF-1.4 fake pdf bytes", "application/pdf")
+
+
+@pytest.mark.parametrize("ctype", ["image/png", "audio/mpeg", "video/mp4"])
+def test_unsupported_content_type_writes_nothing(tmp_vault, ctype):
+    url = "https://example.com/media-file"
+    fetcher = FakeFetcher(b"\x00\x01\x02binary-bytes", content_type=ctype, source_url=url)
+    with pytest.raises(UnsupportedContentType):
+        ingest_url(url, tmp_vault, topic="research", fetcher=fetcher)
+
+    # No page, no raw body, no archived asset written for an unsupported type.
+    assert list((tmp_vault / "research").glob("*.md")) == []
+    assert not (tmp_vault / "raw" / "assets").exists()
+    assert [p for p in (tmp_vault / "raw").iterdir() if p.is_file()] == []
+
+
+def test_unsupported_html_still_ingests(tmp_vault):
+    url = "https://example.com/great-article"
+    page = ingest_url(url, tmp_vault, topic="research",
+                      fetcher=FakeFetcher(ARTICLE_HTML, source_url=url))
+    assert page.exists()
 
 
 def test_dedup_unchanged_url_skips_without_rewrite(tmp_vault):

@@ -16,6 +16,13 @@ from dataclasses import dataclass
 import httpx
 
 
+class UnsupportedContentType(ValueError):
+    """A fetched content type the built-in fetcher does not extract. Only
+    text-bearing types (HTML, and PDF once wired) are supported; image/audio/video
+    and the like are unsupported rather than mis-ingested, pending a future
+    agent-supplied fetcher (REQ-25)."""
+
+
 def is_url(arg: str) -> bool:
     """True if ``arg`` is an http(s) URL (routes to the fetch pipeline); anything
     else is treated as a local filesystem path (REQ-05)."""
@@ -74,7 +81,8 @@ def extract(body: bytes | str, content_type: str) -> ExtractResult:
     """
     if "html" in content_type:
         return _extract_html(body)
-    raise ValueError(f"unsupported content type: {content_type or 'unknown'}")
+    raise UnsupportedContentType(
+        f"unsupported content type: {content_type or 'unknown'}")
 
 
 def _extract_html(body: bytes | str) -> ExtractResult:
