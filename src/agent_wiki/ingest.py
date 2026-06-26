@@ -1,8 +1,10 @@
 import os
 import re
 import shutil
+import tempfile
 from datetime import date, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 from agent_wiki.config import load_vault_config
 from agent_wiki.page import (
@@ -99,6 +101,8 @@ def ingest_file(
     tags: list[str] | None = None,
     update: bool = False,
     force: bool = False,
+    provenance_source: str | None = None,
+    provenance_fetcher: str = "local",
 ) -> Path:
     """Ingest a source file into the wiki vault.
 
@@ -110,6 +114,9 @@ def ingest_file(
     it has diverged from its raw source. Without force, raises ``PageDriftError``
     (with a ``.diff`` attribute containing a unified page-vs-raw diff) if the
     existing page body has diverged from its current raw/<name>; leaves both untouched.
+    ``provenance_source``/``provenance_fetcher`` override what the sidecar records
+    (default: the local source path and ``local``); URL ingest passes the URL and
+    ``http`` so the sidecar reflects the true origin rather than the temp file.
     Returns the path to the created/updated wiki page.
     """
     if not source.exists():
@@ -177,7 +184,11 @@ def ingest_file(
         shutil.copy2(source, raw_dest)
 
     # Every ingest writes a provenance sidecar next to the (now-final) raw body.
-    _write_sidecar(raw_dest, source=str(source), fetcher="local")
+    _write_sidecar(
+        raw_dest,
+        source=provenance_source if provenance_source is not None else str(source),
+        fetcher=provenance_fetcher,
+    )
 
     if update and old_path is not None:
         # Carry arbitrary extra frontmatter keys (e.g. source_url) through the
@@ -214,3 +225,48 @@ def ingest_file(
     append_log(vault_path, "update" if update else "ingest",
                f"{source.name} -> {eff_topic}/{slug}.md")
     return page_path
+
+
+def url_to_name(url: str) -> str:
+    """A filesystem-safe stem for a fetched URL's raw file and page, derived from
+    the URL (last path segment, else host). Minimal v1; T-07 layers on full URL
+    normalization and a dedup match key."""
+    parsed = urlparse(url)
+    segments = [s for s in parsed.path.split("/") if s]
+    base = segments[-1] if segments else parsed.netloc
+    base = re.sub(r"\.(html?|php|aspx?)$", "", base, flags=re.IGNORECASE)
+    return slugify(base) or slugify(parsed.netloc) or "page"
+
+
+def ingest_url(
+    url: str,
+    vault_path: Path,
+    topic: str | None = None,
+    tags: list[str] | None = None,
+    fetcher=None,
+    update: bool = False,
+    force: bool = False,
+) -> Path:
+    """Fetch a URL, extract clean main-content markdown, and ingest it as
+    ``raw/<name>.md`` with an http-provenance sidecar.
+
+    Network access happens only through ``fetcher`` (defaults to the built-in
+    ``HttpFetcher``); extraction runs on the already-fetched bytes. The extracted
+    markdown is staged as a temp file and handed to ``ingest_file`` so URL ingest
+    reuses the page/sidecar/log machinery, overriding only the recorded provenance.
+    Returns the path to the created/updated wiki page.
+    """
+    from agent_wiki.fetch import HttpFetcher, extract
+
+    fetcher = fetcher or HttpFetcher()
+    result = fetcher.fetch(url)
+    extracted = extract(result.body, result.content_type)
+    name = url_to_name(result.source_url)
+
+    with tempfile.TemporaryDirectory() as td:
+        staged = Path(td) / f"{name}.md"
+        staged.write_text(extracted.markdown)
+        return ingest_file(
+            staged, vault_path, topic=topic, tags=tags, update=update, force=force,
+            provenance_source=result.source_url, provenance_fetcher="http",
+        )

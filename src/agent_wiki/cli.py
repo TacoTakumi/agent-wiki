@@ -10,6 +10,7 @@ from agent_wiki import __version__
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
 from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
+from agent_wiki.fetch import is_url
 from agent_wiki.ingest import PageDriftError
 from agent_wiki.vault import init_vault
 
@@ -85,12 +86,15 @@ def init(path, url, token, clear):
 @click.option("--force", is_flag=True, default=False,
               help="Overwrite even if the page has diverged from its raw source")
 def ingest(files, topic, tags, update, force):
-    """Ingest files into the wiki vault."""
+    """Ingest files or URLs into the wiki vault."""
     svc = _service()
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
 
     expanded = []
     for pattern in files:
+        if is_url(pattern):
+            expanded.append(pattern)  # URLs bypass glob expansion
+            continue
         matches = globmod.glob(pattern)
         if matches:
             expanded.extend(matches)
@@ -99,6 +103,16 @@ def ingest(files, topic, tags, update, force):
 
     skipped = 0
     for file_path in expanded:
+        if is_url(file_path):
+            try:
+                out = svc.ingest_url(file_path, topic=topic, tags=tag_list,
+                                     update=update, force=force)
+                verb = "Updated" if update else "Ingested"
+                click.echo(f"{verb} {file_path} -> {out['page']}")
+            except (ValueError, FileExistsError) as e:
+                click.echo(f"skipped: {file_path}: {e}", err=True)
+                skipped += 1
+            continue
         path = Path(file_path)
         try:
             out = svc.ingest(path, topic=topic, tags=tag_list, update=update, force=force)
