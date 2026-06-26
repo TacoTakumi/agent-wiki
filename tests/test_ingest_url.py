@@ -4,7 +4,7 @@ import pytest
 import yaml
 
 from agent_wiki.fetch import Fetcher, FetchResult, extract, is_url
-from agent_wiki.ingest import ingest_url, url_to_name
+from agent_wiki.ingest import ingest_url, normalize_url, url_to_name
 from agent_wiki.page import parse_page, sidecar_path
 
 # A small HTML page: real article content wrapped in nav/footer boilerplate that a
@@ -120,6 +120,37 @@ def test_reingest_url_keeps_inline_source_url(tmp_vault):
     page = ingest_url(url, tmp_vault, topic="research", fetcher=fetcher,
                       update=True, force=True)
     assert parse_page(page)["meta"]["source_url"] == url
+
+
+def test_normalize_url_rules():
+    # lowercase scheme+host, strip default ports, drop fragment, trim trailing slash
+    assert normalize_url("HTTP://Example.com:80/Foo/") == "http://example.com/Foo"
+    assert normalize_url("https://Example.com:443/a#frag") == "https://example.com/a"
+    # query string kept verbatim (v1)
+    assert normalize_url("https://example.com/a?b=c") == "https://example.com/a?b=c"
+
+
+def test_ingest_url_name_normalizes_trailing_slash(tmp_vault):
+    fetcher = FakeFetcher(ARTICLE_HTML, source_url="https://example.com/great-article/")
+    ingest_url("https://example.com/great-article/", tmp_vault,
+               topic="research", fetcher=fetcher)
+    assert (tmp_vault / "raw" / "great-article.md").exists()
+
+
+def test_ingest_url_normalized_dedup_same_url_across_title_change(tmp_vault):
+    url = "https://example.com/great-article"
+    first = FakeFetcher(ARTICLE_HTML, source_url=url)
+    p1 = ingest_url(url, tmp_vault, topic="research", fetcher=first)
+
+    # Same URL, different article title -> must resolve to the SAME page, no orphan.
+    html2 = ARTICLE_HTML.replace("The Great Article", "A Completely Renamed Article")
+    second = FakeFetcher(html2, source_url=url)
+    p2 = ingest_url(url, tmp_vault, topic="research", fetcher=second)
+
+    assert p1 == p2
+    pages = list((tmp_vault / "research").glob("*.md"))
+    assert pages == [p2]
+    assert parse_page(p2)["meta"]["title"] == "A Completely Renamed Article"
 
 
 def test_ingest_url_archives_original_asset(tmp_vault):
