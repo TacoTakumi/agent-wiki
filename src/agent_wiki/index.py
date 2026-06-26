@@ -1,6 +1,20 @@
+import re
 from pathlib import Path
 from agent_wiki.config import load_vault_config
 from agent_wiki.page import parse_page
+
+
+def indexed_paths(vault_path: Path) -> set[str]:
+    """Vault-relative page paths currently listed in index.md (empty if none).
+
+    The companion reader to ``rebuild_index``: it lists each page as
+    ``- [[Title]] (topic/slug.md) …``, so the parenthesized ``*.md`` are the
+    indexed paths. Lives here (not in lint) so the format has one writer/reader.
+    """
+    index_file = vault_path / "index.md"
+    if not index_file.is_file():
+        return set()
+    return set(re.findall(r"\(([^)]+\.md)\)", index_file.read_text()))
 
 
 def rebuild_index(vault_path: Path) -> None:

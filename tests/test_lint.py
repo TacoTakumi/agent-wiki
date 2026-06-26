@@ -274,3 +274,26 @@ def test_lint_page_size_200_not_flagged(tmp_vault):
     _create_page(tmp_vault, "research", "ok", "Ok", _body_of_lines(200))
     sized = [i for i in lint_vault(tmp_vault) if i["type"] == "page_size"]
     assert sized == []
+
+
+# --- index-completeness (REQ-23) ---------------------------------------------
+
+def _index_missing(vault):
+    return {i["path"] for i in lint_vault(vault) if i["type"] == "index_incomplete"}
+
+
+def test_lint_index_complete_flags_then_clears_on_rebuild(tmp_vault):
+    from agent_wiki.index import rebuild_index
+    _create_page(tmp_vault, "research", "newpage", "New Page", "# New Page\n\nbody\n")
+    # Not rebuilt yet: the page is absent from index.md -> flagged.
+    assert "research/newpage.md" in _index_missing(tmp_vault)
+    # After a rebuild the page is listed -> no longer flagged.
+    rebuild_index(tmp_vault)
+    assert "research/newpage.md" not in _index_missing(tmp_vault)
+
+
+def test_lint_index_complete_skips_frontmatterless_page(tmp_vault):
+    # A page with no frontmatter is never indexed; it's a META issue, not an
+    # index-completeness one (else it could never clear, even after a rebuild).
+    (tmp_vault / "research" / "bare.md").write_text("# Bare\n\nno frontmatter\n")
+    assert "research/bare.md" not in _index_missing(tmp_vault)
