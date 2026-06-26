@@ -16,6 +16,12 @@ from dataclasses import dataclass
 import httpx
 
 
+class FetchError(Exception):
+    """A fetch failed at the network/transport layer (connection, timeout, or a
+    non-2xx status). The seam translates transport errors into this domain error
+    so callers render a friendly message instead of leaking an httpx traceback."""
+
+
 class UnsupportedContentType(ValueError):
     """A fetched content type the built-in fetcher does not extract. Only
     text-bearing types (HTML, and PDF once wired) are supported; image/audio/video
@@ -56,9 +62,12 @@ class HttpFetcher(Fetcher):
         self.timeout = timeout
 
     def fetch(self, url: str) -> FetchResult:
-        resp = httpx.get(url, follow_redirects=True, timeout=self.timeout,
-                         headers={"User-Agent": "agent-wiki (awiki)"})
-        resp.raise_for_status()
+        try:
+            resp = httpx.get(url, follow_redirects=True, timeout=self.timeout,
+                             headers={"User-Agent": "agent-wiki (awiki)"})
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise FetchError(f"could not fetch {url}: {e}") from e
         content_type = resp.headers.get("content-type", "").split(";")[0].strip().lower()
         return FetchResult(body=resp.content, content_type=content_type,
                            source_url=str(resp.url))

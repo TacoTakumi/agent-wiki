@@ -10,7 +10,7 @@ from agent_wiki import __version__
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
 from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
-from agent_wiki.fetch import is_url
+from agent_wiki.fetch import FetchError, is_url
 from agent_wiki.ingest import PageDriftError, UnchangedURLSkip
 from agent_wiki.vault import init_vault
 
@@ -112,8 +112,11 @@ def ingest(files, topic, tags, update, force):
             except UnchangedURLSkip:
                 # Not an error: nothing changed upstream, so exit 0.
                 click.echo(f"unchanged: {file_path} (already up to date; --force to re-render)")
-            except (ValueError, FileExistsError) as e:
-                click.echo(f"skipped: {file_path}: {e}", err=True)
+            except (FetchError, ValueError, FileExistsError) as e:
+                # Network error, unsupported content type, or extractor failure:
+                # one friendly line, no traceback (newlines collapsed).
+                msg = " ".join(str(e).split())
+                click.echo(f"error: could not ingest {file_path}: {msg}", err=True)
                 skipped += 1
             continue
         path = Path(file_path)
