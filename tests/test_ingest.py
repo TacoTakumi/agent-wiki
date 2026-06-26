@@ -1,3 +1,4 @@
+import hashlib
 import yaml
 import pytest
 from pathlib import Path
@@ -88,6 +89,47 @@ def test_ingest_refuses_existing_raw(tmp_vault, tmp_path):
         ingest_file(other, tmp_vault, topic="research")
     # raw/ untouched by the refused ingest
     assert (tmp_vault / "raw" / "notes.md").read_text() == "# Notes\n\nv1\n"
+
+
+def test_ingest_writes_sidecar(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# My Notes\n\nSome content here.\n")
+
+    ingest_file(source, tmp_vault, topic="research")
+
+    raw = tmp_vault / "raw" / "notes.md"
+    sidecar = tmp_vault / "raw" / "notes.meta.yaml"
+    assert sidecar.exists()
+    meta = yaml.safe_load(sidecar.read_text())
+    assert meta["source"]
+    assert meta["fetcher"] == "local"
+    assert meta["ingested"]
+    assert meta["sha256"] == hashlib.sha256(raw.read_bytes()).hexdigest()
+    # verbatim-raw invariant: stored raw is byte-identical to the source
+    assert raw.read_bytes() == source.read_bytes()
+
+
+def test_ingest_sidecar_records_origin_path(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n\nbody\n")
+
+    ingest_file(source, tmp_vault, topic="research")
+
+    meta = yaml.safe_load((tmp_vault / "raw" / "notes.meta.yaml").read_text())
+    assert meta["source"] == str(source)
+
+
+def test_update_refreshes_sidecar_sha256(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n\nv1\n")
+    ingest_file(source, tmp_vault, topic="research")
+
+    source.write_text("# Notes\n\nv2 with a longer body\n")
+    ingest_file(source, tmp_vault, topic="research", update=True)
+
+    raw = tmp_vault / "raw" / "notes.md"
+    meta = yaml.safe_load((tmp_vault / "raw" / "notes.meta.yaml").read_text())
+    assert meta["sha256"] == hashlib.sha256(raw.read_bytes()).hexdigest()
 
 
 def test_update_rewrites_linked_page(tmp_vault, tmp_path):
