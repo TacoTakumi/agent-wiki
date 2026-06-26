@@ -144,3 +144,66 @@ def test_lint_source_drift_distinct_from_raw_page_drift(tmp_vault, tmp_path):
     assert len(page_drift) == 1
     assert src_drift[0]["path"] == "raw/b.md"
     assert page_drift[0]["path"] != "raw/b.md"
+
+
+# --- opt-in URL re-fetch (REQ-20) -------------------------------------------
+
+class _FakeFetcher:
+    """Records calls and returns fixed bytes — stands in for the network."""
+    def __init__(self, body: bytes):
+        self.body = body
+        self.calls = 0
+
+    def fetch(self, url):
+        from agent_wiki.fetch import FetchResult
+        self.calls += 1
+        return FetchResult(body=self.body, content_type="text/html", source_url=url)
+
+
+class _BoomFetcher:
+    """Any fetch is a test failure — proves a code path made no network call."""
+    def fetch(self, url):
+        raise AssertionError(f"unexpected network fetch of {url}")
+
+
+def _seed_url_raw(vault, name="page.md", url="https://example.com/page",
+                  upstream=b"<html>original upstream</html>"):
+    """A URL-ingested raw + sidecar: records the source URL and the asset sha256
+    of the originally-fetched bytes (what re-fetch compares against)."""
+    from agent_wiki.page import save_sidecar, sha256_bytes
+    raw = vault / "raw" / name
+    raw.write_text("# Page\n\nextracted body\n")
+    save_sidecar(raw, {
+        "source": url,
+        "fetcher": "http",
+        "ingested": "2026-06-01T00:00:00",
+        "sha256": sha256_bytes(raw.read_bytes()),
+        "asset_sha256": sha256_bytes(upstream),
+    })
+    return raw
+
+
+def test_lint_refetch_flags_upstream_changed(tmp_vault):
+    _seed_url_raw(tmp_vault, upstream=b"<html>original upstream</html>")
+    changed = _FakeFetcher(b"<html>CHANGED upstream</html>")
+    issues = lint_vault(tmp_vault, refetch=True, fetcher=changed)
+    up = [i for i in issues if i["type"] == "upstream_changed"]
+    assert len(up) == 1
+    assert up[0]["path"] == "raw/page.md"
+    assert changed.calls == 1
+
+
+def test_lint_refetch_unchanged_not_flagged(tmp_vault):
+    upstream = b"<html>original upstream</html>"
+    _seed_url_raw(tmp_vault, upstream=upstream)
+    same = _FakeFetcher(upstream)
+    issues = lint_vault(tmp_vault, refetch=True, fetcher=same)
+    assert [i for i in issues if i["type"] == "upstream_changed"] == []
+    assert same.calls == 1  # it did fetch; the body just matched
+
+
+def test_lint_without_refetch_makes_no_network(tmp_vault):
+    _seed_url_raw(tmp_vault)
+    # Default (refetch off): the fetcher must never be touched, even when supplied.
+    issues = lint_vault(tmp_vault, fetcher=_BoomFetcher())
+    assert [i for i in issues if i["type"] == "upstream_changed"] == []

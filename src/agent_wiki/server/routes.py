@@ -53,6 +53,8 @@ def build_router(svc, require) -> APIRouter:
 
     @r.get("/lint")
     def lint(_: str = Depends(require("reader"))):
+        # No refetch param by design: the server never performs an outbound fetch
+        # (D-17/REQ-09), so lint here always runs in the network-free mode.
         return {"issues": svc.lint()}
 
     @r.post("/context")

@@ -67,7 +67,15 @@ class RemoteVaultService(VaultService):
         params = {"last": last} if last is not None else {}
         return self._check(self._c.get("/v1/log", params=params)).json()["entries"]
 
-    def lint(self) -> list[dict]:
+    def lint(self, refetch: bool = False) -> list[dict]:
+        # --refetch is client-side only: the awiki server performs no outbound
+        # fetch (D-17/REQ-09), and the remote client has no local copy of the
+        # raws/sidecars to fetch from, so refetch against a remote vault is
+        # unsupported rather than silently delegated to the server.
+        if refetch:
+            raise click.ClickException(
+                "lint --refetch is not supported against a remote vault "
+                "(the server performs no outbound fetch); run it on the server host")
         return self._check(self._c.get("/v1/lint")).json()["issues"]
 
     def context(self, prompt: str) -> str:
