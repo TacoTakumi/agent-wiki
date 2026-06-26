@@ -314,7 +314,7 @@ def url_to_name(url: str) -> str:
     parsed = urlparse(normalize_url(url))
     segments = [s for s in parsed.path.split("/") if s]
     base = segments[-1] if segments else parsed.netloc
-    base = re.sub(r"\.(html?|php|aspx?)$", "", base, flags=re.IGNORECASE)
+    base = re.sub(r"\.(html?|php|aspx?|pdf)$", "", base, flags=re.IGNORECASE)
     return slugify(base) or slugify(parsed.netloc) or "page"
 
 
@@ -340,7 +340,8 @@ def ingest_url(
 
     fetcher = fetcher or HttpFetcher()
     result = fetcher.fetch(url)
-    extracted = extract(result.body, result.content_type)
+    pdf_extractor = load_vault_config(vault_path).get("pdf_extractor", "pymupdf4llm")
+    extracted = extract(result.body, result.content_type, pdf_extractor=pdf_extractor)
     canonical = normalize_url(result.source_url)
     name = url_to_name(canonical)
     raw_dest = vault_path / "raw" / f"{name}.md"

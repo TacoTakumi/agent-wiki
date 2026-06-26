@@ -126,8 +126,55 @@ def test_ingest_url_page_title_uses_extractor_metadata(tmp_vault):
 
 
 def test_extract_rejects_non_html_content_type():
+    # PDF needs an explicit extractor; arbitrary bytes with no real PDF fail to extract.
     with pytest.raises(ValueError):
-        extract(b"%PDF-1.4 fake pdf bytes", "application/pdf")
+        extract(b"not a real pdf", "application/pdf")
+
+
+def _make_pdf(text: str) -> bytes:
+    import pymupdf
+
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((72, 72), text)
+    return doc.tobytes()
+
+
+def test_pdf_url_ingest_default_pymupdf4llm(tmp_vault):
+    pdf_bytes = _make_pdf("Known PDF body text about quasars")
+    url = "https://example.com/paper.pdf"
+    fetcher = FakeFetcher(pdf_bytes, content_type="application/pdf", source_url=url)
+
+    page = ingest_url(url, tmp_vault, topic="research", fetcher=fetcher)
+    assert "Known PDF body text about quasars" in page.read_text()
+
+    # The original PDF is archived byte-identically with a .pdf extension.
+    asset = tmp_vault / "raw" / "assets" / "paper.pdf"
+    assert asset.exists()
+    assert asset.read_bytes() == pdf_bytes
+
+
+def test_pdf_url_ingest_pdfplumber_selection(tmp_vault):
+    pytest.importorskip("pdfplumber")
+    cfg = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    cfg["pdf_extractor"] = "pdfplumber"
+    (tmp_vault / "wiki.yaml").write_text(yaml.dump(cfg))
+
+    pdf_bytes = _make_pdf("Plumber extracted body content")
+    url = "https://example.com/doc.pdf"
+    page = ingest_url(url, tmp_vault, topic="research",
+                      fetcher=FakeFetcher(pdf_bytes, content_type="application/pdf",
+                                          source_url=url))
+    assert "Plumber extracted body content" in page.read_text()
+
+
+def test_pdf_extractor_switch_routes_same_input(tmp_vault):
+    pytest.importorskip("pdfplumber")
+    pdf_bytes = _make_pdf("Switchable extractor body line")
+    md_default = extract(pdf_bytes, "application/pdf", pdf_extractor="pymupdf4llm").markdown
+    md_plumber = extract(pdf_bytes, "application/pdf", pdf_extractor="pdfplumber").markdown
+    assert "Switchable extractor body line" in md_default
+    assert "Switchable extractor body line" in md_plumber
 
 
 @pytest.mark.parametrize("ctype", ["image/png", "audio/mpeg", "video/mp4"])

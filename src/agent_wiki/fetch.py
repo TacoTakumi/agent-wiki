@@ -10,6 +10,9 @@ no network call, so the ingest pipeline reaches the network *only* through a
 """
 from __future__ import annotations
 
+import contextlib
+import os
+import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
@@ -81,15 +84,18 @@ class ExtractResult:
     title: str | None
 
 
-def extract(body: bytes | str, content_type: str) -> ExtractResult:
+def extract(body: bytes | str, content_type: str,
+            pdf_extractor: str = "pymupdf4llm") -> ExtractResult:
     """Extract clean main-content markdown from already-fetched bytes.
 
-    HTML is routed to trafilatura. Other content types are unsupported here (PDF
-    support arrives in a later task); raising keeps a mis-typed body from being
-    mis-ingested.
+    HTML is routed to trafilatura; PDF to ``pdf_extractor`` (``pymupdf4llm`` by
+    default, ``pdfplumber`` as the permissive alternative). Other content types
+    are unsupported, which keeps a mis-typed body from being mis-ingested.
     """
     if "html" in content_type:
         return _extract_html(body)
+    if "pdf" in content_type:
+        return _extract_pdf(body, pdf_extractor)
     raise UnsupportedContentType(
         f"unsupported content type: {content_type or 'unknown'}")
 
@@ -105,3 +111,63 @@ def _extract_html(body: bytes | str) -> ExtractResult:
     meta = trafilatura.extract_metadata(html)
     title = getattr(meta, "title", None) if meta else None
     return ExtractResult(markdown=markdown, title=title)
+
+
+def _extract_pdf(body: bytes | str, extractor: str) -> ExtractResult:
+    data = body if isinstance(body, bytes) else body.encode()
+    try:
+        if extractor == "pdfplumber":
+            markdown = _pdf_pdfplumber(data)
+        elif extractor in ("pymupdf4llm", "", None):
+            markdown = _pdf_pymupdf4llm(data)
+        else:
+            raise ValueError(f"unknown pdf_extractor: {extractor!r} "
+                             "(expected 'pymupdf4llm' or 'pdfplumber')")
+    except ValueError:
+        raise
+    except Exception as e:  # malformed/unreadable PDF -> a clean extractor failure
+        raise ValueError(f"could not extract PDF: {e}") from e
+    if not markdown or not markdown.strip():
+        raise ValueError("no text could be extracted from the PDF")
+    return ExtractResult(markdown=markdown.strip() + "\n", title=None)
+
+
+@contextlib.contextmanager
+def _silence_native_stdout():
+    """Silence C-level writes to fd 1. pymupdf-layout prints parser/OCR banners
+    straight to the stdout file descriptor (below Python's sys.stdout), so a PDF
+    ingest would otherwise spam CLI/agent output on every call. Best-effort: if fd
+    duplication is unavailable, run without silencing."""
+    sys.stdout.flush()
+    try:
+        saved_fd = os.dup(1)
+    except (AttributeError, OSError):
+        yield
+        return
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    try:
+        os.dup2(devnull, 1)
+        yield
+    finally:
+        sys.stdout.flush()
+        os.dup2(saved_fd, 1)
+        os.close(devnull)
+        os.close(saved_fd)
+
+
+def _pdf_pymupdf4llm(data: bytes) -> str:
+    import pymupdf
+    import pymupdf4llm
+
+    doc = pymupdf.open(stream=data, filetype="pdf")
+    with _silence_native_stdout():
+        return pymupdf4llm.to_markdown(doc, show_progress=False)
+
+
+def _pdf_pdfplumber(data: bytes) -> str:
+    import io
+
+    import pdfplumber
+
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        return "\n\n".join((page.extract_text() or "") for page in pdf.pages)
