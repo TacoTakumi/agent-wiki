@@ -180,14 +180,18 @@ def ingest_file(
     _write_sidecar(raw_dest, source=str(source), fetcher="local")
 
     if update and old_path is not None:
-        meta = {
+        # Carry arbitrary extra frontmatter keys (e.g. source_url) through the
+        # reingest, then rebuild the managed keys on top — don't drop what we
+        # don't manage.
+        meta = dict(old_meta)
+        meta.update({
             "title": title,
             "topic": eff_topic,
             "tags": tags if tags is not None else (old_meta.get("tags") or []),
             "created": old_meta.get("created", today),
             "updated": today,
             "sources": _merge_sources(old_meta.get("sources"), raw_ref),
-        }
+        })
         new_path.parent.mkdir(parents=True, exist_ok=True)
         new_path.write_text(render_page(meta, content))
         if new_path.resolve() != old_path.resolve():

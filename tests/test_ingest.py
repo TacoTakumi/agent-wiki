@@ -3,7 +3,7 @@ import yaml
 import pytest
 from pathlib import Path
 from agent_wiki.ingest import ingest_file
-from agent_wiki.page import parse_page
+from agent_wiki.page import parse_page, render_page
 
 
 def test_ingest_copies_to_raw(tmp_vault, tmp_path):
@@ -130,6 +130,31 @@ def test_update_refreshes_sidecar_sha256(tmp_vault, tmp_path):
     raw = tmp_vault / "raw" / "notes.md"
     meta = yaml.safe_load((tmp_vault / "raw" / "notes.meta.yaml").read_text())
     assert meta["sha256"] == hashlib.sha256(raw.read_bytes()).hexdigest()
+
+
+def test_reingest_passthrough_preserves_extra_frontmatter(tmp_vault, tmp_path):
+    body = "# Note\n\nv1\n"
+    src = tmp_path / "note.md"
+    src.write_text(body)
+    page = ingest_file(src, tmp_vault, topic="research")
+
+    # Inline provenance (source_url) plus an arbitrary custom key land on the page.
+    # Re-render with the same body so the page stays faithful to raw (no drift).
+    meta = parse_page(page)["meta"]
+    meta["source_url"] = "https://example.com/article"
+    meta["custom_key"] = "keep-me"
+    page.write_text(render_page(meta, body))
+
+    # Reingest from the in-vault raw (body unchanged -> clean reingest, no drift).
+    raw = tmp_vault / "raw" / "note.md"
+    result = ingest_file(raw, tmp_vault, topic="research", update=True)
+
+    out = parse_page(result)["meta"]
+    assert out["source_url"] == "https://example.com/article"
+    assert out["custom_key"] == "keep-me"
+    # managed keys still rebuilt correctly
+    assert out["title"] == "Note"
+    assert out["sources"] == ["raw/note.md"]
 
 
 def test_update_rewrites_linked_page(tmp_vault, tmp_path):
