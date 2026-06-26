@@ -255,3 +255,22 @@ def test_lint_stale_content_uses_newest_source(tmp_vault):
     stale = [i for i in lint_vault(tmp_vault) if i["type"] == "stale_content"]
     assert len(stale) == 1
     assert stale[0]["path"] == "research/multi.md"
+
+
+# --- page-size (REQ-22) ------------------------------------------------------
+
+def _body_of_lines(n):
+    return "\n".join(f"line {i}" for i in range(n)) + "\n"
+
+
+def test_lint_page_size_flags_over_200(tmp_vault):
+    _create_page(tmp_vault, "research", "big", "Big", _body_of_lines(201))
+    sized = [i for i in lint_vault(tmp_vault) if i["type"] == "page_size"]
+    assert len(sized) == 1
+    assert sized[0]["path"] == "research/big.md"
+
+
+def test_lint_page_size_200_not_flagged(tmp_vault):
+    _create_page(tmp_vault, "research", "ok", "Ok", _body_of_lines(200))
+    sized = [i for i in lint_vault(tmp_vault) if i["type"] == "page_size"]
+    assert sized == []

@@ -4,10 +4,11 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.fetch import Fetcher, FetchError, HttpFetcher, is_url
 from agent_wiki.page import (
     parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost, is_sidecar,
-    load_sidecar, sha256_bytes,
+    load_sidecar, sha256_bytes, page_body_for_raw,
 )
 
 STALE_DAYS = 90  # a page more than this many days behind its newest source is stale
+PAGE_MAX_LINES = 200  # a page body longer than this is a split candidate
 
 
 def _as_date(value) -> date | None:
@@ -107,6 +108,17 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
                         "detail": f"{rel} updated {updated.isoformat()}, "
                                   f"{behind} days behind newest source ({newest.isoformat()})",
                     })
+
+            # page-size: an over-long page body is a split candidate. Counts
+            # content lines only (frontmatter excluded) via the canonical
+            # raw-body normalizer.
+            n_lines = len(page_body_for_raw(page["body"]).splitlines())
+            if n_lines > PAGE_MAX_LINES:
+                issues.append({
+                    "type": "page_size",
+                    "path": str(rel),
+                    "detail": f"{rel} is {n_lines} lines (>{PAGE_MAX_LINES}); consider splitting",
+                })
 
             links = extract_wikilinks(page["body"])
             all_wikilinks[str(rel)] = links
