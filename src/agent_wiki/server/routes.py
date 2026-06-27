@@ -77,6 +77,7 @@ def build_router(svc, require) -> APIRouter:
             tags = form.get("tags") or None
             update = str(form.get("update") or "").lower() in ("1", "true", "yes")
             force = str(form.get("force") or "").lower() in ("1", "true", "yes")
+            tag_mode = form.get("tag_mode") or None
         elif ctype.startswith("application/json"):
             body = await request.json()
             try:
@@ -87,13 +88,15 @@ def build_router(svc, require) -> APIRouter:
             tags = body.get("tags")
             update = bool(body.get("update", False))
             force = bool(body.get("force", False))
+            tag_mode = body.get("tag_mode")
         else:
             raise HTTPException(status_code=400, detail="send multipart file or JSON body")
         tag_list = [s.strip() for s in tags.split(",")] if tags else None
         with tempfile.TemporaryDirectory() as d:
             tmp = Path(d) / Path(name).name
             tmp.write_bytes(data)
-            return svc.ingest(tmp, topic=topic, tags=tag_list, update=update, force=force)
+            return svc.ingest(tmp, topic=topic, tags=tag_list, update=update,
+                              force=force, tag_mode=tag_mode)
 
     # Client-side fetch + extract (D-17/REQ-09): the client sends already-extracted
     # markdown plus the original asset; this handler ingests them and NEVER fetches.
@@ -107,6 +110,7 @@ def build_router(svc, require) -> APIRouter:
         tags: str | None = Form(None),
         update: bool = Form(False),
         force: bool = Form(False),
+        tag_mode: str | None = Form(None),
         asset: UploadFile | None = File(None),
         _: str = Depends(require("writer")),
     ):
@@ -115,7 +119,7 @@ def build_router(svc, require) -> APIRouter:
         return svc.ingest_extracted(
             source_url, content_type=content_type, asset=data, markdown=markdown,
             extractor_title=title, topic=topic, tags=tag_list,
-            update=update, force=force,
+            update=update, force=force, tag_mode=tag_mode,
         )
 
     @r.post("/reingest", status_code=201)

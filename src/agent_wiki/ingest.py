@@ -2,13 +2,14 @@ import os
 import re
 import shutil
 import tempfile
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
 import click
 
-from agent_wiki.config import load_vault_config, parse_tag_vocabulary
+from agent_wiki.config import load_vault_config, parse_tag_vocabulary, TAG_MODES
 from agent_wiki.tags import canonicalize_tags
 from agent_wiki.page import (
     slugify, render_page, parse_page,
@@ -165,6 +166,7 @@ def ingest_file(
     extra_frontmatter: dict | None = None,
     slug_override: str | None = None,
     title_override: str | None = None,
+    tag_mode: str | None = None,
 ) -> Path:
     """Ingest a source file into the wiki vault.
 
@@ -185,6 +187,8 @@ def ingest_file(
     URL-derived stem so a re-fetch with a changed title maps to the same page).
     ``title_override`` forces the page title (URL ingest resolves it by precedence
     before calling); otherwise the title comes from the first heading or filename.
+    ``tag_mode`` forces the vocabulary mode (off|warn|strict) for this one ingest,
+    overriding the vault's configured mode without mutating it (REQ-14).
     Returns the path to the created/updated wiki page.
     """
     if not source.exists():
@@ -192,6 +196,12 @@ def ingest_file(
 
     vault_config = load_vault_config(vault_path)
     vocab = parse_tag_vocabulary(vault_config)
+    if tag_mode is not None:
+        if tag_mode not in TAG_MODES:
+            raise ValueError(
+                f"invalid tag mode {tag_mode!r}; expected one of {', '.join(TAG_MODES)}"
+            )
+        vocab = replace(vocab, mode=tag_mode)
     raw_ref = f"raw/{source.name}"
     raw_dest = vault_path / "raw" / source.name
 
@@ -391,6 +401,7 @@ def ingest_extracted(
     tags: list[str] | None = None,
     update: bool = False,
     force: bool = False,
+    tag_mode: str | None = None,
 ) -> Path:
     """Server-side half of URL ingest: ingest already-fetched, already-extracted
     content into ``raw/<name>.md`` with an http-provenance sidecar.
@@ -433,7 +444,7 @@ def ingest_extracted(
             staged, vault_path, topic=topic, tags=tags, update=update, force=force,
             provenance_source=source_url, provenance_fetcher="http",
             extra_frontmatter={"source_url": source_url},
-            slug_override=name, title_override=title,
+            slug_override=name, title_override=title, tag_mode=tag_mode,
         )
 
     # Archive the original fetched artifact next to the raw body and record its
@@ -451,6 +462,7 @@ def ingest_url(
     fetcher=None,
     update: bool = False,
     force: bool = False,
+    tag_mode: str | None = None,
 ) -> Path:
     """Fetch a URL, extract clean main-content markdown, and ingest it as
     ``raw/<name>.md`` with an http-provenance sidecar.
@@ -469,5 +481,5 @@ def ingest_url(
         asset=result.body,
         markdown=extracted.markdown,
         extractor_title=extracted.title,
-        topic=topic, tags=tags, update=update, force=force,
+        topic=topic, tags=tags, update=update, force=force, tag_mode=tag_mode,
     )

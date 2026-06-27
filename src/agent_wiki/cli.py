@@ -134,7 +134,10 @@ def init(path, url, token, clear):
                    "To rebuild after editing the vault's own raw, use `awiki reingest`.")
 @click.option("--force", is_flag=True, default=False,
               help="Overwrite even if the page has diverged from its raw source")
-def ingest(files, topic, tags, update, force):
+@click.option("--tag-mode", type=click.Choice(["off", "warn", "strict"]), default=None,
+              help="Force the tag vocabulary mode for this ingest only "
+                   "(does not change the vault's configured mode)")
+def ingest(files, topic, tags, update, force, tag_mode):
     """Ingest files or URLs into the wiki vault."""
     svc = _service()
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
@@ -155,7 +158,7 @@ def ingest(files, topic, tags, update, force):
         if is_url(file_path):
             try:
                 out = svc.ingest_url(file_path, topic=topic, tags=tag_list,
-                                     update=update, force=force)
+                                     update=update, force=force, tag_mode=tag_mode)
                 verb = "Updated" if update else "Ingested"
                 click.echo(f"{verb} {file_path} -> {out['page']}")
             except UnchangedURLSkip:
@@ -170,7 +173,8 @@ def ingest(files, topic, tags, update, force):
             continue
         path = Path(file_path)
         try:
-            out = svc.ingest(path, topic=topic, tags=tag_list, update=update, force=force)
+            out = svc.ingest(path, topic=topic, tags=tag_list, update=update,
+                             force=force, tag_mode=tag_mode)
             verb = "Updated" if update else "Ingested"
             click.echo(f"{verb} {path.name} -> {out['page']}")
         except PageDriftError as e:

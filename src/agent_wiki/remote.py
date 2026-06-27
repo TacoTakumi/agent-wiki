@@ -82,14 +82,15 @@ class RemoteVaultService(VaultService):
         return self._check(self._c.post("/v1/context", json={"prompt": prompt})).json()["block"]
 
     # --- writes ---
-    def ingest(self, source: Path, topic=None, tags=None, update=False, force=False) -> dict:
+    def ingest(self, source: Path, topic=None, tags=None, update=False, force=False,
+               tag_mode=None) -> dict:
         return self.ingest_path_bytes(
             Path(source).name, Path(source).read_bytes(),
-            topic=topic, tags=tags, update=update, force=force,
+            topic=topic, tags=tags, update=update, force=force, tag_mode=tag_mode,
         )
 
     def ingest_path_bytes(self, filename, data, topic=None, tags=None,
-                          update=False, force=False) -> dict:
+                          update=False, force=False, tag_mode=None) -> dict:
         files = {"file": (filename, data, "application/octet-stream")}
         form = {}
         if topic:
@@ -100,9 +101,12 @@ class RemoteVaultService(VaultService):
             form["update"] = "true"
         if force:
             form["force"] = "true"
+        if tag_mode:
+            form["tag_mode"] = tag_mode
         return self._check(self._c.post("/v1/ingest", files=files, data=form)).json()
 
-    def ingest_url(self, url, topic=None, tags=None, update=False, force=False) -> dict:
+    def ingest_url(self, url, topic=None, tags=None, update=False, force=False,
+                   tag_mode=None) -> dict:
         # Client-side fetch + extract (D-17/REQ-09): we ship the extracted markdown
         # plus the original asset to the server, which never fetches. Note the fetch
         # is delegated to fetch_and_extract — no Fetcher is referenced inline here.
@@ -125,6 +129,8 @@ class RemoteVaultService(VaultService):
             form["update"] = "true"
         if force:
             form["force"] = "true"
+        if tag_mode:
+            form["tag_mode"] = tag_mode
         out = self._check(self._c.post("/v1/ingest_url", files=files, data=form)).json()
         if out.get("unchanged"):
             # Same URL, unchanged body: the server skipped — re-raise so the CLI's
