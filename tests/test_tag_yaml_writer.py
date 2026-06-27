@@ -87,3 +87,27 @@ def test_creates_a_tags_block_when_absent(tmp_path):
     vocab = parse_tag_vocabulary(yaml.safe_load(text))
     assert vocab.mode == "warn"
     assert vocab.vocabulary == {"stt": ["asr"]}
+
+
+def test_off_mode_round_trips_through_the_writer(tmp_path):
+    # Preserving an existing 'mode: off' across a write must not corrupt it:
+    # 'off' is a YAML 1.1 boolean, so an unquoted render reads back as False.
+    wiki = tmp_path / "wiki.yaml"
+    wiki.write_text("topics:\n  - research\ntags:\n  mode: 'off'\n  vocabulary: {}\n")
+
+    update_tags_block(wiki, vocabulary={"stt": ["asr"]})  # omitted mode → keep off
+    vocab = parse_tag_vocabulary(yaml.safe_load(wiki.read_text()))
+
+    assert vocab.mode == "off"
+    assert vocab.is_off
+    assert vocab.vocabulary == {"stt": ["asr"]}
+
+
+def test_write_off_mode_renders_a_string_not_a_yaml_boolean(tmp_path):
+    wiki = tmp_path / "wiki.yaml"
+    wiki.write_text("topics:\n  - research\n")
+
+    update_tags_block(wiki, vocabulary={"stt": ["asr"]}, mode="off")
+    # A YAML 1.1 reader (PyYAML) must read the written mode back as the string
+    # 'off', not the boolean False.
+    assert yaml.safe_load(wiki.read_text())["tags"]["mode"] == "off"

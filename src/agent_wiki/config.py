@@ -56,6 +56,11 @@ def parse_tag_vocabulary(config) -> TagVocabulary:
         return TagVocabulary(mode="off", vocabulary={})
 
     mode = block.get("mode")
+    # A bare 'mode: off' is coerced to boolean False by the YAML 1.1 reader
+    # (PyYAML); map it back to the 'off' mode so a hand-written or round-tripped
+    # 'mode: off' is read correctly instead of failing as the string 'false'.
+    if mode is False:
+        mode = "off"
     mode = "warn" if mode is None else str(mode).strip().lower()
     if mode not in TAG_MODES:
         raise ValueError(
