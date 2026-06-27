@@ -156,3 +156,47 @@ def test_cli_strict_novel_tag_exits_nonzero(tmp_vault, tmp_config, tmp_path):
     result = runner.invoke(cli, ["ingest", str(src), "--tags", "frobnicate"])
     assert result.exit_code != 0
     assert not (tmp_vault / "research" / "strict-doc.md").exists()
+
+
+# --- per-ingest mode override (T-05) -----------------------------------------
+
+
+def _configured_mode(vault):
+    return yaml.safe_load((vault / "wiki.yaml").read_text())["tags"]["mode"]
+
+
+def test_override_param_forces_strict_on_a_warn_vault(tmp_vault, tmp_path):
+    _set_vocab(tmp_vault, mode="warn")
+    with pytest.raises(StrictTagError):
+        ingest_file(_src(tmp_path), tmp_vault, topic="research",
+                    tags=["frobnicate"], tag_mode="strict")
+
+
+def test_cli_override_warn_to_strict_rejects(tmp_vault, tmp_config, tmp_path):
+    _set_vocab(tmp_vault, mode="warn")
+    src = _src(tmp_path, name="ov-strict.md", body="# Ov Strict\n\nBody.\n")
+    result = CliRunner().invoke(
+        cli, ["ingest", str(src), "--tag-mode", "strict", "--tags", "frobnicate"])
+    assert result.exit_code != 0
+    assert not (tmp_vault / "research" / "ov-strict.md").exists()
+    assert _configured_mode(tmp_vault) == "warn"  # configured mode untouched
+
+
+def test_cli_override_strict_to_warn_accepts(tmp_vault, tmp_config, tmp_path):
+    _set_vocab(tmp_vault, mode="strict")
+    src = _src(tmp_path, name="ov-warn.md", body="# Ov Warn\n\nBody.\n")
+    result = CliRunner().invoke(
+        cli, ["ingest", str(src), "--tag-mode", "warn", "--tags", "frobnicate"])
+    assert result.exit_code == 0
+    page = parse_page(tmp_vault / "research" / "ov-warn.md")
+    assert page["meta"]["tags"] == ["frobnicate"]
+    assert _configured_mode(tmp_vault) == "strict"  # configured mode untouched
+
+
+def test_remote_override_threads_through_to_server(remote_service, tmp_vault, tmp_path):
+    # The override must reach the server's canonicalization call, not be dropped.
+    _set_vocab(tmp_vault, mode="warn")
+    src = _src(tmp_path, name="remote-ov.md", body="# Remote Ov\n\nBody.\n")
+    with pytest.raises(ValueError):
+        remote_service.ingest(src, tags=["frobnicate"], tag_mode="strict")
+    assert _configured_mode(tmp_vault) == "warn"

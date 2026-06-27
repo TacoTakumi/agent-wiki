@@ -67,11 +67,11 @@ class VaultService(ABC):
     @abstractmethod
     def ingest(self, source: Path, topic: str | None = None,
                tags: list[str] | None = None, update: bool = False,
-               force: bool = False) -> dict: ...
+               force: bool = False, tag_mode: str | None = None) -> dict: ...
 
     def ingest_url(self, url: str, topic: str | None = None,
                    tags: list[str] | None = None, update: bool = False,
-                   force: bool = False) -> dict:
+                   force: bool = False, tag_mode: str | None = None) -> dict:
         # Concrete default so any non-overriding service stays instantiable; both
         # the local facade and the remote client implement it (REQ-17).
         raise NotImplementedError("URL ingest is not available for this service")
@@ -165,24 +165,26 @@ class LocalVaultService(VaultService):
     # --- writes ---
     def ingest(self, source: Path, topic: str | None = None,
                tags: list[str] | None = None, update: bool = False,
-               force: bool = False) -> dict:
+               force: bool = False, tag_mode: str | None = None) -> dict:
         with file_lock(self.vault_path, "log"):
             page_path = ingest_file(source, self.vault_path, topic=topic,
-                                    tags=tags, update=update, force=force)
+                                    tags=tags, update=update, force=force,
+                                    tag_mode=tag_mode)
         return self._page_result(page_path, topic)
 
     def ingest_url(self, url: str, topic: str | None = None,
                    tags: list[str] | None = None, update: bool = False,
-                   force: bool = False) -> dict:
+                   force: bool = False, tag_mode: str | None = None) -> dict:
         with file_lock(self.vault_path, "log"):
             page_path = ingest_url(url, self.vault_path, topic=topic, tags=tags,
-                                   update=update, force=force)
+                                   update=update, force=force, tag_mode=tag_mode)
         return self._page_result(page_path, topic)
 
     def ingest_extracted(self, source_url: str, content_type: str, asset: bytes,
                          markdown: str, extractor_title: str | None = None,
                          topic: str | None = None, tags: list[str] | None = None,
-                         update: bool = False, force: bool = False) -> dict:
+                         update: bool = False, force: bool = False,
+                         tag_mode: str | None = None) -> dict:
         # Server-side seam (D-17/REQ-09): ingest already-fetched, already-extracted
         # content. No Fetcher is constructed here, so the server makes no outbound
         # request — the remote client did the fetch+extract.
@@ -191,6 +193,7 @@ class LocalVaultService(VaultService):
                 self.vault_path, source_url=source_url, content_type=content_type,
                 asset=asset, markdown=markdown, extractor_title=extractor_title,
                 topic=topic, tags=tags, update=update, force=force,
+                tag_mode=tag_mode,
             )
         return self._page_result(page_path, topic)
 
