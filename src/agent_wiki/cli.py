@@ -740,23 +740,51 @@ def tag_suggest(write):
 
 
 @tag_group.command("fix")
+@click.argument("path", required=False)
+@click.option("--topic", default=None,
+              help="Narrow the pass to a single topic folder.")
 @click.option("--write", is_flag=True, default=False,
               help="Rewrite page frontmatter tags in place (default: preview only).")
-def tag_fix(write):
+def tag_fix(path, topic, write):
     """Canonicalize frontmatter tags across the vault against the vocabulary.
 
     Preview by default: report every page whose tags would canonicalize and write
     nothing. --write rewrites only each page's frontmatter tag list — the page body
     stays byte-identical and raw/ is never touched. Known aliases are rewritten to
     their preferred term; novel out-of-vocabulary tags are reported but left for a
-    human (adopt via 'tag add', or remove). Inert when no vocabulary is configured."""
+    human (adopt via 'tag add', or remove). Inert when no vocabulary is configured.
+
+    --topic <t> narrows the pass to one topic; a PATH argument (a vault-relative or
+    absolute file/directory) narrows it to that subtree. The default is the whole
+    vault."""
     from agent_wiki.config import load_tag_vocabulary, load_vault_config
     from agent_wiki.tag_fix import apply_tag_fix, collect_tag_fixes
 
     vault = get_vault_path()
     config = load_vault_config(vault)
+    topics = config.get("topics", [])
+
+    if topic and path:
+        raise click.ClickException("give either --topic or a PATH, not both.")
+
+    root = None
+    if topic:
+        if topic not in topics:
+            raise click.ClickException(
+                f"unknown topic '{topic}'; known topics: {', '.join(topics)}")
+        topics = [topic]
+    elif path:
+        p = Path(path)
+        root = (p if p.is_absolute() else vault / p).resolve()
+        try:
+            root.relative_to(vault.resolve())
+        except ValueError:
+            raise click.ClickException(f"path '{path}' is outside the vault.")
+        if not root.exists():
+            raise click.ClickException(f"path '{path}' does not exist.")
+
     vocab = load_tag_vocabulary(vault)
-    fixes = collect_tag_fixes(vault, vocab, config.get("topics", []))
+    fixes = collect_tag_fixes(vault, vocab, topics, root=root)
 
     if not fixes:
         click.echo("No tag fixes needed.")
