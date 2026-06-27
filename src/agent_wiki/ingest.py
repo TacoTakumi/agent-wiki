@@ -6,7 +6,10 @@ from datetime import date, datetime
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 
-from agent_wiki.config import load_vault_config
+import click
+
+from agent_wiki.config import load_vault_config, parse_tag_vocabulary
+from agent_wiki.tags import canonicalize_tags
 from agent_wiki.page import (
     slugify, render_page, parse_page,
     page_raw_diverged, page_lines_lost, page_raw_diff,
@@ -24,6 +27,21 @@ def _write_sidecar(raw_dest: Path, source: str, fetcher: str) -> None:
         "ingested": datetime.now().isoformat(timespec="seconds"),
         "sha256": sha256_bytes(raw_dest.read_bytes()),
     })
+
+
+def _apply_vocabulary(tags: list[str], vocab) -> list[str]:
+    """Canonicalize a page's tags at the write boundary, announcing each alias
+    remap and warning on each novel tag, and return the canonical list.
+
+    With an off/empty vocabulary this is inert: canonicalize_tags returns the tags
+    untouched with no remaps or novel tags, so nothing is printed and a vault with
+    no `tags:` block behaves exactly as before this feature (REQ-07)."""
+    result = canonicalize_tags(tags, vocab)
+    for original, preferred in result.remaps:
+        click.echo(f"tag '{original}' canonicalized to '{preferred}'")
+    for tag in result.novel:
+        click.echo(f"warning: novel tag '{tag}' is not in the vocabulary (kept)")
+    return result.tags
 
 
 class UnchangedURLSkip(Exception):
@@ -157,6 +175,7 @@ def ingest_file(
         raise FileNotFoundError(f"Source file not found: {source}")
 
     vault_config = load_vault_config(vault_path)
+    vocab = parse_tag_vocabulary(vault_config)
     raw_ref = f"raw/{source.name}"
     raw_dest = vault_path / "raw" / source.name
 
@@ -229,10 +248,11 @@ def ingest_file(
         # reingest, then rebuild the managed keys on top — don't drop what we
         # don't manage.
         meta = dict(old_meta)
+        eff_tags = tags if tags is not None else (old_meta.get("tags") or [])
         meta.update({
             "title": title,
             "topic": eff_topic,
-            "tags": tags if tags is not None else (old_meta.get("tags") or []),
+            "tags": _apply_vocabulary(eff_tags, vocab),
             "created": old_meta.get("created", today),
             "updated": today,
             "sources": _merge_sources(old_meta.get("sources"), raw_ref),
@@ -250,7 +270,7 @@ def ingest_file(
     meta = {
         "title": title,
         "topic": eff_topic,
-        "tags": tags or [],
+        "tags": _apply_vocabulary(tags or [], vocab),
         "created": today,
         "updated": today,
         "sources": [raw_ref],
