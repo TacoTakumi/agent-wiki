@@ -636,6 +636,65 @@ def token_revoke(name):
     click.echo(f"Revoked '{name}'." if revoke_token(name) else f"No token named '{name}'.")
 
 
+@cli.group("tag")
+def tag_group():
+    """Manage the wiki.yaml tag vocabulary."""
+    pass
+
+
+@tag_group.command("add")
+@click.argument("preferred")
+@click.option("--alias", "aliases", multiple=True,
+              help="An alias for the preferred term (repeatable).")
+def tag_add(preferred, aliases):
+    """Add a preferred tag (and optional aliases) to the vocabulary.
+
+    Idempotent: re-adding an existing term or alias is a no-op. Refuses to bind
+    an alias already claimed by a different preferred term, exiting non-zero
+    without writing."""
+    from agent_wiki.config import (
+        detect_vocabulary_conflicts, load_vault_config, parse_tag_vocabulary,
+    )
+    from agent_wiki.tag_yaml import update_tags_block
+
+    vault = get_vault_path()
+    try:
+        vocab = parse_tag_vocabulary(load_vault_config(vault))
+    except FileNotFoundError as e:
+        raise click.ClickException(str(e))
+
+    # Reuse the existing key's casing when the preferred term is already present,
+    # so re-adding never forks a case-variant duplicate.
+    key = next((k for k in vocab.vocabulary if k.lower() == preferred.lower()),
+               preferred)
+    proposed = {k: list(v) for k, v in vocab.vocabulary.items()}
+    merged = list(proposed.get(key, []))
+    seen = {a.lower() for a in merged} | {key.lower()}
+    for alias in aliases:
+        if alias.lower() not in seen:
+            merged.append(alias)
+            seen.add(alias.lower())
+    proposed[key] = merged
+
+    if proposed == vocab.vocabulary:
+        click.echo(f"'{key}' already up to date; no change.")
+        return
+
+    # Refuse only conflicts this add would introduce, not ones already on disk.
+    proposed_vocab = parse_tag_vocabulary(
+        {"tags": {"mode": "warn", "vocabulary": proposed}}
+    )
+    before = {c.token for c in detect_vocabulary_conflicts(vocab)}
+    new_conflicts = [c for c in detect_vocabulary_conflicts(proposed_vocab)
+                     if c.token not in before]
+    if new_conflicts:
+        raise click.ClickException("; ".join(c.message for c in new_conflicts))
+
+    update_tags_block(vault / "wiki.yaml", proposed)
+    detail = f" (aliases: {', '.join(aliases)})" if aliases else ""
+    click.echo(f"Added '{key}'{detail} to the tag vocabulary.")
+
+
 @cli.command()
 @click.option("--bind", default=None, help="Bind address (default from server.yaml or 127.0.0.1).")
 @click.option("--port", default=None, type=int, help="Port (default from server.yaml or 8731).")
