@@ -38,14 +38,22 @@ class PageTagFix:
         return self.after != self.before
 
 
+def _within(md_file: Path, root: Path) -> bool:
+    """True if `md_file` is `root` itself (a file) or lies under it (a directory)."""
+    mf = md_file.resolve()
+    return mf == root or root in mf.parents
+
+
 def collect_tag_fixes(vault_path: Path, vocab: TagVocabulary,
-                      topics: list) -> list:
+                      topics: list, *, root: Path | None = None) -> list:
     """Scan `topics` under `vault_path` for pages `tag fix` should surface.
 
     Returns a PageTagFix per topic-folder page whose frontmatter tags would
     canonicalize (alias remap, casing, or de-dup) or that carries a novel tag.
-    Read-only — never writes. With an off/empty vocabulary the result is empty, so
-    `tag fix` is inert on non-vocabulary vaults."""
+    Read-only — never writes. `root` (a resolved file or directory) narrows the
+    pass to that subtree; raw/, index.md and log.md stay excluded regardless,
+    since only topic dirs are walked. With an off/empty vocabulary the result is
+    empty, so `tag fix` is inert on non-vocabulary vaults."""
     fixes: list = []
     if vocab.is_off:
         return fixes
@@ -54,6 +62,8 @@ def collect_tag_fixes(vault_path: Path, vocab: TagVocabulary,
         if not topic_dir.is_dir():
             continue
         for md_file in sorted(topic_dir.rglob("*.md")):
+            if root is not None and not _within(md_file, root):
+                continue
             before = list(parse_page(md_file)["meta"].get("tags") or [])
             if not before:
                 continue

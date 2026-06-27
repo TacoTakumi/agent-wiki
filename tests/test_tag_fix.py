@@ -109,3 +109,51 @@ def test_raw_and_root_artifacts_are_not_rewritten(tmp_config, tmp_vault):
     result = CliRunner().invoke(cli, ["tag", "fix", "--write"])
     assert result.exit_code == 0, result.output
     assert raw_doc.read_text() == raw_before
+
+
+# --- scope narrowing: --topic / path argument (REQ-17) -----------------------
+
+
+def test_fix_topic_narrows_to_that_topic(tmp_config, tmp_vault):
+    research = _page(tmp_vault, "research", "R Page", ["asr"])
+    decisions = _page(tmp_vault, "decisions", "D Page", ["asr"])
+    _set_vocab(tmp_vault)
+    dec_before = decisions.read_text()
+
+    result = CliRunner().invoke(cli, ["tag", "fix", "--write", "--topic", "research"])
+    assert result.exit_code == 0, result.output
+    # research/ is canonicalized; the other topic is left byte-unchanged.
+    assert parse_page(research)["meta"]["tags"] == ["stt"]
+    assert decisions.read_text() == dec_before
+    assert parse_page(decisions)["meta"]["tags"] == ["asr"]
+
+
+def test_fix_path_argument_narrows_to_that_topic(tmp_config, tmp_vault):
+    research = _page(tmp_vault, "research", "R Page", ["asr"])
+    decisions = _page(tmp_vault, "decisions", "D Page", ["asr"])
+    _set_vocab(tmp_vault)
+    dec_before = decisions.read_text()
+
+    # A vault-relative path argument narrows the pass the same way --topic does.
+    result = CliRunner().invoke(cli, ["tag", "fix", "--write", "research"])
+    assert result.exit_code == 0, result.output
+    assert parse_page(research)["meta"]["tags"] == ["stt"]
+    assert decisions.read_text() == dec_before
+
+
+def test_fix_unknown_topic_errors(tmp_config, tmp_vault):
+    page = _page(tmp_vault, "research", "R Page", ["asr"])
+    _set_vocab(tmp_vault)
+    before = page.read_text()
+
+    result = CliRunner().invoke(cli, ["tag", "fix", "--write", "--topic", "nope"])
+    assert result.exit_code != 0
+    assert "nope" in result.output
+    assert page.read_text() == before   # nothing written on a bad narrowing
+
+
+def test_fix_rejects_both_topic_and_path(tmp_config, tmp_vault):
+    _set_vocab(tmp_vault)
+    result = CliRunner().invoke(
+        cli, ["tag", "fix", "--topic", "research", "research"])
+    assert result.exit_code != 0
