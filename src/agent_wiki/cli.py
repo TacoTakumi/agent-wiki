@@ -739,6 +739,51 @@ def tag_suggest(write):
     click.echo(render_suggestion_block(clusters, counts, mode=mode), nl=False)
 
 
+@tag_group.command("fix")
+@click.option("--write", is_flag=True, default=False,
+              help="Rewrite page frontmatter tags in place (default: preview only).")
+def tag_fix(write):
+    """Canonicalize frontmatter tags across the vault against the vocabulary.
+
+    Preview by default: report every page whose tags would canonicalize and write
+    nothing. --write rewrites only each page's frontmatter tag list — the page body
+    stays byte-identical and raw/ is never touched. Known aliases are rewritten to
+    their preferred term; novel out-of-vocabulary tags are reported but left for a
+    human (adopt via 'tag add', or remove). Inert when no vocabulary is configured."""
+    from agent_wiki.config import load_tag_vocabulary, load_vault_config
+    from agent_wiki.tag_fix import apply_tag_fix, collect_tag_fixes
+
+    vault = get_vault_path()
+    config = load_vault_config(vault)
+    vocab = load_tag_vocabulary(vault)
+    fixes = collect_tag_fixes(vault, vocab, config.get("topics", []))
+
+    if not fixes:
+        click.echo("No tag fixes needed.")
+        return
+
+    changed = 0
+    for fix in fixes:
+        if fix.changed:
+            changed += 1
+            if write:
+                apply_tag_fix(vault, fix)
+            verb = "fixed" if write else "would fix"
+            click.echo(f"{fix.path}: {fix.before} -> {fix.after} ({verb})")
+        else:
+            click.echo(f"{fix.path}: {fix.before} (novel tags only; unchanged)")
+        for alias, preferred in fix.remaps:
+            click.echo(f"    alias '{alias}' -> '{preferred}'")
+        for tag in fix.novel:
+            click.echo(f"    novel '{tag}' (left unchanged; adopt with 'tag add' "
+                       f"or remove)")
+
+    if write:
+        click.echo(f"Rewrote {changed} page(s).")
+    else:
+        click.echo(f"{changed} page(s) would change. Re-run with --write to apply.")
+
+
 @cli.command()
 @click.option("--bind", default=None, help="Bind address (default from server.yaml or 127.0.0.1).")
 @click.option("--port", default=None, type=int, help="Port (default from server.yaml or 8731).")
