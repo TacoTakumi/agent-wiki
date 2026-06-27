@@ -1,12 +1,15 @@
 from datetime import date, datetime
 from pathlib import Path
-from agent_wiki.config import load_vault_config
+from agent_wiki.config import (
+    detect_vocabulary_conflicts, load_vault_config, parse_tag_vocabulary,
+)
 from agent_wiki.fetch import Fetcher, FetchError, HttpFetcher, is_url
 from agent_wiki.index import indexed_paths
 from agent_wiki.page import (
     parse_page, extract_wikilinks, page_raw_diverged, page_lines_lost, is_sidecar,
     load_sidecar, sha256_bytes, page_body_for_raw,
 )
+from agent_wiki.tags import canonicalize_tags
 
 STALE_DAYS = 90  # a page more than this many days behind its newest source is stale
 PAGE_MAX_LINES = 200  # a page body longer than this is a split candidate
@@ -25,6 +28,7 @@ LINT_TYPES = (
     "stale_content",
     "page_size",
     "index_incomplete",
+    "tag_audit",
 )
 
 
@@ -59,6 +63,19 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
     topics = vault_config.get("topics", [])
     issues = []
     listed_in_index = indexed_paths(vault_path)
+
+    # tag-audit (REQ-12): read-only canonicalization preview. Inert unless a tag
+    # vocabulary is configured. Vocabulary conflicts are reported once, against
+    # wiki.yaml; per-page alias/novel findings are emitted inside the page loop.
+    tag_vocab = parse_tag_vocabulary(vault_config)
+    tag_audit_on = not tag_vocab.is_off
+    if tag_audit_on:
+        for conflict in detect_vocabulary_conflicts(tag_vocab):
+            issues.append({
+                "type": "tag_audit",
+                "path": "wiki.yaml",
+                "detail": f"wiki.yaml vocabulary conflict: {conflict.message}",
+            })
 
     # Collect all pages and their titles
     all_pages = []
@@ -148,6 +165,22 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
                     "path": str(rel),
                     "detail": f"{rel} is {n_lines} lines (>{PAGE_MAX_LINES}); consider splitting",
                 })
+
+            if tag_audit_on:
+                audit = canonicalize_tags(page["meta"].get("tags") or [], tag_vocab)
+                for alias, preferred in audit.remaps:
+                    issues.append({
+                        "type": "tag_audit",
+                        "path": str(rel),
+                        "detail": f"{rel} tag '{alias}' is an alias of "
+                                  f"'{preferred}' (fixable: awiki tag fix)",
+                    })
+                for tag in audit.novel:
+                    issues.append({
+                        "type": "tag_audit",
+                        "path": str(rel),
+                        "detail": f"{rel} tag '{tag}' is not in the vocabulary",
+                    })
 
             links = extract_wikilinks(page["body"])
             all_wikilinks[str(rel)] = links

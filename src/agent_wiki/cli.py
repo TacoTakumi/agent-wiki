@@ -302,6 +302,7 @@ LINT_LABELS = {
     "stale_content": "STALE",
     "page_size": "SIZE",
     "index_incomplete": "INDEX",
+    "tag_audit": "TAG",
 }
 
 
