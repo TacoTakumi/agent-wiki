@@ -75,3 +75,22 @@ def test_no_io_pure_function_does_not_touch_vocab_object():
     before = dict(STT.vocabulary)
     canonicalize_tags(["asr", "frob"], STT)
     assert STT.vocabulary == before
+
+
+def test_non_string_novel_tag_rides_through_without_crashing():
+    # A malformed non-string tag (e.g. a YAML bare int `tags: [2024]`) must not
+    # crash canonicalization: it's kept verbatim and flagged novel, so read-only
+    # lint/tag-audit and tag fix stay traceback-free on bad frontmatter.
+    result = canonicalize_tags([2024], STT)
+    assert result.tags == [2024]
+    assert result.novel == [2024]
+    assert result.remaps == []
+
+
+def test_non_string_novel_tag_preserves_type_alongside_canonicalized_strings():
+    result = canonicalize_tags(["asr", 2024], STT)
+    # 'asr' canonicalizes to 'stt'; the int rides through unchanged (still an int).
+    assert result.tags == ["stt", 2024]
+    assert isinstance(result.tags[1], int)   # type preserved, not stringified
+    assert result.remaps == [("asr", "stt")]
+    assert result.novel == [2024]
