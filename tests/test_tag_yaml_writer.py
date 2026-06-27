@@ -111,3 +111,17 @@ def test_write_off_mode_renders_a_string_not_a_yaml_boolean(tmp_path):
     # A YAML 1.1 reader (PyYAML) must read the written mode back as the string
     # 'off', not the boolean False.
     assert yaml.safe_load(wiki.read_text())["tags"]["mode"] == "off"
+
+
+def test_writer_heals_a_bare_unquoted_off_mode(tmp_path):
+    # The exact corruption case: a BARE (unquoted) 'mode: off' — the form ruamel
+    # used to emit — must survive a write and read back as off, not boolean False.
+    wiki = tmp_path / "wiki.yaml"
+    wiki.write_text("topics:\n  - research\ntags:\n  mode: off\n  vocabulary: {}\n")
+
+    update_tags_block(wiki, vocabulary={"stt": ["asr"]})  # omitted mode → keep off
+    text = wiki.read_text()
+
+    assert yaml.safe_load(text)["tags"]["mode"] == "off"   # re-rendered as a string
+    vocab = parse_tag_vocabulary(yaml.safe_load(text))
+    assert vocab.mode == "off" and vocab.is_off
