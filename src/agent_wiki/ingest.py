@@ -29,14 +29,30 @@ def _write_sidecar(raw_dest: Path, source: str, fetcher: str) -> None:
     })
 
 
-def _apply_vocabulary(tags: list[str], vocab) -> list[str]:
-    """Canonicalize a page's tags at the write boundary, announcing each alias
-    remap and warning on each novel tag, and return the canonical list.
+class StrictTagError(ValueError):
+    """Strict tag mode encountered a novel out-of-vocabulary tag. Raised pre-flight
+    (before any raw/sidecar/page write) so the vault is left byte-unchanged.
+    `novel` is the offending tag list."""
 
-    With an off/empty vocabulary this is inert: canonicalize_tags returns the tags
-    untouched with no remaps or novel tags, so nothing is printed and a vault with
-    no `tags:` block behaves exactly as before this feature (REQ-07)."""
+    def __init__(self, novel: list[str]):
+        self.novel = list(novel)
+        listed = ", ".join(repr(t) for t in self.novel)
+        super().__init__(
+            f"strict tag mode: {listed} not in the vocabulary; nothing was written"
+        )
+
+
+def _resolve_tags(tags: list[str], vocab) -> list[str]:
+    """Canonicalize a page's tags pre-flight and return the canonical list.
+
+    In strict mode a novel tag raises StrictTagError BEFORE the caller mutates the
+    vault, so the ingest aborts cleanly (REQ-06). Otherwise each alias remap is
+    announced and each novel tag warned (warn mode). With an off/empty vocabulary
+    this is inert: canonicalize_tags returns the tags untouched with no remaps or
+    novel tags, so nothing prints and a no-`tags:`-block vault is unaffected."""
     result = canonicalize_tags(tags, vocab)
+    if vocab.mode == "strict" and result.novel:
+        raise StrictTagError(result.novel)
     for original, preferred in result.remaps:
         click.echo(f"tag '{original}' canonicalized to '{preferred}'")
     for tag in result.novel:
@@ -232,6 +248,14 @@ def ingest_file(
                     f"cannot update: target page {new_path.relative_to(vault_path)} already exists"
                 )
 
+    # Resolve + canonicalize the effective tags BEFORE any mutation, so a strict
+    # rejection of a novel tag aborts with no raw/sidecar/page written (REQ-06).
+    if update and old_path is not None:
+        eff_tags = tags if tags is not None else (old_meta.get("tags") or [])
+    else:
+        eff_tags = tags or []
+    canonical_tags = _resolve_tags(eff_tags, vocab)
+
     # Skip the copy when source IS the destination (in-place reingest); else copy.
     if not (raw_dest.exists() and source.exists() and os.path.samefile(source, raw_dest)):
         shutil.copy2(source, raw_dest)
@@ -248,11 +272,10 @@ def ingest_file(
         # reingest, then rebuild the managed keys on top — don't drop what we
         # don't manage.
         meta = dict(old_meta)
-        eff_tags = tags if tags is not None else (old_meta.get("tags") or [])
         meta.update({
             "title": title,
             "topic": eff_topic,
-            "tags": _apply_vocabulary(eff_tags, vocab),
+            "tags": canonical_tags,
             "created": old_meta.get("created", today),
             "updated": today,
             "sources": _merge_sources(old_meta.get("sources"), raw_ref),
@@ -270,7 +293,7 @@ def ingest_file(
     meta = {
         "title": title,
         "topic": eff_topic,
-        "tags": _apply_vocabulary(tags or [], vocab),
+        "tags": canonical_tags,
         "created": today,
         "updated": today,
         "sources": [raw_ref],

@@ -3,7 +3,9 @@ from pathlib import Path
 
 from click.testing import CliRunner
 
-from agent_wiki.ingest import ingest_file, ingest_extracted
+import pytest
+
+from agent_wiki.ingest import ingest_file, ingest_extracted, StrictTagError
 from agent_wiki.page import parse_page
 from agent_wiki.cli import cli
 
@@ -110,3 +112,47 @@ def test_cli_ingest_announces_remap(tmp_vault, tmp_config, tmp_path):
     assert "asr" in result.output and "stt" in result.output
     page = parse_page(tmp_vault / "research" / "cli-doc.md")
     assert page["meta"]["tags"] == ["stt"]
+
+
+# --- strict mode: rejection (T-04) -------------------------------------------
+
+
+def test_strict_novel_tag_aborts_before_any_mutation(tmp_vault, tmp_path):
+    _set_vocab(tmp_vault, mode="strict")
+    with pytest.raises(StrictTagError):
+        ingest_file(_src(tmp_path), tmp_vault, topic="research",
+                    tags=["frobnicate"])
+    # No page, no raw, no sidecar — the vault is unchanged.
+    assert not (tmp_vault / "raw" / "doc.md").exists()
+    assert not (tmp_vault / "raw" / "doc.md.meta.yaml").exists()
+    assert list((tmp_vault / "research").glob("*.md")) == []
+
+
+def test_strict_in_vocab_tags_still_succeed(tmp_vault, tmp_path):
+    _set_vocab(tmp_vault, mode="strict")
+    page = ingest_file(_src(tmp_path), tmp_vault, topic="research",
+                       tags=["asr", "stt"])
+    assert parse_page(page)["meta"]["tags"] == ["stt"]
+
+
+def test_strict_url_ingest_novel_tag_aborts(tmp_vault):
+    _set_vocab(tmp_vault, mode="strict")
+    with pytest.raises(StrictTagError):
+        ingest_extracted(
+            tmp_vault,
+            source_url="https://example.com/post",
+            content_type="text/html",
+            asset=b"<html></html>",
+            markdown="# Post\n\nBody.\n",
+            tags=["frobnicate"],
+        )
+    assert list((tmp_vault / "raw").glob("*.md")) == []
+
+
+def test_cli_strict_novel_tag_exits_nonzero(tmp_vault, tmp_config, tmp_path):
+    _set_vocab(tmp_vault, mode="strict")
+    src = _src(tmp_path, name="strict-doc.md", body="# Strict Doc\n\nBody.\n")
+    runner = CliRunner()
+    result = runner.invoke(cli, ["ingest", str(src), "--tags", "frobnicate"])
+    assert result.exit_code != 0
+    assert not (tmp_vault / "research" / "strict-doc.md").exists()
