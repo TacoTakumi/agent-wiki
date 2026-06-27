@@ -310,7 +310,10 @@ LINT_LABELS = {
 @click.option("--refetch", is_flag=True,
               help="Re-fetch URL sources and flag any whose upstream content "
                    "changed (network; off by default). Local vaults only.")
-def lint(refetch):
+@click.option("--strict", is_flag=True,
+              help="CI gate: exit non-zero if any tag-audit (TAG) finding exists. "
+                   "Does not change which findings print.")
+def lint(refetch, strict):
     """Audit the wiki vault for issues."""
     issues = _service().lint(refetch=refetch)
 
@@ -323,6 +326,11 @@ def lint(refetch):
         click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
 
     click.echo(f"\n{len(issues)} issue(s) found.")
+
+    # --strict gates the exit code only (REQ-13): tag-audit findings fail CI
+    # while plain lint stays report-only. The printed findings are unchanged.
+    if strict and any(i["type"] == "tag_audit" for i in issues):
+        sys.exit(1)
 
 
 @cli.command()

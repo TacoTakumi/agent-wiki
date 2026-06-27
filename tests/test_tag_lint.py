@@ -4,7 +4,9 @@ A read-only check flagging alias tags (fixable) and novel out-of-vocabulary tags
 per page, plus vocabulary conflicts — inert when no vocabulary is configured."""
 
 import yaml
+from click.testing import CliRunner
 
+from agent_wiki.cli import cli
 from agent_wiki.config import load_vault_config
 from agent_wiki.lint import LINT_TYPES, lint_vault
 from agent_wiki.page import render_page, slugify
@@ -63,3 +65,29 @@ def test_reports_vocabulary_conflict(tmp_vault):
 
     conflict = [f for f in findings if "asr" in f["detail"] and "wiki.yaml" in f["path"]]
     assert conflict, findings
+
+
+# --- lint --strict CI gate (REQ-13) ------------------------------------------
+
+
+def test_strict_gates_exit_code_only(tmp_config, tmp_vault):
+    _set_vocab(tmp_vault, {"stt": ["asr"]})
+    _page(tmp_vault, "research", "Alias Page", ["asr"])
+
+    runner = CliRunner()
+    plain = runner.invoke(cli, ["lint"])
+    strict = runner.invoke(cli, ["lint", "--strict"])
+
+    assert plain.exit_code == 0
+    assert strict.exit_code != 0
+    # The flag changes only the exit code: identical findings are printed.
+    assert plain.output == strict.output
+
+
+def test_strict_passes_when_no_tag_audit_findings(tmp_config, tmp_vault):
+    # A configured vocabulary with a clean page yields no tag-audit findings.
+    _set_vocab(tmp_vault, {"stt": ["asr"]})
+    _page(tmp_vault, "research", "Clean Page", ["stt"])
+
+    result = CliRunner().invoke(cli, ["lint", "--strict"])
+    assert result.exit_code == 0
