@@ -58,8 +58,11 @@ def canonicalize_tags(tags, vocab: TagVocabulary) -> CanonicalizeResult:
         else:
             canonical = tag
             novel.append(tag)
-        if canonical.lower() not in seen:
-            seen.add(canonical.lower())
+        # Dedupe on a stringified key so a non-string novel tag (e.g. a YAML
+        # bare int) rides through unchanged instead of crashing on .lower().
+        key = str(canonical).lower()
+        if key not in seen:
+            seen.add(key)
             out.append(canonical)
 
     return CanonicalizeResult(tags=out, remaps=remaps, novel=novel)
