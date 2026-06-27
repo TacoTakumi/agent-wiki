@@ -17,6 +17,7 @@ from pathlib import Path
 
 import yaml
 from ruamel.yaml import YAML
+from ruamel.yaml.scalarstring import SingleQuotedScalarString
 
 # A top-level 'tags:' mapping key — at column 0, not nested under anything.
 _TAGS_KEY = re.compile(r"^tags\s*:")
@@ -29,9 +30,13 @@ def _render_tags_block(mode, vocabulary) -> str:
     empty list as `[]`), which `parse_tag_vocabulary` reads back faithfully."""
     yaml_rt = YAML()
     yaml_rt.default_flow_style = False
+    # Quote 'off' so the scalar survives a YAML 1.1 reader (PyYAML), which would
+    # otherwise read a bare 'off' back as the boolean False. warn/strict are not
+    # YAML booleans, so they stay unquoted.
+    mode_scalar = SingleQuotedScalarString(mode) if mode == "off" else mode
     payload = {
         "tags": {
-            "mode": mode,
+            "mode": mode_scalar,
             "vocabulary": {str(k): list(v) for k, v in dict(vocabulary).items()},
         }
     }
@@ -51,6 +56,8 @@ def _existing_mode(text: str) -> "str | None":
         return None
     if isinstance(data, dict) and isinstance(data.get("tags"), dict):
         mode = data["tags"].get("mode")
+        if mode is False:  # YAML 1.1 coerced a bare 'off' → boolean False
+            return "off"
         return None if mode is None else str(mode)
     return None
 

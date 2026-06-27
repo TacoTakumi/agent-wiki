@@ -69,6 +69,16 @@ def test_invalid_mode_raises():
         parse_tag_vocabulary({"tags": {"mode": "loud", "vocabulary": {}}})
 
 
+def test_mode_read_as_boolean_false_is_treated_as_off():
+    # A bare 'mode: off' is coerced to boolean False by the YAML 1.1 reader; it
+    # must resolve to the 'off' mode, not crash as the string 'false'.
+    vocab = parse_tag_vocabulary(
+        {"tags": {"mode": False, "vocabulary": {"stt": ["asr"]}}}
+    )
+    assert vocab.mode == "off"
+    assert vocab.is_off
+
+
 # --- loading from a vault ----------------------------------------------------
 
 
