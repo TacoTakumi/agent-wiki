@@ -76,6 +76,19 @@ def render_page(meta: dict, body: str) -> str:
     return f"---\n{frontmatter}---\n\n{body}"
 
 
+def update_frontmatter(path: Path, meta: dict) -> None:
+    """Rewrite a page's YAML frontmatter from `meta`, leaving its body byte-identical.
+
+    Re-dumps the frontmatter (same dumper as render_page) and splices it back onto
+    the page's existing body bytes, which are read via parse_page — no hand-rolled
+    YAML splitting. A caller that changes only a frontmatter field (e.g. `tag fix`)
+    therefore never perturbs the body or trips the raw/body drift guard. The page
+    must already have frontmatter."""
+    body = parse_page(path)["body"]
+    frontmatter = yaml.dump(meta, default_flow_style=False, sort_keys=False)
+    path.write_text(f"---\n{frontmatter}---\n{body}")
+
+
 def extract_wikilinks(text: str) -> set[str]:
     """Extract all [[wikilink]] targets from text."""
     return set(re.findall(r"\[\[([^\]]+)\]\]", text))
