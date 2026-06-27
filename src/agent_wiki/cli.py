@@ -715,7 +715,9 @@ def tag_suggest(write):
     related tags (shared token / prefix) as alias candidates and showing each
     tag's frequency. Prints only by default; --write merges the draft into
     wiki.yaml via the round-trip writer. String heuristics only, no ML."""
-    from agent_wiki.config import load_vault_config, parse_tag_vocabulary
+    from agent_wiki.config import (
+        load_tag_vocabulary, load_vault_config, parse_tag_vocabulary,
+    )
     from agent_wiki.tag_suggest import (
         cluster_tags, merge_clusters, render_suggestion_block, scan_tag_counts,
     )
@@ -734,6 +736,12 @@ def tag_suggest(write):
         merged = merge_clusters(existing.vocabulary, clusters)
         update_tags_block(vault / "wiki.yaml", merged)
         click.echo(f"Merged {len(clusters)} suggested term(s) into wiki.yaml.")
+        # --write preserves an existing 'mode: off', so the merged vocabulary is
+        # not enforced. The preview drafts in warn; flag the gap so the write is
+        # not a silent no-op. (An absent block is created as warn — no hint.)
+        if load_tag_vocabulary(vault).mode == "off":
+            click.echo("Note: tag mode is 'off' — set 'mode: warn' in wiki.yaml "
+                       "to enforce the vocabulary.")
         return
 
     click.echo(render_suggestion_block(clusters, counts, mode=mode), nl=False)

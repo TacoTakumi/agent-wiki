@@ -118,3 +118,32 @@ def test_suggest_write_updates_the_tags_block(tmp_config, tmp_vault):
 
     vocab = _vocab(tmp_vault)
     assert in_use <= _all_tags(vocab)
+
+
+def test_suggest_write_into_absent_block_enables_warn_without_hint(tmp_config, tmp_vault):
+    _seed_tagged_pages(tmp_vault)
+
+    result = CliRunner().invoke(cli, ["tag", "suggest", "--write"])
+    assert result.exit_code == 0, result.output
+
+    # An absent block is created as warn (enforcement active) → no 'off' hint.
+    assert _vocab(tmp_vault).mode == "warn"
+    assert "mode is 'off'" not in result.output
+
+
+def test_suggest_write_into_off_mode_vault_hints_to_enable(tmp_config, tmp_vault):
+    # An explicit 'mode: off' block: --write merges the vocabulary but leaves the
+    # mode off, so it must tell the user enforcement is not active.
+    config = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    config["tags"] = {"mode": "off", "vocabulary": {}}
+    (tmp_vault / "wiki.yaml").write_text(yaml.dump(config))
+    in_use = _seed_tagged_pages(tmp_vault)
+
+    result = CliRunner().invoke(cli, ["tag", "suggest", "--write"])
+    assert result.exit_code == 0, result.output
+
+    vocab = _vocab(tmp_vault)
+    assert in_use <= _all_tags(vocab)   # vocabulary still merged
+    assert vocab.mode == "off"          # deliberate off is not overridden
+    assert "mode is 'off'" in result.output
+    assert "warn" in result.output      # points the user at how to enforce
