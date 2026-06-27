@@ -695,6 +695,41 @@ def tag_add(preferred, aliases):
     click.echo(f"Added '{key}'{detail} to the tag vocabulary.")
 
 
+@tag_group.command("suggest")
+@click.option("--write", is_flag=True, default=False,
+              help="Merge the suggested draft into wiki.yaml's tags block.")
+def tag_suggest(write):
+    """Suggest a tag vocabulary from the tags in use across the vault.
+
+    Scans every topic-folder page, counts tag frequencies, and prints a draft
+    'tags:' block (valid YAML) covering every in-use tag — grouping obviously
+    related tags (shared token / prefix) as alias candidates and showing each
+    tag's frequency. Prints only by default; --write merges the draft into
+    wiki.yaml via the round-trip writer. String heuristics only, no ML."""
+    from agent_wiki.config import load_vault_config, parse_tag_vocabulary
+    from agent_wiki.tag_suggest import (
+        cluster_tags, merge_clusters, render_suggestion_block, scan_tag_counts,
+    )
+    from agent_wiki.tag_yaml import update_tags_block
+
+    vault = get_vault_path()
+    config = load_vault_config(vault)
+    counts = scan_tag_counts(vault, config)
+    clusters = cluster_tags(counts)
+
+    existing = parse_tag_vocabulary(config)
+    # 'off' / absent block → draft in warn so the suggestion is actionable.
+    mode = existing.mode if existing.mode in ("warn", "strict") else "warn"
+
+    if write:
+        merged = merge_clusters(existing.vocabulary, clusters)
+        update_tags_block(vault / "wiki.yaml", merged)
+        click.echo(f"Merged {len(clusters)} suggested term(s) into wiki.yaml.")
+        return
+
+    click.echo(render_suggestion_block(clusters, counts, mode=mode), nl=False)
+
+
 @cli.command()
 @click.option("--bind", default=None, help="Bind address (default from server.yaml or 127.0.0.1).")
 @click.option("--port", default=None, type=int, help="Port (default from server.yaml or 8731).")
