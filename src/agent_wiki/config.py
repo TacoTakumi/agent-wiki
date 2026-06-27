@@ -1,7 +1,107 @@
 from pathlib import Path
+from dataclasses import dataclass, field
 import os
 import yaml
 import click
+
+
+TAG_MODES = ("off", "warn", "strict")
+
+
+@dataclass(frozen=True)
+class TagVocabulary:
+    """A parsed wiki.yaml 'tags:' block: a mode plus a preferred→aliases mapping.
+
+    `mode` is one of off|warn|strict. `vocabulary` maps each preferred tag to its
+    list of aliases. An absent block resolves to mode 'off' with an empty mapping
+    (the 'no vocabulary configured' value)."""
+
+    mode: str
+    vocabulary: dict = field(default_factory=dict)
+
+    @property
+    def is_off(self) -> bool:
+        """True when canonicalization should not run: mode off or no vocabulary."""
+        return self.mode == "off" or not self.vocabulary
+
+
+@dataclass(frozen=True)
+class VocabularyConflict:
+    """One ambiguous token claimed by more than one preferred term — either an
+    alias bound to two preferred terms, or a string that is both a preferred term
+    and an alias. `token` is the lowercased offender; `preferred` lists the
+    preferred terms that claim it (in their configured casing)."""
+
+    token: str
+    preferred: tuple
+
+    @property
+    def message(self) -> str:
+        terms = ", ".join(self.preferred)
+        return (
+            f"tag '{self.token}' is claimed by multiple preferred terms: {terms}"
+        )
+
+
+def parse_tag_vocabulary(config) -> TagVocabulary:
+    """Parse a vault config dict's 'tags:' block into a TagVocabulary.
+
+    An absent (or empty) block yields the off/empty value without error. A block
+    present with no 'mode' defaults to 'warn' (the block exists to be enforced).
+    Alias lists are coerced: a missing/None list becomes [], a scalar becomes a
+    one-element list; keys and aliases are stringified. An unrecognized mode is a
+    configuration error (ValueError)."""
+    block = (config or {}).get("tags")
+    if not block:
+        return TagVocabulary(mode="off", vocabulary={})
+
+    mode = block.get("mode")
+    mode = "warn" if mode is None else str(mode).strip().lower()
+    if mode not in TAG_MODES:
+        raise ValueError(
+            f"invalid tags mode {mode!r} in wiki.yaml; expected one of "
+            f"{', '.join(TAG_MODES)}"
+        )
+
+    raw_vocab = block.get("vocabulary") or {}
+    vocabulary = {}
+    for preferred, aliases in raw_vocab.items():
+        if aliases is None:
+            alias_list = []
+        elif isinstance(aliases, (list, tuple)):
+            alias_list = [str(a) for a in aliases]
+        else:
+            alias_list = [str(aliases)]
+        vocabulary[str(preferred)] = alias_list
+
+    return TagVocabulary(mode=mode, vocabulary=vocabulary)
+
+
+def load_tag_vocabulary(vault_path: Path) -> TagVocabulary:
+    """Read the tag vocabulary from a vault's wiki.yaml via load_vault_config."""
+    return parse_tag_vocabulary(load_vault_config(vault_path))
+
+
+def detect_vocabulary_conflicts(vocab: TagVocabulary) -> list:
+    """Return the vocabulary's conflicts (empty list when clean).
+
+    A token conflicts when more than one preferred term claims it. Each preferred
+    term claims its own lowercased form and each of its lowercased aliases; a
+    token claimed by two or more distinct preferred terms is ambiguous to
+    canonicalize. Matching is case-insensitive, mirroring canonicalization."""
+    claimants: dict[str, list[str]] = {}
+    for preferred, aliases in vocab.vocabulary.items():
+        for token in [preferred, *aliases]:
+            key = str(token).strip().lower()
+            owners = claimants.setdefault(key, [])
+            if preferred not in owners:
+                owners.append(preferred)
+
+    return [
+        VocabularyConflict(token=token, preferred=tuple(owners))
+        for token, owners in claimants.items()
+        if len(owners) > 1
+    ]
 
 
 def get_config_dir() -> Path:
