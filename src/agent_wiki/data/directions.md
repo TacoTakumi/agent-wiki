@@ -30,11 +30,14 @@ worth reusing — record it with the **`awiki-save`** skill so future
 sessions inherit it. To pull an existing file into the wiki, use the
 **`awiki-ingest`** skill.
 
-**Pages are generated; edit the raw, not the page.** Each page is rendered from an
-immutable file in `raw/`. To change a page, edit its `raw/<name>` source, then
-`awiki reingest <name>`. If the page has diverged from its raw, reingest shows a diff
-and stops — review it, fold anything worth keeping into the raw, then re-run with
-`--force`. Never hand-edit a page in a topic folder.
+**Pages are generated from raw; edit the raw, never the page.** Each page in a
+topic folder is *rendered* from a source file in `raw/` — the raw file is the
+source of truth. To change a page, edit its `raw/<name>` source, then run
+`awiki reingest <name>` to re-render the page from it. (`reingest` only
+propagates the raw's content into the page — it never authors the change itself.)
+If the page has diverged from its raw, reingest shows a diff and stops — review
+it, fold anything worth keeping into the raw, then re-run with `--force`. Never
+hand-edit a page in a topic folder.
 
 If `awiki` isn't installed or no vault is configured, skip the wiki and
 proceed normally — don't block on it.
