@@ -51,6 +51,13 @@ hand-edit a page in a topic folder. To fold a finding into an existing page:
 > Alternative: `awiki ingest <file> --update` authors the raw externally and
 > rebuilds, matched by basename. Use one path or the other, not both at once.
 
+> **Remote vault** (`awiki init --remote …`): the raw lives on the *server*, so
+> steps 1–2 (editing `raw/<stem>.md` in place) don't apply — over the wire
+> `reingest` only re-renders the page from the server's *current* raw. To change
+> content remotely: `awiki show raw/<stem>.md > <stem>.md`, edit it, then
+> `awiki ingest <stem>.md --update` (the client uploads the new bytes; the server
+> rewrites the matching raw and rebuilds).
+
 ## Choosing a Topic
 
 Ask the user which topic to file under if not obvious:
