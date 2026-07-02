@@ -2,6 +2,20 @@
 
 A personal knowledge base for AI agents, inspired by [Karpathy's LLM wiki concept](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). A Python CLI tool manages a plain-markdown vault that any agent can read and write. Claude Code skills provide tight integration, but the vault is just files — open it in Obsidian, grep it, script against it.
 
+## Features
+
+- **Plain markdown, no database** — the whole vault is files with YAML frontmatter and `[[wikilinks]]`. `cat` it, `grep` it, open it in Obsidian/Logseq, or script against it in Python. Nothing to run.
+- **OKF-aligned format** — the vault is ~80% conformant with Google's [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/) by convergent design (markdown + frontmatter, generated `index.md` / `log.md`, no prescribed taxonomy, untyped links, arbitrary frontmatter keys preserved).
+- **Ingest files _and_ URLs** — copy a file or fetch a web page into an immutable `raw/` archive (HTML via trafilatura, PDFs supported). Every ingest writes a sha256 **provenance sidecar** so drift is detectable.
+- **Edit-the-raw, re-ingest** — pages are *rendered* from their `raw/` source. Edit the source and `awiki reingest`; if a page has drifted, you get a diff instead of a silent clobber.
+- **Fast search + full-page read** — multi-word AND search with coverage ranking (ripgrep-backed), then `awiki show <path>` prints any page verbatim.
+- **Conversation capture** — adapters pull Claude Code and OpenCode sessions (plus a drop-zone for any agent) into the vault, with optional LLM summarization.
+- **Auto-context hook** — a `UserPromptSubmit` hook silently surfaces relevant pages to your agent on every prompt, so it knows what it already knows.
+- **Tag vocabulary** — an optional, CLI-managed vocabulary canonicalizes tags (aliases → preferred), with `awiki tag fix` and a lint-based CI gate.
+- **Vault linting** — audit broken links, orphans, raw/page drift, stale pages, oversized pages, index gaps, and tag issues in one pass.
+- **Network vault** — `awiki serve` shares one vault over HTTP; remote machines use the **same `awiki` CLI** transparently, with bearer-token auth and reader/writer/admin roles.
+- **Agent-first integration** — Claude Code skills plus a self-installing `awiki directions` block that teaches any agent (via `CLAUDE.md` / `AGENTS.md`) to search the wiki first and save what's worth keeping.
+
 ## Vision
 
 Agents accumulate knowledge across conversations but lose it when the session ends. Agent Wiki is a persistent, compounding knowledge store that agents maintain alongside you. The human curates sources and asks questions; the agent handles the bookkeeping — filing research, maintaining cross-references, surfacing relevant knowledge before reaching for the web.
