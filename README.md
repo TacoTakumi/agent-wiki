@@ -395,18 +395,18 @@ The system follows Karpathy's three-layer architecture:
 
 ```markdown
 ---
-title: ViewPoint API v3
+title: Payments Service API
 topic: projects
-tags: [viewpoint, api, php]
+tags: [payments, api, backend]
 created: 2026-04-14
 updated: 2026-04-14
-sources: [raw/viewpoint-api-notes.md]
+sources: [raw/payments-service-notes.md]
 ---
 
-# ViewPoint API v3
+# Payments Service API
 
 REST API serving the mobile app and external integrations.
-See [[VP Token System]] for authentication details.
+See [[Auth Tokens]] for authentication details.
 ```
 
 ### Project Structure
@@ -528,7 +528,7 @@ After=network.target
 Type=simple
 ExecStart=/usr/local/bin/awiki serve --bind 127.0.0.1 --port 8731
 Restart=on-failure
-User=rob
+User=youruser
 
 [Install]
 WantedBy=multi-user.target
