@@ -1,6 +1,6 @@
 # Agent Wiki
 
-A personal knowledge base for AI agents, inspired by [Karpathy's LLM wiki concept](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). A Python CLI tool manages a plain-markdown vault that any agent can read and write. Claude Code skills provide tight integration, but the vault is just files — open it in Obsidian, grep it, script against it.
+A personal knowledge base for AI agents, inspired by [Karpathy's LLM wiki concept](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). A Python CLI tool manages a plain-markdown vault that any agent can read and write. Agent skills provide tight integration, but the vault is just files — open it in Obsidian, grep it, script against it.
 
 ## Features
 
@@ -14,7 +14,7 @@ A personal knowledge base for AI agents, inspired by [Karpathy's LLM wiki concep
 - **Tag vocabulary** — an optional, CLI-managed vocabulary canonicalizes tags (aliases → preferred), with `awiki tag fix` and a lint-based CI gate.
 - **Vault linting** — audit broken links, orphans, raw/page drift, stale pages, oversized pages, index gaps, and tag issues in one pass.
 - **Network vault** — `awiki serve` shares one vault over HTTP; remote machines use the **same `awiki` CLI** transparently, with bearer-token auth and reader/writer/admin roles.
-- **Agent-first integration** — Claude Code skills plus a self-installing `awiki directions` block that teaches any agent (via `CLAUDE.md` / `AGENTS.md`) to search the wiki first and save what's worth keeping.
+- **Agent-first integration** — agent skills plus a self-installing `awiki directions` block that teaches any agent (via `CLAUDE.md` / `AGENTS.md`) to search the wiki first and save what's worth keeping.
 
 ## Vision
 
@@ -309,9 +309,9 @@ summarizer:
 
 If a summarizer is configured, each wiki page body is replaced with a structured summary (Context / Decisions / Key Exchanges / Open Threads). The raw transcript stays in `raw/sessions/` regardless.
 
-## Claude Code Skills
+## Agent Skills
 
-Three skills provide agent integration. Install them by adding the `skills/` directory to your Claude Code configuration.
+Three skills wrap the common flows for an agent. They ship as `SKILL.md` skills (usable by Claude Code and other agents that support the format), and because each one just shells out to the plain `awiki` CLI, any agent that can run a shell command can offer the same flows even without native skill support. Install them by adding the `skills/` directory to your agent's skill configuration.
 
 ### `/awiki-search`
 
@@ -363,7 +363,7 @@ The system follows Karpathy's three-layer architecture:
                    You / Your Agent
                          |
                     +-----------+
-                    |  CLI/Skills|  awiki commands + Claude Code skills
+                    |  CLI/Skills|  awiki commands + agent skills
                     +-----------+
                          |
           +--------------+--------------+
@@ -432,9 +432,9 @@ agent-wiki/
     context.py     # Auto-context hook: keyword extract, search, format
     hooks/         # Per-agent install backends (claude, manual)
   skills/
-    awiki-search/  # Claude Code skill
-    awiki-save/    # Claude Code skill
-    awiki-ingest/  # Claude Code skill
+    awiki-search/  # agent skill
+    awiki-save/    # agent skill
+    awiki-ingest/  # agent skill
   tests/           # pytest test suite (472 tests)
 ```
 
