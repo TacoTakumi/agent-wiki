@@ -22,6 +22,12 @@ Agents accumulate knowledge across conversations but lose it when the session en
 
 The wiki is designed to be agent-first but human-readable. It's plain markdown files you can browse in Obsidian, grep from a terminal, or script against with Python. No databases, no servers, no lock-in.
 
+Agents reach the vault through a single, narrow door: the `awiki` CLI. That indirection is deliberate. The very same command works whether the vault is a local folder or a server across the network — point the CLI at a remote vault and every command transparently forwards over HTTP, so a laptop, an edge assistant, and a workstation can all read and write one shared brain with identical commands.
+
+It's also a safeguard. Because the CLI is the only way in, it enforces the vault's invariants no matter who's driving: `raw/` sources stay immutable, pages are *re-rendered* from their source rather than hand-edited, drift is surfaced as a diff instead of a silent clobber, and remote access is gated by reader/writer/admin tokens. A less capable local model doesn't need to understand the vault's layout or be trusted to edit markdown by hand — it calls a handful of commands and the guardrails hold, while the heavier reasoning can live on a bigger model or the vault host.
+
+Onboarding an agent is one command: **`awiki directions`** prints a self-installing usage block. Point your agent at it and it adapts the wording into your `CLAUDE.md` / `AGENTS.md`, teaching the agent to search the wiki first, read full pages, and save what's worth keeping — and to re-sync itself when a newer version ships.
+
 ## Installation
 
 Requires Python 3.10+.
