@@ -5,7 +5,7 @@ patterns only strip things that look sensitive. Tune via wiki.yaml:
 
     redaction:
       enabled: true
-      username: rob          # replace the literal local username
+      username: alice        # replace the literal local username
       patterns:              # extra user regexes, each replaces with [REDACTED]
         - "sk-[A-Za-z0-9]{20,}"
 """

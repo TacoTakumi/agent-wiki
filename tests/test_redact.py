@@ -24,12 +24,12 @@ def test_redactor_strips_github_token():
 
 
 def test_redactor_replaces_username():
-    r = make_redactor({"username": "rob"})
-    out = r.redact("hello rob how are you, rob's fine")
-    # Word-bounded replace: 'rob' standalone replaced, 'rob's' replaced too (re.sub behavior)
+    r = make_redactor({"username": "sam"})
+    out = r.redact("hello sam how are you, sam's fine")
+    # Word-bounded replace: 'sam' standalone replaced, 'sam's' replaced too (re.sub behavior)
     assert "[USER]" in out
-    # Substring inside 'robot' must NOT be replaced
-    out2 = r.redact("robot motors")
+    # Substring inside 'sample' must NOT be replaced
+    out2 = r.redact("sample motors")
     assert "[USER]" not in out2
 
 
