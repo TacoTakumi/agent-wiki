@@ -51,21 +51,48 @@ Create a new vault at the given path (defaults to current directory). Sets up th
 awiki init ~/vaults/agent-wiki
 ```
 
-### `awiki ingest <files> [--topic <topic>] [--tags <tags>] [--update]`
+### `awiki ingest <files-or-urls> [--topic <topic>] [--tags <tags>] [--update] [--force] [--tag-mode off|warn|strict]`
 
-Ingest one or more files into the vault. Each file is copied to `raw/` (immutable archive) and a wiki page is created in the appropriate topic folder with YAML frontmatter.
+Ingest one or more **files or URLs** into the vault. Each source is copied (or fetched) into `raw/` (immutable archive) and a wiki page is created in the appropriate topic folder with YAML frontmatter.
 
 ```bash
 awiki ingest notes.md                          # uses default topic (research)
 awiki ingest notes.md --topic tools --tags cli,python
 awiki ingest *.md --topic research              # glob support
+awiki ingest https://example.com/post          # fetch + ingest a web page
 awiki ingest notes.md --update                 # overwrite raw + update the linked page
 ```
 
-- Title is extracted from the first `# heading`, or derived from the filename.
-- The original file is preserved in `raw/` and never modified.
-- A file is identified by its `raw/` basename. **Without `--update`, ingesting a file whose basename already exists in `raw/` is refused** so nothing is silently clobbered. In a glob, the colliding file is skipped and the rest proceed; the command exits non-zero if any file was skipped.
-- `--update` overwrites `raw/<basename>` and rewrites its linked wiki page (located via the page's `sources:` frontmatter): the body is refreshed, `created` is preserved, `updated` is bumped, and tags are kept unless `--tags` is given. If the title or `--topic` changed, the page file is renamed/moved to match.
+- Title is extracted from the first `# heading`, or derived from the filename (for URLs, from the fetched page's title, then the URL).
+- The original source is preserved in `raw/` and never modified.
+- Every ingest writes a **provenance sidecar** (`raw/<name>.meta.yaml`) recording the source, fetcher, and a sha256 of the raw body. `awiki lint` uses this to detect drift.
+- A file is identified by its `raw/` basename. **Without `--update`, ingesting a source whose basename already exists in `raw/` is refused** so nothing is silently clobbered. In a glob, the colliding file is skipped and the rest proceed; the command exits non-zero if any file was skipped.
+- `--update` overwrites `raw/<basename>` from an **external** source and rewrites its linked wiki page (located via the page's `sources:` frontmatter): the body is refreshed, `created` is preserved, `updated` is bumped, and tags are kept unless `--tags` is given. If the title or `--topic` changed, the page file is renamed/moved to match. (To rebuild a page after editing the vault's *own* `raw/` copy, use [`awiki reingest`](#awiki-reingest-name) instead.)
+- `--force` proceeds even when the target page has diverged from its `raw/` source (otherwise ingest shows the diff and stops).
+- `--tag-mode off|warn|strict` forces the tag-vocabulary mode for this ingest only (see [`awiki tag`](#awiki-tag-addsuggestfix)); it does not change the vault's configured mode.
+
+#### Ingesting URLs
+
+`awiki ingest <url>` fetches the page and ingests it like any other source:
+
+- **HTML** is extracted to clean markdown via [trafilatura](https://trafilatura.readthedocs.io/); **PDFs** via `pymupdf4llm` (with `pdfplumber` selectable).
+- The original fetched artifact is archived byte-identically under `raw/assets/`, and the page carries an inline `source_url`.
+- URLs are normalized for dedup, and a sha256 check skips re-ingesting an unchanged URL. Non-text content types are rejected with a friendly error.
+- On the network server, the **client** does the fetch, so URL ingest works whether the vault is local or remote.
+
+### `awiki reingest <name>`
+
+Rebuild a page from its **own** `raw/<name>` source after you edit that raw file. This is the canonical page-edit loop: pages are *rendered* from `raw/`, so you never hand-edit a page in a topic folder — edit `raw/<name>`, then `awiki reingest <name>`.
+
+```bash
+# edit raw/my-notes.md, then:
+awiki reingest my-notes.md
+awiki reingest my-notes.md --force    # rebuild even if the page diverged from its raw
+```
+
+- The body is taken verbatim from the raw; frontmatter (title from the first `# H1`, tags, `created`) is regenerated — keep the H1 stable, or the slug (and thus the page path) changes and can orphan the page.
+- If the page has diverged from its raw (e.g. someone edited the page directly), `reingest` prints a diff and stops. Fold anything worth keeping into the raw, then re-run with `--force`.
+- `reingest` only propagates the raw's content into the page — it never authors the change itself. Contrast `ingest --update`, which pulls from an *external* file.
 
 ### `awiki search <query> [--topic <topic>] [--limit N]`
 
@@ -97,7 +124,7 @@ Rebuild `index.md` from all wiki pages, grouped by topic. Each entry shows the p
 awiki index
 ```
 
-### `awiki lint`
+### `awiki lint [--strict] [--refetch]`
 
 Audit the vault for issues:
 
@@ -105,10 +132,38 @@ Audit the vault for issues:
 - **ORPHAN** — pages with no incoming wikilinks
 - **RAW** — files in `raw/` that have no corresponding wiki page
 - **META** — pages missing YAML frontmatter
+- **DRIFT** — a page whose body no longer matches its `raw/` source
+- **SOURCE** — a `raw/` file edited in place (drifted from its recorded sha256)
+- **STALE** — a page whose body lags its newest source
+- **SIZE** — pages over 200 lines, flagged as split candidates
+- **INDEX** — pages missing from `index.md`
+- **TAG** — tag-audit findings: alias-fixable or novel tags, or vocabulary conflicts (only when a `tags:` vocabulary is configured)
+- **UPSTREAM** — a URL source whose upstream content changed (only with `--refetch`)
 
 ```bash
 awiki lint
+awiki lint --strict      # CI gate: exit non-zero if any TAG finding exists
+awiki lint --refetch     # also re-fetch URL sources and flag upstream changes (network; local vaults only)
 ```
+
+### `awiki tag add|suggest|fix`
+
+Manage an optional **tag vocabulary** that canonicalizes tags across the vault. The vocabulary lives in a `tags:` block in `wiki.yaml` (`mode: off | warn | strict` plus a preferred → aliases map — see [Vault config](#vault-config-wikiyaml)). It is inert until configured.
+
+```bash
+awiki tag add cli --alias command-line --alias commandline   # persist a preferred term + aliases
+awiki tag suggest                                            # draft a vocabulary from tags already in use
+awiki tag suggest --write                                    # merge that draft into wiki.yaml
+awiki tag fix                                                # preview: which pages' tags would canonicalize
+awiki tag fix --write                                       # apply: rewrite page frontmatter tags in place
+awiki tag fix --topic research                              # narrow to one topic (or pass a path)
+```
+
+- **`tag add`** appends a preferred term (and optional `--alias` entries, repeatable) to the vocabulary via a comment-preserving `wiki.yaml` writer. Idempotent; refuses to bind an alias already claimed by another term.
+- **`tag suggest`** scans every page, counts tag frequencies, and prints a valid `tags:` block covering all in-use tags, grouping related tags as alias candidates. `--write` merges it into `wiki.yaml`. String heuristics only, no ML.
+- **`tag fix`** canonicalizes existing pages' frontmatter tags against the vocabulary — aliases are rewritten to their preferred term; novel out-of-vocabulary tags are reported but left for you (adopt via `tag add`, or remove). Preview by default; `--write` rewrites **frontmatter only** — the page body stays byte-identical and `raw/` is never touched.
+
+Ingest also applies the vocabulary at write time; `awiki lint` reports fixable/novel tags as **TAG** findings, and `awiki lint --strict` gates on them.
 
 ### `awiki status`
 
@@ -360,7 +415,7 @@ agent-wiki/
     awiki-search/  # Claude Code skill
     awiki-save/    # Claude Code skill
     awiki-ingest/  # Claude Code skill
-  tests/           # pytest test suite (167 tests)
+  tests/           # pytest test suite (472 tests)
 ```
 
 ### Obsidian / Logseq Compatibility
@@ -385,6 +440,13 @@ Set automatically by `awiki init`. Override to point to a different vault.
 
 The config directory can be overridden with the `AGENT_WIKI_CONFIG_DIR` environment variable.
 
+To use a different vault for a **single invocation** without touching the config, pass `--vault PATH` (or set `AWIKI_VAULT`). This forces a local vault and overrides both the configured local and remote settings for that one command:
+
+```bash
+awiki --vault /tmp/scratch-vault status
+AWIKI_VAULT=~/vaults/other awiki search "raft"
+```
+
 ### Vault config (`wiki.yaml`)
 
 ```yaml
@@ -397,9 +459,18 @@ topics:
   - research
   - tools
 default_topic: research
+
+# Optional: a tag vocabulary that canonicalizes tags across the vault.
+tags:
+  mode: warn            # off | warn | strict
+  cli:                  # preferred term …
+    - command-line      # … and its aliases
+    - commandline
 ```
 
-Add new topics by editing this file and creating the corresponding directory.
+Add new topics by **editing this file and creating the corresponding directory** — the `topics` / `default_topic` keys are hand-edited.
+
+The `tags:` block is different: it has a sanctioned CLI write path. Manage it with [`awiki tag add`](#awiki-tag-addsuggestfix) and `awiki tag suggest --write` (both use a comment-preserving writer) rather than editing it by hand.
 
 ## Network server
 
@@ -526,7 +597,6 @@ These are planned but not yet implemented:
 - **Additional agent support** — AGENTS.md and wrappers for Cursor, Codex, and other agents
 - **Research agent** — A dedicated agent that combines wiki search with web search, filing results back into the wiki automatically
 - **Auto-capture** — Agent notices high-value findings during conversations and suggests saving them (with user confirmation)
-- **Conversation summarization** — Generate structured summaries from conversation transcripts for ingestion
 - **Vault viewer** — Lightweight web UI for browsing the vault without Obsidian
 
 ## Running Tests
