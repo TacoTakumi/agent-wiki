@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 ExecStart=/usr/local/bin/awiki serve --bind 127.0.0.1 --port 8731
 Restart=on-failure
-User=rob
+User=youruser
 
 [Install]
 WantedBy=multi-user.target

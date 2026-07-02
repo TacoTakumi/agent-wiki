@@ -4,7 +4,7 @@ from agent_wiki.page import slugify, parse_page, render_page, extract_wikilinks
 
 
 def test_slugify_simple():
-    assert slugify("ViewPoint API v3") == "viewpoint-api-v3"
+    assert slugify("Payments Service v3") == "payments-service-v3"
 
 
 def test_slugify_special_chars():
