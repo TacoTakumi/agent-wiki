@@ -32,7 +32,7 @@ DEFAULT_ROOT = Path.home() / ".claude" / "projects"
 LIVE_THRESHOLD = timedelta(minutes=60)
 
 # Directory-name → project slug. Claude Code encodes cwd paths like:
-#   /home/rob/AI/Projects/agent-wiki  →  -home-rob-AI-Projects-agent-wiki
+#   /home/user/AI/Projects/agent-wiki  →  -home-user-AI-Projects-agent-wiki
 # The reverse is lossy (slashes vs dashes) so we just use the trailing segment
 # as the friendly project slug.
 _PROJECT_SLUG_RE = re.compile(r"[^A-Za-z0-9]+")

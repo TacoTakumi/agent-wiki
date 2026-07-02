@@ -32,10 +32,10 @@ def _write_cc_session(root: Path, session_id: str, title: str = "Hello") -> Path
     path.parent.mkdir(parents=True, exist_ok=True)
     records = [
         {"type": "user", "sessionId": session_id, "timestamp": "2026-04-18T10:00:00Z",
-         "cwd": "/home/rob/AI/Projects/agent-wiki",
+         "cwd": "/home/user/AI/Projects/agent-wiki",
          "message": {"role": "user", "content": "hello"}},
         {"type": "assistant", "sessionId": session_id, "timestamp": "2026-04-18T10:00:05Z",
-         "cwd": "/home/rob/AI/Projects/agent-wiki",
+         "cwd": "/home/user/AI/Projects/agent-wiki",
          "message": {"role": "assistant",
                      "content": [{"type": "text", "text": "hi"}],
                      "model": "claude-opus-4-7",
@@ -94,7 +94,7 @@ def test_sync_detects_changed_session(tmp_vault, tmp_path):
         f.write(json.dumps({
             "type": "user", "sessionId": "s1",
             "timestamp": "2026-04-18T11:00:00Z",
-            "cwd": "/home/rob/AI/Projects/agent-wiki",
+            "cwd": "/home/user/AI/Projects/agent-wiki",
             "message": {"role": "user", "content": "more"},
         }) + "\n")
     t = time.time() + 5

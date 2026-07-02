@@ -75,7 +75,7 @@ def _build_db(tmp_path: Path, sessions, messages, parts) -> Path:
 def _fixture_session(tmp_path):
     sessions = [{
         "id": "ses_1",
-        "directory": "/home/rob/AI/Projects/TradeUp",
+        "directory": "/home/user/AI/Projects/SampleApp",
         "title": "Review project files",
         "time_created": 1_776_519_415_472,
         "time_updated": 1_776_519_543_395,
@@ -112,7 +112,7 @@ def test_convert_session_renders_turns(tmp_path):
     assert conv.agent == "opencode"
     assert conv.session_id == "ses_1"
     assert conv.title == "Review project files"
-    assert conv.project == "TradeUp"
+    assert conv.project == "SampleApp"
     assert conv.model == "Qwen3.6-35B-A3B-Q8"
     assert conv.turns == 2
     assert conv.token_totals == {"input": 20680, "output": 83}

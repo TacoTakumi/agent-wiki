@@ -20,7 +20,7 @@ def _user(text: str, ts: str, session: str = "s1") -> dict:
         "type": "user",
         "sessionId": session,
         "timestamp": ts,
-        "cwd": "/home/rob/AI/Projects/agent-wiki",
+        "cwd": "/home/user/AI/Projects/agent-wiki",
         "message": {"role": "user", "content": text},
     }
 
@@ -30,7 +30,7 @@ def _assistant(blocks: list[dict], ts: str, usage: dict | None = None, session: 
         "type": "assistant",
         "sessionId": session,
         "timestamp": ts,
-        "cwd": "/home/rob/AI/Projects/agent-wiki",
+        "cwd": "/home/user/AI/Projects/agent-wiki",
         "message": {
             "role": "assistant",
             "content": blocks,
