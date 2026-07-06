@@ -11,7 +11,7 @@ from click.testing import CliRunner
 
 from agent_wiki.cli import cli
 from agent_wiki.ingest import ingest_file
-from agent_wiki.page import parse_page, render_page, slugify
+from agent_wiki.page import parse_page, render_page, render_hash, slugify
 
 
 def _set_vocab(vault, mode="warn", vocabulary=None):
@@ -60,6 +60,33 @@ def test_write_canonicalizes_alias_empty_body_diff_raw_unchanged(
     assert parsed["meta"]["tags"] == ["stt"]   # alias canonicalized to preferred
     assert parsed["body"] == body_before       # page body byte-identical
     assert raw.read_text() == raw_before        # raw/ untouched
+
+
+def test_render_hash_survives_tag_fix_and_guard_stays_silent(
+        tmp_config, tmp_vault, tmp_path):
+    # render_hash covers the body only (REQ-06): a frontmatter-only tag rewrite
+    # (via update_frontmatter) canonicalizes the tag, leaves the body byte-
+    # identical, and keeps the stamp valid — so a later reingest does not fire.
+    # Ingest while inert (no vocab) so the page has a raw source and a stamp.
+    src = tmp_path / "doc.md"
+    src.write_text("# Doc\n\nThe body.\n")
+    page = ingest_file(src, tmp_vault, topic="research", tags=["asr"])
+    body_before = parse_page(page)["body"]
+    hash_before = parse_page(page)["meta"]["render_hash"]
+
+    _set_vocab(tmp_vault)
+    result = CliRunner().invoke(cli, ["tag", "fix", "--write"])
+    assert result.exit_code == 0, result.output
+
+    parsed = parse_page(page)
+    assert parsed["meta"]["tags"] == ["stt"]                    # tag canonicalized
+    assert parsed["body"] == body_before                        # body byte-identical
+    assert parsed["meta"]["render_hash"] == hash_before         # stamp unchanged
+    assert parsed["meta"]["render_hash"] == render_hash(parsed["body"])  # still valid
+
+    # The stamp still matches the body, so reingest does not trip the guard.
+    reing = CliRunner().invoke(cli, ["reingest", "doc"])
+    assert reing.exit_code == 0, reing.output
 
 
 def test_novel_tag_reported_and_unchanged_after_write(tmp_config, tmp_vault):
