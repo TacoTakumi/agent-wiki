@@ -102,6 +102,21 @@ def page_body_for_raw(body: str) -> str:
     return body.rstrip("\n") + "\n"
 
 
+def render_hash(page_body: str) -> str:
+    """Fingerprint of a page body for the raw-drift guard: the literal prefix
+    ``sha256:`` followed by the first 16 lowercase hex chars of the SHA-256 of the
+    *canonical* body (``page_body_for_raw``).
+
+    Hashing the canonicalized body — the same normalizer the guard compares
+    against — is what keeps render_page's leading-blank-line/trailing-newline
+    differences from producing a false-positive drift (the bytes hashed at stamp
+    time are exactly those compared at guard time). Covers the body only, never
+    frontmatter, and carries no field of its own — so it can live in frontmatter
+    without hashing itself."""
+    canonical = page_body_for_raw(page_body)
+    return "sha256:" + sha256_bytes(canonical.encode("utf-8"))[:16]
+
+
 def page_raw_diverged(page_body: str, raw_text: str) -> bool:
     """True if a page's body differs from its raw source (beyond normalization)."""
     return page_body_for_raw(page_body) != raw_text.rstrip("\n") + "\n"
