@@ -124,11 +124,14 @@ def test_ingest_force_json(client, writer_h, tmp_vault):
 def test_reingest_writer_only(client, reader_h, writer_h, tmp_vault):
     client.post("/v1/ingest", json={"filename": "r.md", "content": "# R\n\nv1\n"},
                 headers=writer_h)
-    (tmp_vault / "raw" / "r.md").write_text("# R\n\nv2\n")
+    # Hand-edit the PAGE body (not the raw) so it genuinely drifts from its stamp;
+    # a raw-only edit would now reingest cleanly (REQ-03).
+    page = tmp_vault / "research" / "r.md"                     # default_topic research
+    page.write_text(page.read_text().replace("v1", "v1\n\nhand edit"))
     assert client.post("/v1/reingest", json={"name": "r"},
                        headers=reader_h).status_code == 403
     refused = client.post("/v1/reingest", json={"name": "r"}, headers=writer_h)
-    assert refused.status_code == 400                          # drift -> 400
+    assert refused.status_code == 400                          # page drift -> 400
     forced = client.post("/v1/reingest", json={"name": "r", "force": True},
                          headers=writer_h)
     assert forced.status_code == 201

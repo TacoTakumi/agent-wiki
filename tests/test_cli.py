@@ -298,21 +298,30 @@ def test_ingest_update_refuses_diverged_then_force(tmp_path, monkeypatch):
     assert "hand edit" not in page.read_text()
 
 
-def test_reingest_command_refuses_then_force(tmp_path, monkeypatch):
+def test_reingest_command_raw_edit_succeeds_page_edit_refuses(tmp_path, monkeypatch):
     vault = _setup_vault(tmp_path, monkeypatch)
     runner = CliRunner()
     src = tmp_path / "doc.md"
     src.write_text("# Doc\n\nv1\n")
     runner.invoke(cli, ["ingest", str(src), "--topic", "research"])
-    (vault / "raw" / "doc.md").write_text("# Doc\n\nv2 in raw\n")    # edit raw
 
+    # Raw-only edit: reingest rebuilds from raw with no --force (REQ-03).
+    (vault / "raw" / "doc.md").write_text("# Doc\n\nv2 in raw\n")
+    ok = runner.invoke(cli, ["reingest", "doc"])
+    assert ok.exit_code == 0
+    assert "v2 in raw" in (vault / "research" / "doc.md").read_text()
+
+    # Genuine out-of-band page hand-edit still refuses, with a diff, until --force.
+    page = vault / "research" / "doc.md"
+    page.write_text(page.read_text().replace("v2 in raw", "v2 in raw\n\nhand edit"))
     refused = runner.invoke(cli, ["reingest", "doc"])
     assert refused.exit_code != 0
-    assert "differs from" in refused.output
+    assert "differs from" in refused.output       # page-vs-raw diff (to stderr)
+    assert "hand edit" in page.read_text()         # not overwritten
 
     forced = runner.invoke(cli, ["reingest", "doc", "--force"])
     assert forced.exit_code == 0
-    assert "v2 in raw" in (vault / "research" / "doc.md").read_text()
+    assert "hand edit" not in (vault / "research" / "doc.md").read_text()
 
 
 # --- lint type/label mapping (REQ-24) ----------------------------------------
