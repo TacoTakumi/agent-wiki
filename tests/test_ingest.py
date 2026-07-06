@@ -395,3 +395,33 @@ def test_service_reingest_missing_raw_raises(tmp_vault):
     from agent_wiki.service import LocalVaultService
     with pytest.raises(FileNotFoundError):
         LocalVaultService(tmp_vault).reingest("does-not-exist")
+
+
+from agent_wiki.page import render_hash
+
+
+def test_ingest_stamps_render_hash_matching_on_disk_body(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# My Notes\n\nSome content here.\n")
+
+    page = ingest_file(source, tmp_vault, topic="research")
+
+    parsed = parse_page(page)
+    assert "render_hash" in parsed["meta"]
+    # The stamp is the hash of the page's own on-disk body, not the raw content —
+    # so the drift guard recomputes the identical value on a clean page.
+    assert parsed["meta"]["render_hash"] == render_hash(parsed["body"])
+
+
+def test_reingest_recomputes_render_hash_on_changed_body(tmp_vault, tmp_path):
+    source = tmp_path / "notes.md"
+    source.write_text("# Notes\n\nv1\n")
+    page = ingest_file(source, tmp_vault, topic="research")
+    first = parse_page(page)["meta"]["render_hash"]
+
+    source.write_text("# Notes\n\nv2 changed body\n")
+    result = ingest_file(source, tmp_vault, topic="research", update=True)
+
+    parsed = parse_page(result)
+    assert parsed["meta"]["render_hash"] == render_hash(parsed["body"])
+    assert parsed["meta"]["render_hash"] != first  # changed body -> fresh hash, never stale
