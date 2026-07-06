@@ -477,3 +477,50 @@ def test_guard_clean_reingest_no_false_positive(tmp_vault, tmp_path):
     raw = tmp_vault / "raw" / "notes.md"
     result = ingest_file(raw, tmp_vault, topic="research", update=True)  # no force
     assert "body" in parse_page(result)["body"]
+
+
+def _strip_render_hash(page_path):
+    # Turn a freshly-ingested page into a legacy / foreign one: drop its stamp.
+    from agent_wiki.page import update_frontmatter
+    parsed = parse_page(page_path)
+    meta = {k: v for k, v in parsed["meta"].items() if k != "render_hash"}
+    update_frontmatter(page_path, meta)
+    assert "render_hash" not in parse_page(page_path)["meta"]
+
+
+def test_tofu_unhashed_matching_page_reingests_and_stamps(tmp_vault, tmp_path):
+    # Lazy TOFU: an un-hashed page that still matches its raw reingests via the
+    # legacy page-vs-raw fallback (never crashes, never unconditionally refuses)
+    # and is stamped with a render_hash on the successful write (REQ-10).
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nbody\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    _strip_render_hash(page)
+
+    raw = tmp_vault / "raw" / "notes.md"
+    result = ingest_file(raw, tmp_vault, topic="research", update=True)  # no force
+    parsed = parse_page(result)
+    assert parsed["meta"]["render_hash"] == render_hash(parsed["body"])  # stamped
+
+
+def test_tofu_unhashed_diverged_page_refuses_then_force_stamps(tmp_vault, tmp_path):
+    # An un-hashed page that diverges from its raw still refuses (with a diff)
+    # without --force — no regression from pre-render_hash behavior — and with
+    # --force rebuilds from raw and gets stamped (REQ-10).
+    from agent_wiki.ingest import ingest_file, PageDriftError
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    _strip_render_hash(page)
+    page.write_text(page.read_text().replace("v1", "v1\n\nhand edit"))  # now diverges
+
+    raw = tmp_vault / "raw" / "notes.md"
+    with pytest.raises(PageDriftError) as exc:
+        ingest_file(raw, tmp_vault, topic="research", update=True)  # no force
+    assert exc.value.diff
+
+    forced = ingest_file(raw, tmp_vault, topic="research", update=True, force=True)
+    parsed = parse_page(forced)
+    assert parsed["meta"]["render_hash"] == render_hash(parsed["body"])  # stamped
+    assert "hand edit" not in parsed["body"]                            # rebuilt from raw
