@@ -1,3 +1,5 @@
+import hashlib
+import re
 import pytest
 from pathlib import Path
 from agent_wiki.page import slugify, parse_page, render_page, extract_wikilinks
@@ -104,3 +106,32 @@ def test_page_raw_diff_marks_page_losses_and_raw_gains():
     assert "-old line" in diff
     assert "+new line" in diff
     assert "page:research/t.md" in diff and "raw:raw/t.md" in diff
+
+
+from agent_wiki.page import render_hash
+
+
+def test_render_hash_format_and_value():
+    body = "\n# Title\n\nSome content here.\n"
+    canonical = page_body_for_raw(body)
+    expected = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+    result = render_hash(body)
+    assert result == expected
+    # literal prefix + exactly 16 lowercase hex chars
+    assert result.startswith("sha256:")
+    digest = result[len("sha256:"):]
+    assert re.fullmatch(r"[0-9a-f]{16}", digest)
+
+
+def test_render_hash_stable_under_trailing_whitespace_and_newlines():
+    # Bodies differing only in the render_page leading blank line and trailing
+    # newlines normalize to the same canonical body, so they hash equal — the
+    # property that keeps normalization from producing a false-positive drift.
+    a = "# Title\n\nbody"
+    b = "\n# Title\n\nbody\n\n\n"
+    assert page_body_for_raw(a) == page_body_for_raw(b)  # precondition
+    assert render_hash(a) == render_hash(b)
+
+
+def test_render_hash_differs_on_real_body_change():
+    assert render_hash("# T\n\nbody\n") != render_hash("# T\n\nbody edited\n")
