@@ -9,7 +9,9 @@ import click
 from agent_wiki import __version__
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
-from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
+from agent_wiki.doctor import (
+    RawContentDrift, RenderHashUnstamped, SourcePathMissing, run_checks,
+)
 from agent_wiki.fetch import FetchError, is_url
 from agent_wiki.ingest import PageDriftError, UnchangedURLSkip
 from agent_wiki.vault import init_vault
@@ -440,8 +442,12 @@ def doctor(fix, dry_run, reconcile_raw):
         click.echo(f"  [{f.check.name}] {f.detail}")
         informational = isinstance(f.check, SourcePathMissing)
         is_reconcile = isinstance(f.check, RawContentDrift)
+        # The render_hash migration stamp is preview-by-default (REQ-09): list it
+        # but write nothing unless --fix is passed — never via interactive confirm.
+        is_stamp = isinstance(f.check, RenderHashUnstamped)
 
-        if dry_run or informational or (is_reconcile and not reconcile_raw):
+        if (dry_run or informational or (is_reconcile and not reconcile_raw)
+                or (is_stamp and not fix)):
             click.echo(f"    → {f.check.description}")
             skipped += 1
             continue

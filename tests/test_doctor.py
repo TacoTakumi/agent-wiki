@@ -281,3 +281,122 @@ def test_reconcile_sidecar_refresh_keeps_invariant(tmp_vault, tmp_path):
     raw = vault / "raw" / "d.md"
     assert load_sidecar(raw).get("sha256") == sha256_bytes(raw.read_bytes())
     assert [i for i in lint_vault(vault) if i["type"] == "source_drift"] == []
+
+
+# ---------------------------------------------------------------------------
+# render_hash migration stamp (T-06 / REQ-07, REQ-09)
+# ---------------------------------------------------------------------------
+
+
+def _unhashed_faithful_page(vault, tmp_path, name, body="original body text"):
+    """Ingest a page (which stamps render_hash), then strip the stamp — leaving a
+    page that lacks render_hash but whose body still matches its raw, i.e. a
+    pre-render_hash-era page a migration should stamp."""
+    from agent_wiki.ingest import ingest_file
+    from agent_wiki.page import parse_page, update_frontmatter
+    src = tmp_path / f"{name}.md"
+    src.write_text(f"# {name}\n\n{body}\n")
+    page = ingest_file(src, vault, topic="research")
+    parsed = parse_page(page)
+    meta = parsed["meta"]
+    meta.pop("render_hash", None)
+    update_frontmatter(page, meta)
+    assert "render_hash" not in parse_page(page)["meta"]
+    return page
+
+
+def test_render_hash_stamp_detect_lists_unhashed_faithful(tmp_vault, tmp_path):
+    from agent_wiki.doctor import RenderHashUnstamped
+    from agent_wiki.page import parse_page
+    a = _unhashed_faithful_page(tmp_vault, tmp_path, "alpha")
+    b = _unhashed_faithful_page(tmp_vault, tmp_path, "beta")
+
+    finding = RenderHashUnstamped().detect(tmp_vault)
+    assert finding is not None
+    assert a.name in finding.detail
+    assert b.name in finding.detail
+
+    # Once every page carries render_hash there is nothing left to stamp.
+    RenderHashUnstamped().fix(tmp_vault)
+    assert RenderHashUnstamped().detect(tmp_vault) is None
+    assert parse_page(a)["meta"].get("render_hash")
+    assert parse_page(b)["meta"].get("render_hash")
+
+
+def test_render_hash_stamp_fix_writes_canonical_value(tmp_vault, tmp_path):
+    from agent_wiki.doctor import RenderHashUnstamped
+    from agent_wiki.page import parse_page, render_hash
+    page = _unhashed_faithful_page(tmp_vault, tmp_path, "gamma")
+
+    RenderHashUnstamped().fix(tmp_vault)
+
+    parsed = parse_page(page)
+    # The stamped value is exactly the fingerprint of the page's own body — the
+    # same value the ingest/reingest write path would have stamped.
+    assert parsed["meta"]["render_hash"] == render_hash(parsed["body"])
+
+
+def test_render_hash_stamp_skips_divergent_page(tmp_vault, tmp_path):
+    # An un-hashed page whose body diverges from its raw is a pre-existing
+    # hand-edit: the stamp check must NOT adopt it as a baseline (that is the
+    # divergent-report check's job, T-07). It stays un-hashed, bytes unchanged.
+    from agent_wiki.doctor import RenderHashUnstamped
+    from agent_wiki.page import parse_page
+    page = _unhashed_faithful_page(tmp_vault, tmp_path, "delta", body="keep me")
+    page.write_text(page.read_text().replace("keep me", "edited by hand"))
+    before = page.read_bytes()
+
+    # Not named as a pending stamp...
+    finding = RenderHashUnstamped().detect(tmp_vault)
+    if finding is not None:
+        assert page.name not in finding.detail
+    # ...and --fix leaves it un-hashed and byte-identical.
+    RenderHashUnstamped().fix(tmp_vault)
+    assert "render_hash" not in parse_page(page)["meta"]
+    assert page.read_bytes() == before
+
+
+def test_render_hash_stamp_idempotent(tmp_vault, tmp_path):
+    from agent_wiki.doctor import RenderHashUnstamped
+    page = _unhashed_faithful_page(tmp_vault, tmp_path, "epsilon")
+
+    RenderHashUnstamped().fix(tmp_vault)
+    after_first = page.read_bytes()
+
+    # Second run finds nothing pending and rewrites no bytes.
+    assert RenderHashUnstamped().detect(tmp_vault) is None
+    RenderHashUnstamped().fix(tmp_vault)
+    assert page.read_bytes() == after_first
+
+
+def test_render_hash_stamp_cli_fix_applies(tmp_config, tmp_vault, tmp_path):
+    from agent_wiki.page import parse_page
+    page = _unhashed_faithful_page(tmp_vault, tmp_path, "zeta")
+
+    result = CliRunner().invoke(cli, ["doctor", "--fix"])
+    assert result.exit_code == 0, result.output
+    assert parse_page(page)["meta"].get("render_hash")
+
+
+def test_render_hash_stamp_cli_preview_writes_nothing(tmp_config, tmp_vault, tmp_path):
+    # A bare `doctor` (no --fix) lists the pending stamp but writes no render_hash.
+    from agent_wiki.page import parse_page
+    page = _unhashed_faithful_page(tmp_vault, tmp_path, "eta")
+    before = page.read_bytes()
+
+    result = CliRunner().invoke(cli, ["doctor", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert page.name in result.output
+    assert "render_hash" not in parse_page(page)["meta"]
+    assert page.read_bytes() == before
+
+
+def test_render_hash_stamp_cli_bare_does_not_mutate(tmp_config, tmp_vault, tmp_path):
+    # Preview-by-default: even an interactive `doctor` that confirms every schema
+    # prompt must not stamp render_hash — only `doctor --fix` mutates (REQ-09).
+    from agent_wiki.page import parse_page
+    page = _unhashed_faithful_page(tmp_vault, tmp_path, "theta")
+
+    result = CliRunner().invoke(cli, ["doctor"], input="\n" * 20)
+    assert result.exit_code == 0, result.output
+    assert "render_hash" not in parse_page(page)["meta"]

@@ -22,6 +22,7 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.page import (
     parse_page, page_body_for_raw, page_raw_diverged,
     load_sidecar, save_sidecar, sha256_bytes,
+    render_hash, update_frontmatter,
 )
 from agent_wiki.vault import DEFAULT_TOPICS, _default_sources_config
 
@@ -282,6 +283,83 @@ class RawContentDrift(Check):
         return f"rewrote {len(drifted)} raw file(s) from pages"
 
 
+class RenderHashUnstamped(Check):
+    """Stamp render_hash on un-hashed pages whose body still matches their raw.
+
+    Migration for vaults written before render_hash existed (REQ-07): a page that
+    lacks the fingerprint but is still faithful to its raw (``page_raw_diverged``
+    is False) gets stamped, giving the reingest drift guard a baseline. The value
+    written is exactly what the ingest/reingest write path stamps — ``render_hash``
+    of the page's own on-disk body — so a stamped page is guard-clean.
+
+    Two deliberate exclusions keep the migration honest:
+
+    - **Divergent pages are skipped.** An un-hashed page whose body has drifted
+      from its raw is a pre-existing hand-edit; stamping it would silently adopt
+      that edit as the baseline. It is left for the separate divergent-report
+      check (REQ-08) to surface for review.
+    - **Pages with no readable raw source are skipped** — there is nothing to
+      prove faithfulness against, and such a page cannot be reingested anyway, so
+      it needs no baseline.
+
+    Preview-by-default and applied only under ``--fix`` (REQ-09); the CLI/service
+    gate it behind the fix flag, never an interactive confirm.
+    """
+
+    name = "render-hash-unstamped"
+    description = "Stamp render_hash on un-hashed pages that match their raw"
+
+    def _faithful_to_raw(self, vault_path: Path, page: dict) -> bool:
+        for src in (page["meta"].get("sources") or []):
+            if not src.startswith("raw/"):
+                continue
+            raw_path = vault_path / src
+            if not raw_path.is_file():
+                continue
+            try:
+                raw_text = raw_path.read_text()
+            except UnicodeDecodeError:
+                continue  # binary raw isn't text-comparable; treat as no source
+            return not page_raw_diverged(page["body"], raw_text)
+        return False  # no comparable raw -> nothing to prove faithfulness against
+
+    def _pending(self, vault_path: Path) -> list[Path]:
+        config = _read_config(vault_path)
+        out: list[Path] = []
+        for topic in config.get("topics") or []:
+            topic_dir = vault_path / topic
+            if not topic_dir.is_dir():
+                continue
+            for md_file in topic_dir.rglob("*.md"):
+                page = parse_page(md_file)
+                if page["meta"].get("render_hash"):
+                    continue  # already stamped
+                if self._faithful_to_raw(vault_path, page):
+                    out.append(md_file)
+        return out
+
+    def detect(self, vault_path: Path) -> Finding | None:
+        pending = self._pending(vault_path)
+        if not pending:
+            return None
+        names = ", ".join(sorted(p.name for p in pending))
+        return Finding(
+            self, f"{len(pending)} page(s) lack render_hash and match their raw: {names}"
+        )
+
+    def fix(self, vault_path: Path) -> str:
+        pending = self._pending(vault_path)
+        for md_file in pending:
+            parsed = parse_page(md_file)
+            meta = parsed["meta"]
+            # Hash the page's own on-disk body — the same value ingest/reingest
+            # stamps — and splice it back via update_frontmatter so the body stays
+            # byte-identical (never trips the guard on the very page it stamps).
+            meta["render_hash"] = render_hash(parsed["body"])
+            update_frontmatter(md_file, meta)
+        return f"stamped render_hash on {len(pending)} page(s)"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -297,6 +375,7 @@ ALL_CHECKS: tuple[Check, ...] = (
     MissingDropZoneDir(),
     SourcePathMissing(),
     RawContentDrift(),
+    RenderHashUnstamped(),
 )
 
 
