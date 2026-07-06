@@ -329,19 +329,23 @@ def test_update_clean_page_not_blocked(tmp_vault, tmp_path):
     assert "v2" in parse_page(result)["body"]
 
 
-def test_reingest_after_raw_edit_refuses_then_force(tmp_vault, tmp_path):
-    # The reingest case: edit the in-vault raw, then rebuild from it.
-    from agent_wiki.ingest import ingest_file, PageDriftError
+def test_reingest_after_raw_edit_succeeds_without_force(tmp_vault, tmp_path):
+    # Reversed contract (REQ-03): editing only the in-vault raw leaves the page
+    # body unchanged since its render, so its render_hash still matches and
+    # reingest rebuilds from raw with NO --force. --force still rebuilds too.
+    from agent_wiki.ingest import ingest_file
     src = tmp_path / "notes.md"
     src.write_text("# Notes\n\nv1\n")
     ingest_file(src, tmp_vault, topic="research")
     raw = tmp_vault / "raw" / "notes.md"
-    raw.write_text("# Notes\n\nv2 edited in raw\n")    # stale page now diverges
+    raw.write_text("# Notes\n\nv2 edited in raw\n")
 
-    with pytest.raises(PageDriftError):
-        ingest_file(raw, tmp_vault, topic="research", update=True)
-    result = ingest_file(raw, tmp_vault, topic="research", update=True, force=True)
+    result = ingest_file(raw, tmp_vault, topic="research", update=True)  # no force
     assert "v2 edited in raw" in parse_page(result)["body"]
+
+    raw.write_text("# Notes\n\nv3 edited in raw\n")
+    forced = ingest_file(raw, tmp_vault, topic="research", update=True, force=True)
+    assert "v3 edited in raw" in parse_page(forced)["body"]
 
 
 def test_resolve_raw_exact_prefixed_and_stem(tmp_vault):
@@ -379,16 +383,18 @@ def test_service_reingest_rebuilds_from_edited_raw_with_force(tmp_vault):
     assert "v2 from raw" in (tmp_vault / "research" / "n.md").read_text()
 
 
-def test_service_reingest_refuses_diverged_without_force(tmp_vault):
+def test_service_reingest_after_raw_edit_succeeds_without_force(tmp_vault):
+    # The service reingest path inherits the reversed contract: a raw-only edit
+    # rebuilds cleanly without --force (REQ-03).
     from agent_wiki.service import LocalVaultService
-    from agent_wiki.ingest import PageDriftError
     svc = LocalVaultService(tmp_vault)
     src = tmp_vault / "n.md"
     src.write_text("# N\n\nv1\n")
     svc.ingest(src, topic="research")
     (tmp_vault / "raw" / "n.md").write_text("# N\n\nv2\n")
-    with pytest.raises(PageDriftError):
-        svc.reingest("n")
+    out = svc.reingest("n")                       # no force
+    assert out["page"] == "research/n.md"
+    assert "v2" in (tmp_vault / "research" / "n.md").read_text()
 
 
 def test_service_reingest_missing_raw_raises(tmp_vault):
@@ -425,3 +431,49 @@ def test_reingest_recomputes_render_hash_on_changed_body(tmp_vault, tmp_path):
     parsed = parse_page(result)
     assert parsed["meta"]["render_hash"] == render_hash(parsed["body"])
     assert parsed["meta"]["render_hash"] != first  # changed body -> fresh hash, never stale
+
+
+def test_guard_raw_only_edit_reingests_without_force(tmp_vault, tmp_path):
+    # The core fix: editing ONLY the raw leaves the page body unchanged since its
+    # last render, so the page's render_hash still matches and the guard stays
+    # silent — reingest rebuilds from raw with no --force needed (REQ-03).
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    ingest_file(src, tmp_vault, topic="research")
+    raw = tmp_vault / "raw" / "notes.md"
+    raw.write_text("# Notes\n\nv2 edited only in raw\n")
+
+    result = ingest_file(raw, tmp_vault, topic="research", update=True)  # no force
+    assert "v2 edited only in raw" in parse_page(result)["body"]
+
+
+def test_guard_page_handedit_refuses_with_diff_and_leaves_bytes(tmp_vault, tmp_path):
+    # Control: a genuine out-of-band page hand-edit (body changed, render_hash left
+    # stale) still trips the guard — refuse with a page-vs-raw diff, both untouched.
+    from agent_wiki.ingest import ingest_file, PageDriftError
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nv1\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    raw = tmp_vault / "raw" / "notes.md"
+    page.write_text(page.read_text().replace("v1", "v1\n\nhand-written detail"))
+    page_before, raw_before = page.read_bytes(), raw.read_bytes()
+
+    with pytest.raises(PageDriftError) as exc:
+        ingest_file(raw, tmp_vault, topic="research", update=True)  # no force
+    assert exc.value.diff                        # carries a unified page-vs-raw diff
+    assert page.read_bytes() == page_before      # page byte-unchanged
+    assert raw.read_bytes() == raw_before        # raw byte-unchanged
+
+
+def test_guard_clean_reingest_no_false_positive(tmp_vault, tmp_path):
+    # Reingest with NO edit at all: stamp-time and guard-time hashes are equal, so
+    # render_page's leading-blank / trailing-newline normalization can't produce a
+    # false-positive drift (REQ-05).
+    from agent_wiki.ingest import ingest_file
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nbody\n")
+    ingest_file(src, tmp_vault, topic="research")
+    raw = tmp_vault / "raw" / "notes.md"
+    result = ingest_file(raw, tmp_vault, topic="research", update=True)  # no force
+    assert "body" in parse_page(result)["body"]

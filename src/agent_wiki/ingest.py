@@ -244,17 +244,31 @@ def ingest_file(
             old_path = existing[0]
             parsed_old = parse_page(old_path)
             old_meta = parsed_old["meta"] or {}
-            # Data-loss guard: pages are generated from raw, so a page that differs
-            # from its current raw is an anomaly. Refuse (with a diff) unless --force.
+            # Data-loss guard: a page is generated from its raw, so an out-of-band
+            # page hand-edit (body changed without a reingest) is the anomaly we
+            # refuse to overwrite (with a diff) unless --force.
+            #
+            # For a page carrying a render_hash, "hand-edited" is decided against
+            # the stamp, not the raw: the guard fires iff the current page body no
+            # longer hashes to its stored render_hash. Editing only the raw leaves
+            # the page body — and its hash — untouched, so a reingest rebuilds
+            # cleanly (REQ-03). Pages without a stamp (legacy/foreign) fall back to
+            # the page-vs-raw comparison; T-04 refines that to lazy TOFU.
             if not force and raw_dest.is_file():
                 try:
                     existing_raw = raw_dest.read_text()
                 except UnicodeDecodeError:
                     existing_raw = None  # binary raw isn't text-comparable
-                if existing_raw is not None and page_raw_diverged(parsed_old["body"], existing_raw):
+                stored_hash = old_meta.get("render_hash")
+                if stored_hash is not None:
+                    drifted = render_hash(parsed_old["body"]) != stored_hash
+                else:
+                    drifted = (existing_raw is not None
+                               and page_raw_diverged(parsed_old["body"], existing_raw))
+                if drifted:
                     page_rel = old_path.relative_to(vault_path)
-                    lost = page_lines_lost(parsed_old["body"], existing_raw)
-                    diff = page_raw_diff(parsed_old["body"], existing_raw,
+                    lost = page_lines_lost(parsed_old["body"], existing_raw or "")
+                    diff = page_raw_diff(parsed_old["body"], existing_raw or "",
                                          f"page:{page_rel}", f"raw:{raw_ref}")
                     raise PageDriftError(
                         f"page {page_rel} differs from {raw_ref}: {lost} page line(s) "
