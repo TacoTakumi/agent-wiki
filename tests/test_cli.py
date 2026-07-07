@@ -324,6 +324,27 @@ def test_reingest_command_raw_edit_succeeds_page_edit_refuses(tmp_path, monkeypa
     assert "hand edit" not in (vault / "research" / "doc.md").read_text()
 
 
+def test_reingest_prints_page_location_to_stderr(tmp_path, monkeypatch):
+    # REQ-12: reingest surfaces where the page it wrote landed — on stderr for a
+    # local vault, the absolute filesystem path — while stdout keeps its existing
+    # byte-clean "Reingested" line (skills parse stdout verbatim).
+    vault = _setup_vault(tmp_path, monkeypatch)
+    runner = CliRunner()
+    src = tmp_path / "loc.md"
+    src.write_text("# Loc\n\nv1\n")
+    runner.invoke(cli, ["ingest", str(src), "--topic", "research"])
+
+    # Raw-only edit so reingest rebuilds from raw with no --force.
+    (vault / "raw" / "loc.md").write_text("# Loc\n\nv2 in raw\n")
+    result = runner.invoke(cli, ["reingest", "loc"])
+    assert result.exit_code == 0, result.output
+
+    page_abs = str(vault / "research" / "loc.md")
+    assert page_abs in result.stderr          # location -> stderr
+    assert "Reingested" in result.stdout      # existing line stays on stdout
+    assert page_abs not in result.stdout      # stdout stays clean of the abs path
+
+
 # --- lint type/label mapping (REQ-24) ----------------------------------------
 
 def test_lint_labels_are_distinct():

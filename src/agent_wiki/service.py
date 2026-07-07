@@ -55,6 +55,9 @@ class VaultService(ABC):
     def read_bytes(self, rel: str) -> bytes: ...
 
     @abstractmethod
+    def describe_location(self, rel: str) -> str: ...
+
+    @abstractmethod
     def status(self) -> dict: ...
 
     @abstractmethod
@@ -126,6 +129,12 @@ class LocalVaultService(VaultService):
 
     def read_bytes(self, rel: str) -> bytes:
         return read_vault_bytes(self.vault_path, rel)
+
+    def describe_location(self, rel: str) -> str:
+        """Where a vault-relative page/file actually lives on this machine: its
+        absolute filesystem path. Surfaced on stderr so an agent can open, diff,
+        or edit the file directly (REQ-12)."""
+        return str(self.vault_path / rel)
 
     def status(self) -> dict:
         vault = self.vault_path
