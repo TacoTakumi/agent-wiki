@@ -214,8 +214,9 @@ def reingest(name, force):
     `# H1`, tags, created) is regenerated — keep the H1 stable or the slug (and thus
     the page path) changes, which can orphan the page.
     """
+    svc = _service()
     try:
-        out = _service().reingest(name, force=force)
+        out = svc.reingest(name, force=force)
     except PageDriftError as e:
         if e.diff:
             click.echo(e.diff, err=True)
@@ -223,6 +224,9 @@ def reingest(name, force):
     except (FileNotFoundError, ValueError) as e:
         raise click.ClickException(str(e))
     click.echo(f"Reingested {name} -> {out['page']}")
+    # Surface where the page landed on stderr (REQ-12): a local absolute path, or
+    # for a remote vault the server URL + vault-relative path. stdout stays clean.
+    click.echo(svc.describe_location(out["page"]), err=True)
 
 
 def _echo_result(r, show_coverage=False):

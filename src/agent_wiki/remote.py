@@ -60,6 +60,12 @@ class RemoteVaultService(VaultService):
     def read_bytes(self, rel: str) -> bytes:
         return self._check(self._c.get(f"/v1/pages/{rel}", params={"download": 1})).content
 
+    def describe_location(self, rel: str) -> str:
+        """Where a vault-relative page lives for a remote vault: the server URL plus
+        the vault-relative path — never a local filesystem path, since the page is on
+        the server, not this client's disk (REQ-12)."""
+        return f"{self.base} :: {rel}"
+
     def status(self) -> dict:
         return self._check(self._c.get("/v1/status")).json()
 
