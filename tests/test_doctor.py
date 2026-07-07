@@ -400,3 +400,62 @@ def test_render_hash_stamp_cli_bare_does_not_mutate(tmp_config, tmp_vault, tmp_p
     result = CliRunner().invoke(cli, ["doctor"], input="\n" * 20)
     assert result.exit_code == 0, result.output
     assert "render_hash" not in parse_page(page)["meta"]
+
+
+# ---------------------------------------------------------------------------
+# render_hash divergent report (T-07 / REQ-08)
+# ---------------------------------------------------------------------------
+
+
+def _unhashed_divergent_page(vault, tmp_path, name, body="original body text"):
+    """An un-hashed page whose body has drifted from its raw — a pre-existing
+    out-of-band hand-edit the migration must surface, never stamp."""
+    page = _unhashed_faithful_page(vault, tmp_path, name, body)
+    page.write_text(page.read_text().replace(body, "hand-edited " + body))
+    return page
+
+
+def test_render_hash_divergent_detect_names_only_divergent(tmp_vault, tmp_path):
+    from agent_wiki.doctor import RenderHashDivergent
+    diverged = _unhashed_divergent_page(tmp_vault, tmp_path, "iota")
+    faithful = _unhashed_faithful_page(tmp_vault, tmp_path, "kappa")
+
+    finding = RenderHashDivergent().detect(tmp_vault)
+    assert finding is not None
+    assert diverged.name in finding.detail
+    # A faithful un-hashed page is the stamp check's job, not a divergence report.
+    assert faithful.name not in finding.detail
+
+
+def test_render_hash_divergent_detect_none_when_all_faithful(tmp_vault, tmp_path):
+    from agent_wiki.doctor import RenderHashDivergent
+    _unhashed_faithful_page(tmp_vault, tmp_path, "lambda")
+    assert RenderHashDivergent().detect(tmp_vault) is None
+
+
+def test_render_hash_divergent_fix_is_noop(tmp_vault, tmp_path):
+    from agent_wiki.doctor import RenderHashDivergent
+    from agent_wiki.page import parse_page
+    page = _unhashed_divergent_page(tmp_vault, tmp_path, "mu")
+    before = page.read_bytes()
+
+    result = RenderHashDivergent().fix(tmp_vault)
+    assert "informational" in result
+    assert "render_hash" not in parse_page(page)["meta"]
+    assert page.read_bytes() == before
+
+
+def test_render_hash_divergent_cli_reports_but_never_stamps(tmp_config, tmp_vault, tmp_path):
+    # doctor --fix must NOT stamp or adopt a divergent un-hashed page (REQ-08):
+    # it is reported for review and left byte-identical, still un-hashed.
+    from agent_wiki.page import parse_page
+    page = _unhashed_divergent_page(tmp_vault, tmp_path, "nu")
+    before = page.read_bytes()
+
+    result = CliRunner().invoke(cli, ["doctor", "--fix"])
+    assert result.exit_code == 0, result.output
+    # The distinct migration-review finding fired (not merely RawContentDrift).
+    assert "render-hash-divergent" in result.output
+    assert page.name in result.output
+    assert "render_hash" not in parse_page(page)["meta"]
+    assert page.read_bytes() == before

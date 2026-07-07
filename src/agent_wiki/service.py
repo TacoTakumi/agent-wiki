@@ -16,7 +16,9 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.context import run_context
 from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
 from agent_wiki.conversation import ingest_conversation as _ingest_conversation
-from agent_wiki.doctor import RawContentDrift, SourcePathMissing, run_checks
+from agent_wiki.doctor import (
+    RawContentDrift, RenderHashDivergent, SourcePathMissing, run_checks,
+)
 from agent_wiki.index import rebuild_index as _rebuild_index
 from agent_wiki.ingest import ingest_extracted, ingest_file, ingest_url, resolve_raw
 from agent_wiki.lint import lint_vault
@@ -302,7 +304,8 @@ class LocalVaultService(VaultService):
         if (fix or reconcile_raw) and not dry_run:
             with file_lock(self.vault_path, "log"):
                 for f in findings:
-                    if isinstance(f.check, SourcePathMissing):  # informational only
+                    # informational only — never mutate, never count as applied
+                    if isinstance(f.check, (SourcePathMissing, RenderHashDivergent)):
                         skipped += 1
                         continue
                     if isinstance(f.check, RawContentDrift):

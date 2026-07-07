@@ -10,7 +10,8 @@ from agent_wiki import __version__
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
 from agent_wiki.doctor import (
-    RawContentDrift, RenderHashUnstamped, SourcePathMissing, run_checks,
+    RawContentDrift, RenderHashDivergent, RenderHashUnstamped,
+    SourcePathMissing, run_checks,
 )
 from agent_wiki.fetch import FetchError, is_url
 from agent_wiki.ingest import PageDriftError, UnchangedURLSkip
@@ -440,7 +441,7 @@ def doctor(fix, dry_run, reconcile_raw):
     skipped = 0
     for f in findings:
         click.echo(f"  [{f.check.name}] {f.detail}")
-        informational = isinstance(f.check, SourcePathMissing)
+        informational = isinstance(f.check, (SourcePathMissing, RenderHashDivergent))
         is_reconcile = isinstance(f.check, RawContentDrift)
         # The render_hash migration stamp is preview-by-default (REQ-09): list it
         # but write nothing unless --fix is passed — never via interactive confirm.

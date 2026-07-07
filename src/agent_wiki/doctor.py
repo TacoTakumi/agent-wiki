@@ -63,6 +63,31 @@ def _write_config(vault_path: Path, config: dict[str, Any]) -> None:
     )
 
 
+def _page_raw_status(vault_path: Path, page: dict) -> str | None:
+    """Classify a page against its raw source: ``"faithful"`` (body matches raw),
+    ``"diverged"`` (body drifted from raw), or ``None`` (no readable raw/ source to
+    compare — none listed, missing on disk, or binary).
+
+    The two render_hash migration checks split on this single classification:
+    ``RenderHashUnstamped`` stamps ``"faithful"`` un-hashed pages, and
+    ``RenderHashDivergent`` reports ``"diverged"`` un-hashed ones — so the
+    resolve-first-readable-raw logic lives in one place, not two mirror copies.
+    Resolves the first raw/ source that is a readable text file, matching how
+    reingest maps a page back to its raw."""
+    for src in (page["meta"].get("sources") or []):
+        if not src.startswith("raw/"):
+            continue
+        raw_path = vault_path / src
+        if not raw_path.is_file():
+            continue
+        try:
+            raw_text = raw_path.read_text()
+        except UnicodeDecodeError:
+            continue  # binary raw isn't text-comparable; treat as no source
+        return "diverged" if page_raw_diverged(page["body"], raw_text) else "faithful"
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Checks
 # ---------------------------------------------------------------------------
@@ -309,20 +334,6 @@ class RenderHashUnstamped(Check):
     name = "render-hash-unstamped"
     description = "Stamp render_hash on un-hashed pages that match their raw"
 
-    def _faithful_to_raw(self, vault_path: Path, page: dict) -> bool:
-        for src in (page["meta"].get("sources") or []):
-            if not src.startswith("raw/"):
-                continue
-            raw_path = vault_path / src
-            if not raw_path.is_file():
-                continue
-            try:
-                raw_text = raw_path.read_text()
-            except UnicodeDecodeError:
-                continue  # binary raw isn't text-comparable; treat as no source
-            return not page_raw_diverged(page["body"], raw_text)
-        return False  # no comparable raw -> nothing to prove faithfulness against
-
     def _pending(self, vault_path: Path) -> list[Path]:
         config = _read_config(vault_path)
         out: list[Path] = []
@@ -334,7 +345,7 @@ class RenderHashUnstamped(Check):
                 page = parse_page(md_file)
                 if page["meta"].get("render_hash"):
                     continue  # already stamped
-                if self._faithful_to_raw(vault_path, page):
+                if _page_raw_status(vault_path, page) == "faithful":
                     out.append(md_file)
         return out
 
@@ -360,6 +371,54 @@ class RenderHashUnstamped(Check):
         return f"stamped render_hash on {len(pending)} page(s)"
 
 
+class RenderHashDivergent(Check):
+    """Report un-hashed pages that have drifted from their raw — never stamp them.
+
+    The counterpart to ``RenderHashUnstamped``: a page that lacks render_hash AND
+    whose body diverges from its raw is a pre-existing out-of-band hand-edit.
+    Migration must surface it for review, not stamp it — stamping would silently
+    adopt the edit as the drift-guard baseline, hiding the very divergence the
+    reviewer should reconcile (REQ-08).
+
+    Informational only: ``fix`` is a no-op, so neither a blanket ``--fix`` nor an
+    interactive confirm ever mutates such a page. Once the reviewer reconciles the
+    page and raw (fold the edit into raw and reingest, or ``reingest --force``),
+    the page becomes faithful — or hashed — and drops off this report."""
+
+    name = "render-hash-divergent"
+    description = "Un-hashed pages that diverge from their raw (review before stamping)"
+
+    def _diverged(self, vault_path: Path) -> list[Path]:
+        config = _read_config(vault_path)
+        out: list[Path] = []
+        for topic in config.get("topics") or []:
+            topic_dir = vault_path / topic
+            if not topic_dir.is_dir():
+                continue
+            for md_file in topic_dir.rglob("*.md"):
+                page = parse_page(md_file)
+                if page["meta"].get("render_hash"):
+                    continue  # hashed pages are governed by the reingest guard, not migration
+                if _page_raw_status(vault_path, page) == "diverged":
+                    out.append(md_file)
+        return out
+
+    def detect(self, vault_path: Path) -> Finding | None:
+        diverged = self._diverged(vault_path)
+        if not diverged:
+            return None
+        names = ", ".join(sorted(p.name for p in diverged))
+        return Finding(
+            self,
+            f"{len(diverged)} un-hashed page(s) diverge from their raw "
+            f"(review before stamping): {names}",
+        )
+
+    def fix(self, vault_path: Path) -> str:
+        # Warn-only — never adopt a pre-existing hand-edit as the baseline.
+        return "no change (informational — reconcile the page/raw drift, then reingest)"
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -376,6 +435,7 @@ ALL_CHECKS: tuple[Check, ...] = (
     SourcePathMissing(),
     RawContentDrift(),
     RenderHashUnstamped(),
+    RenderHashDivergent(),
 )
 
 
