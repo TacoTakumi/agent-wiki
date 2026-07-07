@@ -4,6 +4,22 @@ import yaml
 import json as _json
 
 
+@pytest.fixture(autouse=True)
+def _isolate_awiki_config(tmp_path_factory, monkeypatch):
+    """Guard: no test may read or write the developer's real user config.
+
+    Point AGENT_WIKI_CONFIG_DIR at a throwaway dir for EVERY test. Tests that need
+    their own config dir set it themselves (tmp_config / _setup_vault); their
+    monkeypatch.setenv runs after this and wins. The danger this closes: a test
+    that sets nothing used to fall through to ~/.config/agent-wiki, and any config
+    write on that path (`awiki init`, stale-config repair) would clobber a live
+    developer's vault_path — breaking their other sessions. This makes the real
+    config unreachable from the suite. To run awiki against a scratch vault by
+    hand, prefer `AWIKI_VAULT=<dir>` (a vault override that writes no config)."""
+    monkeypatch.setenv(
+        "AGENT_WIKI_CONFIG_DIR", str(tmp_path_factory.mktemp("awiki-config")))
+
+
 # A small HTML page (real article wrapped in nav/footer boilerplate) used by the
 # URL-ingest service/parity tests. A unique body marker proves main-content
 # extraction ran; NAV/FOOT markers prove boilerplate was stripped.
