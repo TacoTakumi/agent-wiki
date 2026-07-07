@@ -14,7 +14,7 @@ from agent_wiki.doctor import (
     SourcePathMissing, run_checks,
 )
 from agent_wiki.fetch import FetchError, is_url
-from agent_wiki.ingest import PageDriftError, UnchangedURLSkip
+from agent_wiki.ingest import PageDriftError, UnchangedURLSkip, resolve_raw
 from agent_wiki.vault import init_vault
 
 
@@ -283,6 +283,33 @@ def show(path):
     # path, or for a remote vault the server URL + vault-relative path. stdout stays
     # byte-identical to the file so skills that parse show output verbatim are unaffected.
     click.echo(svc.describe_location(path), err=True)
+
+
+@cli.command()
+@click.argument("name")
+def raw(name):
+    """Print the raw source path for a page, by its raw <name>.
+
+    A page's raw/<name> file is its source of truth: edit the raw, then
+    `awiki reingest <name>`. On a local vault this prints the raw file's absolute
+    path to stdout so it drops straight into command substitution (e.g.
+    `$EDITOR "$(awiki raw foo)"`), erroring exactly as reingest does on a missing
+    or ambiguous name. On a remote vault the raw lives on the server: it prints
+    the server-side reference and notes on stderr that it is not editable locally.
+    """
+    from agent_wiki.remote import RemoteVaultService
+    svc = _service()
+    if isinstance(svc, RemoteVaultService):
+        click.echo(svc.describe_location(f"raw/{name}"))
+        click.echo(
+            "remote vault: this raw source lives on the server and is not "
+            "directly editable locally.", err=True)
+        return
+    try:
+        raw_path = resolve_raw(svc.vault_path, name)
+    except (FileNotFoundError, ValueError) as e:
+        raise click.ClickException(str(e))
+    click.echo(str(raw_path))
 
 
 @cli.command()

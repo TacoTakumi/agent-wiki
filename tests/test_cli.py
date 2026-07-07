@@ -347,6 +347,54 @@ def test_reingest_prints_page_location_to_stderr(tmp_path, monkeypatch):
     assert page_abs not in result.stdout      # stdout stays clean of the abs path
 
 
+# --- awiki raw <name> resolver (T-11 / REQ-14) -------------------------------
+
+
+def test_raw_resolver_local_prints_absolute_path(tmp_path, monkeypatch):
+    # REQ-14: on a local vault, `awiki raw <name>` prints the raw file's absolute
+    # path to stdout (usable in $(...) command substitution) and exits 0.
+    vault = _setup_vault(tmp_path, monkeypatch)
+    (vault / "raw" / "loc.md").write_text("# Loc\n\nbody\n")
+
+    result = CliRunner().invoke(cli, ["raw", "loc"])
+    assert result.exit_code == 0, result.output
+    printed = result.stdout.strip()
+    assert printed == str(vault / "raw" / "loc.md")
+    assert printed.endswith("raw/loc.md")
+
+
+def test_raw_resolver_unknown_name_errors(tmp_path, monkeypatch):
+    _setup_vault(tmp_path, monkeypatch)
+    result = CliRunner().invoke(cli, ["raw", "nope"])
+    assert result.exit_code != 0                 # not found -> non-zero
+    assert "no raw file matching" in result.output
+
+
+def test_raw_resolver_ambiguous_stem_errors(tmp_path, monkeypatch):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    # Two raw files share the stem 'dup' -> the bare stem is ambiguous.
+    (vault / "raw" / "dup.md").write_text("md\n")
+    (vault / "raw" / "dup.txt").write_text("txt\n")
+
+    result = CliRunner().invoke(cli, ["raw", "dup"])
+    assert result.exit_code != 0                 # ambiguous -> non-zero
+    assert "ambiguous" in result.output
+
+
+def test_raw_resolver_remote_prints_ref_and_note(remote_service, tmp_vault, monkeypatch):
+    # On a remote vault the raw source is server-side: print the server ref on
+    # stdout and note on stderr that it is not directly editable locally.
+    from agent_wiki import cli as cli_mod
+    monkeypatch.setattr(cli_mod, "_service", lambda: remote_service)
+
+    result = CliRunner().invoke(cli_mod.cli, ["raw", "loc"])
+    assert result.exit_code == 0, result.output
+    assert remote_service.base in result.stdout        # server URL
+    assert "raw/loc" in result.stdout                  # server-side raw ref
+    assert str(tmp_vault) not in result.stdout         # no local absolute path
+    assert "not" in result.stderr.lower() and "editable" in result.stderr.lower()
+
+
 # --- lint type/label mapping (REQ-24) ----------------------------------------
 
 def test_lint_labels_are_distinct():
