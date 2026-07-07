@@ -32,12 +32,14 @@ sessions inherit it. To pull an existing file into the wiki, use the
 
 **Pages are generated from raw; edit the raw, never the page.** Each page in a
 topic folder is *rendered* from a source file in `raw/` — the raw file is the
-source of truth. To change a page, edit its `raw/<name>` source, then run
-`awiki reingest <name>` to re-render the page from it. (`reingest` only
-propagates the raw's content into the page — it never authors the change itself.)
-If the page has diverged from its raw, reingest shows a diff and stops — review
-it, fold anything worth keeping into the raw, then re-run with `--force`. Never
-hand-edit a page in a topic folder.
+source of truth. To change a page, edit its `raw/<name>` source (find its path
+with `awiki raw <name>`), then run `awiki reingest <name>` to re-render the page
+from it. Editing only the raw never trips the drift guard — `reingest` rebuilds
+the page cleanly, no `--force` needed. (`reingest` only propagates the raw's
+content into the page — it never authors the change itself.) `--force` is for the
+other case only: if the *page itself* was hand-edited out of band, `reingest`
+prints a page-vs-raw diff and stops — review it, fold anything worth keeping into
+the raw, then re-run with `--force`. Never hand-edit a page in a topic folder.
 
 If `awiki` isn't installed or no vault is configured, skip the wiki and
 proceed normally — don't block on it.
