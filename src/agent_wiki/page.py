@@ -117,6 +117,21 @@ def render_hash(page_body: str) -> str:
     return "sha256:" + sha256_bytes(canonical.encode("utf-8"))[:16]
 
 
+def stamp_render_hash(path: Path) -> None:
+    """Recompute a page's render_hash from its own on-disk body and write it into
+    the page's frontmatter, leaving the body byte-identical (via update_frontmatter).
+
+    The single stamp boundary: both the ingest/reingest page-write path and the
+    doctor migration go through here, so the value written is always the hash of
+    exactly the body on disk — recomputed, never carried stale from a prior render
+    (REQ-01) — and hashed from the *parsed* body so it equals the value the drift
+    guard recomputes on a clean page (REQ-05)."""
+    parsed = parse_page(path)
+    meta = parsed["meta"]
+    meta["render_hash"] = render_hash(parsed["body"])
+    update_frontmatter(path, meta)
+
+
 def page_raw_diverged(page_body: str, raw_text: str) -> bool:
     """True if a page's body differs from its raw source (beyond normalization)."""
     return page_body_for_raw(page_body) != raw_text.rstrip("\n") + "\n"

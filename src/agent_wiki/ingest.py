@@ -12,7 +12,7 @@ import click
 from agent_wiki.config import load_vault_config, parse_tag_vocabulary, TAG_MODES
 from agent_wiki.tags import canonicalize_tags
 from agent_wiki.page import (
-    slugify, render_page, parse_page, update_frontmatter, render_hash,
+    slugify, render_page, parse_page, render_hash, stamp_render_hash,
     page_raw_diverged, page_lines_lost, page_raw_diff,
     sha256_bytes, load_sidecar, save_sidecar,
 )
@@ -28,20 +28,6 @@ def _write_sidecar(raw_dest: Path, source: str, fetcher: str) -> None:
         "ingested": datetime.now().isoformat(timespec="seconds"),
         "sha256": sha256_bytes(raw_dest.read_bytes()),
     })
-
-
-def _stamp_render_hash(page_path: Path) -> None:
-    """Recompute render_hash from the page's own on-disk body and write it into the
-    page's frontmatter, leaving the body byte-identical (via update_frontmatter).
-
-    Called immediately after each ingest_file page write, so the stamp is always
-    the hash of exactly the body that landed on disk — recomputed, never carried
-    stale from a prior render (REQ-01) — and hashed from the *parsed* body so it
-    equals the value the drift guard recomputes on a clean page (REQ-05)."""
-    parsed = parse_page(page_path)
-    meta = parsed["meta"]
-    meta["render_hash"] = render_hash(parsed["body"])
-    update_frontmatter(page_path, meta)
 
 
 class StrictTagError(ValueError):
@@ -322,7 +308,7 @@ def ingest_file(
             meta.update(extra_frontmatter)
         new_path.parent.mkdir(parents=True, exist_ok=True)
         new_path.write_text(render_page(meta, content))
-        _stamp_render_hash(new_path)
+        stamp_render_hash(new_path)
         if new_path.resolve() != old_path.resolve():
             old_path.unlink()
         append_log(vault_path, "update", f"{source.name} -> {eff_topic}/{slug}.md")
@@ -342,7 +328,7 @@ def ingest_file(
     page_path = vault_path / eff_topic / f"{slug}.md"
     page_path.parent.mkdir(parents=True, exist_ok=True)
     page_path.write_text(render_page(meta, content))
-    _stamp_render_hash(page_path)
+    stamp_render_hash(page_path)
     append_log(vault_path, "update" if update else "ingest",
                f"{source.name} -> {eff_topic}/{slug}.md")
     return page_path

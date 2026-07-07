@@ -22,7 +22,7 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.page import (
     parse_page, page_body_for_raw, page_raw_diverged,
     load_sidecar, save_sidecar, sha256_bytes,
-    render_hash, update_frontmatter,
+    stamp_render_hash,
 )
 from agent_wiki.vault import DEFAULT_TOPICS, _default_sources_config
 
@@ -361,13 +361,10 @@ class RenderHashUnstamped(Check):
     def fix(self, vault_path: Path) -> str:
         pending = self._pending(vault_path)
         for md_file in pending:
-            parsed = parse_page(md_file)
-            meta = parsed["meta"]
-            # Hash the page's own on-disk body — the same value ingest/reingest
-            # stamps — and splice it back via update_frontmatter so the body stays
-            # byte-identical (never trips the guard on the very page it stamps).
-            meta["render_hash"] = render_hash(parsed["body"])
-            update_frontmatter(md_file, meta)
+            # The shared stamp boundary: hashes the page's own on-disk body and
+            # splices it back byte-identically — the same value ingest/reingest
+            # writes, so a migrated page is guard-clean (never trips on itself).
+            stamp_render_hash(md_file)
         return f"stamped render_hash on {len(pending)} page(s)"
 
 
