@@ -46,9 +46,9 @@ def test_show_unhashed_page_is_verbatim_and_hashless(tmp_config, tmp_vault, tmp_
     result = CliRunner().invoke(cli, ["show", _rel(tmp_vault, page)])
     assert result.exit_code == 0, result.output
     # show is verbatim: its stdout is the on-disk bytes, and an un-hashed page has
-    # no render_hash to leak.
-    assert result.output == page.read_text()
-    assert "render_hash" not in result.output
+    # no render_hash to leak. (The resolved read location goes to stderr, REQ-13.)
+    assert result.stdout == page.read_text()
+    assert "render_hash" not in result.stdout
 
 
 def test_render_hash_is_inert_to_read_paths(tmp_config, tmp_vault, tmp_path):
@@ -81,19 +81,21 @@ def test_render_hash_is_inert_to_read_paths(tmp_config, tmp_vault, tmp_path):
     for name, r in after.items():
         assert r.exit_code == 0, (name, r.output)
 
-    # search / lint / status: output unchanged by the added frontmatter field.
-    assert after["search"].output == before["search"].output
-    assert after["lint"].output == before["lint"].output
-    assert after["status"].output == before["status"].output
+    # search / lint / status: stdout unchanged by the added frontmatter field.
+    # (Compare stdout, not merged output: show now writes a read location to
+    # stderr per REQ-13 — orthogonal to whether render_hash perturbs content.)
+    assert after["search"].stdout == before["search"].stdout
+    assert after["lint"].stdout == before["lint"].stdout
+    assert after["status"].stdout == before["status"].stdout
 
-    # show is verbatim: the ONLY difference is the added render_hash line.
-    assert "render_hash" not in before["show"].output
-    assert "render_hash" in after["show"].output
+    # show is verbatim: the ONLY difference in stdout is the added render_hash line.
+    assert "render_hash" not in before["show"].stdout
+    assert "render_hash" in after["show"].stdout
     after_wo_hash = "".join(
-        ln for ln in after["show"].output.splitlines(keepends=True)
+        ln for ln in after["show"].stdout.splitlines(keepends=True)
         if not ln.lstrip().startswith("render_hash:")
     )
-    assert after_wo_hash == before["show"].output
+    assert after_wo_hash == before["show"].stdout
 
 
 def test_mixed_vault_all_reads_exit_zero(tmp_config, tmp_vault, tmp_path):
