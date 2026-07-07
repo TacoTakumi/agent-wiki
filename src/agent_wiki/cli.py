@@ -273,11 +273,16 @@ def search(query, topic, limit):
 @click.argument("path")
 def show(path):
     """Print a wiki page (or any vault file) by its vault-relative path."""
+    svc = _service()
     try:
-        content = _service().show(path)
+        content = svc.show(path)
     except (ValueError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
     click.echo(content, nl=False)
+    # Surface where the content was read from on stderr (REQ-13): a local absolute
+    # path, or for a remote vault the server URL + vault-relative path. stdout stays
+    # byte-identical to the file so skills that parse show output verbatim are unaffected.
+    click.echo(svc.describe_location(path), err=True)
 
 
 @cli.command()

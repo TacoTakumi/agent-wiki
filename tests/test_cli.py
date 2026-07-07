@@ -146,8 +146,10 @@ def test_show_command_prints_page_verbatim(tmp_path, monkeypatch):
     runner = CliRunner()
     result = runner.invoke(cli, ["show", "research/raft.md"])
     assert result.exit_code == 0
-    # Verbatim: output is byte-for-byte the file (frontmatter + body).
-    assert result.output == page
+    # Verbatim: stdout is byte-for-byte the file (frontmatter + body). The resolved
+    # read location goes to stderr (REQ-13), so stdout stays clean for parsers.
+    assert result.stdout == page
+    assert str(vault / "research" / "raft.md") in result.stderr
 
 
 def test_show_command_rejects_traversal_without_leaking(tmp_path, monkeypatch):
