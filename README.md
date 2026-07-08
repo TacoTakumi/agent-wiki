@@ -113,6 +113,19 @@ awiki reingest my-notes.md --force    # rebuild even if the page diverged from i
 - The body is taken verbatim from the raw; frontmatter (title from the first `# H1`, tags, `created`) is regenerated — keep the H1 stable, or the slug (and thus the page path) changes and can orphan the page.
 - If the page has diverged from its raw (e.g. someone edited the page directly), `reingest` prints a diff and stops. Fold anything worth keeping into the raw, then re-run with `--force`.
 - `reingest` only propagates the raw's content into the page — it never authors the change itself. Contrast `ingest --update`, which pulls from an *external* file.
+- Editing the `raw/` source never trips the drift guard — `reingest` rebuilds cleanly, no `--force` needed. The guard is only for the other case: a page that was hand-edited out of band. (Each page carries a `render_hash` of its body in frontmatter, which is how awiki tells the two apart.)
+
+### `awiki raw <name>`
+
+Print a page's `raw/<name>` source path — the file you actually edit before `awiki reingest`. Output goes to stdout so it drops straight into command substitution; pair it with `reingest` for the whole edit loop in two commands.
+
+```bash
+$EDITOR "$(awiki raw my-notes.md)"     # open the raw source
+awiki reingest my-notes.md             # re-render the page from it
+```
+
+- Errors exactly as `reingest` does on a missing or ambiguous `<name>`.
+- On a **remote** vault the raw lives on the server: `raw` prints the server-side reference and notes on stderr that it isn't directly editable from the client.
 
 ### `awiki search <query> [--topic <topic>] [--limit N]`
 
