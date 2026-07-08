@@ -1,7 +1,7 @@
-"""Build the `awiki directions` output: self-installing agent instructions.
+"""Build the `awiki guide` output: self-installing agent instructions.
 
 Pure and vault-free. The canonical block lives in packaged data
-(`data/directions.md`); this module wraps it in stable markers (the begin
+(`data/guide.md`); this module wraps it in stable markers (the begin
 marker carries the package version) and, by default, prepends a header
 addressed to the installing agent.
 """
@@ -46,9 +46,9 @@ SET UP THE AGENT WIKI FOR THIS PROJECT
 # Visible note appended inside the block so the version travels into the agent's
 # memory file and the agent knows how to detect/refresh a stale copy.
 VERSION_NOTE = """\
-*These directions are awiki v{version}. If `awiki --version` ever reports a newer \
+*This guide block is awiki v{version}. If `awiki --version` ever reports a newer \
 version than the one in this block's `awiki:begin` marker, re-run \
-`awiki directions` and re-sync this block.*"""
+`awiki guide` and re-sync this block.*"""
 
 
 def begin_marker(version: str = __version__) -> str:
@@ -58,7 +58,7 @@ def begin_marker(version: str = __version__) -> str:
 
 def _load_block() -> str:
     """Read the canonical block from packaged data."""
-    return (resources.files("agent_wiki") / "data" / "directions.md").read_text(
+    return (resources.files("agent_wiki") / "data" / "guide.md").read_text(
         encoding="utf-8"
     )
 
@@ -74,8 +74,8 @@ def render_block(version: str = __version__) -> str:
     return f"{begin_marker(version)}\n{body}\n\n{note}\n{END_MARKER}\n"
 
 
-def render_directions(raw: bool = False) -> str:
-    """Full `awiki directions` output.
+def render_guide(raw: bool = False) -> str:
+    """Full `awiki guide` output.
 
     raw=True  -> just the marked block (for a human pasting manually).
     raw=False -> agent-directed header followed by the marked block.

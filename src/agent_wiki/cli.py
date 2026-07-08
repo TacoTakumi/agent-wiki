@@ -315,10 +315,19 @@ def raw(name):
 @cli.command()
 @click.option("--raw", is_flag=True, default=False,
               help="Print only the marker-wrapped block (no agent header).")
-def directions(raw):
+def guide(raw):
     """Print self-installing instructions for wiring awiki into an agent."""
-    from agent_wiki.directions import render_directions
-    click.echo(render_directions(raw=raw), nl=False)
+    from agent_wiki.guide import render_guide
+    click.echo(render_guide(raw=raw), nl=False)
+
+
+@cli.command("directions", hidden=True)
+@click.option("--raw", is_flag=True, default=False,
+              help="Print only the marker-wrapped block (no agent header).")
+@click.pass_context
+def directions(ctx, raw):
+    """Deprecated alias for `awiki guide`."""
+    ctx.invoke(guide, raw=raw)
 
 
 @cli.command("index")

@@ -2,6 +2,8 @@
 
 **AI agents earn hard-won knowledge in every conversation — then lose it the moment the session ends.** Agent Wiki is the memory they keep instead: a single plain-markdown vault your agents search *before* reaching for the web, and write back to whenever they learn something worth keeping. One small CLI (`awiki`) is the only door in, so the same commands work whether the vault is a local folder or a server shared across every project and machine you point at it. And underneath it's just files — grep it, open it in Obsidian, script it in Python. No database, no lock-in. (Inspired by [Karpathy's LLM wiki concept](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).)
 
+**Get started in one line:** point your agent at this repo and tell it to run **`awiki guide`** — it writes its own usage instructions into your `CLAUDE.md` / `AGENTS.md` and starts searching the wiki before it reaches for the web.
+
 ## Features
 
 - **Plain markdown, no database** — the whole vault is files with YAML frontmatter and `[[wikilinks]]`. `cat` it, `grep` it, open it in Obsidian/Logseq, or script against it in Python. Nothing to run.
@@ -14,7 +16,7 @@
 - **Tag vocabulary** — an optional, CLI-managed vocabulary canonicalizes tags (aliases → preferred), with `awiki tag fix` and a lint-based CI gate.
 - **Vault linting** — audit broken links, orphans, raw/page drift, stale pages, oversized pages, index gaps, and tag issues in one pass.
 - **Network vault** — `awiki serve` shares one vault over HTTP; remote machines use the **same `awiki` CLI** transparently, with bearer-token auth and reader/writer/admin roles.
-- **Agent-first integration** — agent skills plus a self-installing `awiki directions` block that teaches any agent (via `CLAUDE.md` / `AGENTS.md`) to search the wiki first and save what's worth keeping.
+- **Agent-first integration** — agent skills plus a self-installing `awiki guide` block that teaches any agent (via `CLAUDE.md` / `AGENTS.md`) to search the wiki first and save what's worth keeping.
 
 ## Vision
 
@@ -26,7 +28,7 @@ Agents reach the vault through a single, narrow door: the `awiki` CLI. That indi
 
 It's also a safeguard. Because the CLI is the only way in, it enforces the vault's invariants no matter who's driving: `raw/` sources stay immutable, pages are *re-rendered* from their source rather than hand-edited, drift is surfaced as a diff instead of a silent clobber, and remote access is gated by reader/writer/admin tokens. A less capable local model doesn't need to understand the vault's layout or be trusted to edit markdown by hand — it calls a handful of commands and the guardrails hold, while the heavier reasoning can live on a bigger model or the vault host.
 
-Onboarding an agent is one command: **`awiki directions`** prints a self-installing usage block. Point your agent at it and it adapts the wording into your `CLAUDE.md` / `AGENTS.md`, teaching the agent to search the wiki first, read full pages, and save what's worth keeping — and to re-sync itself when a newer version ships.
+Onboarding an agent is one command: **`awiki guide`** prints a self-installing usage block. Point your agent at it and it adapts the wording into your `CLAUDE.md` / `AGENTS.md`, teaching the agent to search the wiki first, read full pages, and save what's worth keeping — and to re-sync itself when a newer version ships.
 
 ## Installation
 
@@ -348,13 +350,15 @@ Ingest an existing file into the vault. The agent confirms the file path, asks f
 To make agents check the wiki automatically, add wiki guidance to your project or global agent-memory file (`CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, …). Run:
 
 ```bash
-awiki directions          # prints a self-installing block: tell your agent to run this
-awiki directions --raw    # prints just the block, for pasting into a memory file by hand
+awiki guide          # prints a self-installing block: tell your agent to run this
+awiki guide --raw    # prints just the block, for pasting into a memory file by hand
 ```
 
-`awiki directions` emits an agent-directed header plus a canonical wiki-usage block wrapped in `<!-- awiki:begin vX.Y.Z -->` / `<!-- awiki:end -->` markers. Point an agent at it ("set up awiki usage instructions") and it will adapt the wording to your project and append the block to the right memory file; the markers make re-running idempotent. The block tells the agent to search the wiki first, read full pages with `awiki show <path>`, and save findings with the `awiki-save` skill.
+`awiki guide` emits an agent-directed header plus a canonical wiki-usage block wrapped in `<!-- awiki:begin vX.Y.Z -->` / `<!-- awiki:end -->` markers. Point an agent at it ("set up awiki usage instructions") and it will adapt the wording to your project and append the block to the right memory file; the markers make re-running idempotent. The block tells the agent to search the wiki first, read full pages with `awiki show <path>`, and save findings with the `awiki-save` skill.
 
-The begin marker carries the awiki version, and the block ends with a note telling the agent to re-run `awiki directions` whenever `awiki --version` reports something newer than that marker. On re-run, the header tells the agent to compare versions and, if the installed block is older, *re-adapt* it — folding in the new content (and copying the literal `awiki …` commands verbatim) while preserving the project's own customizations — so directions stay current as awiki evolves without losing local wording.
+The begin marker carries the awiki version, and the block ends with a note telling the agent to re-run `awiki guide` whenever `awiki --version` reports something newer than that marker. On re-run, the header tells the agent to compare versions and, if the installed block is older, *re-adapt* it — folding in the new content (and copying the literal `awiki …` commands verbatim) while preserving the project's own customizations — so the guide stays current as awiki evolves without losing local wording.
+
+> The verb was `awiki directions` before v0.5.0; it still works as a hidden alias, but `awiki guide` is the name going forward.
 
 ### Auto-Context Hook (UserPromptSubmit)
 
