@@ -9,6 +9,36 @@ The single source of truth for the version is `__version__` in
 marker both derive from it. There are no release tags yet — the versions and
 dates below are reconstructed from the commits that bumped `__version__`.
 
+## [0.4.0] – 2026-07-06
+
+### Added
+- **`render_hash` drift guard.** Every rendered page now carries a `render_hash`
+  fingerprint of its body in frontmatter, letting awiki tell an intended,
+  raw-driven update apart from an out-of-band hand-edit of the page:
+  - Editing `raw/<name>` and running `awiki reingest <name>` rebuilds the page
+    cleanly — **a raw edit no longer trips the guard**, so the canonical
+    edit-the-raw loop needs no `--force`.
+  - The guard now fires only when the *page itself* was hand-edited out of band;
+    `reingest` (and `ingest --update`) then print a page-vs-raw diff and stop
+    until you review and re-run with `--force`.
+  - Lazy trust-on-first-use: pre-existing pages without a `render_hash` are
+    trusted the first time they're touched and stamped going forward, so
+    upgrading an existing vault needs no migration step.
+- **`awiki raw <name>`** — resolve a page to its `raw/<name>` source path,
+  printed to stdout so it drops straight into command substitution
+  (`$EDITOR "$(awiki raw my-notes.md)"`). Errors exactly as `reingest` does on a
+  missing or ambiguous name; on a remote vault it prints the server-side
+  reference and notes on stderr that the raw isn't locally editable.
+- **`awiki doctor` render-hash checks** — stamps `render_hash` on un-hashed but
+  faithful pages, and reports un-hashed pages whose body has diverged from their
+  `raw/` source.
+
+### Changed
+- `awiki reingest` and `awiki show` now print the resolved read/write location
+  (a local absolute path, or the server URL + vault-relative path for a remote
+  vault) on **stderr**. stdout stays byte-identical, so skills that parse command
+  output verbatim are unaffected.
+
 ## [0.3.1] – 2026-07-01
 
 ### Fixed
