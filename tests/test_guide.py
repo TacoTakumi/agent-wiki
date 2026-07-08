@@ -1,8 +1,8 @@
 from agent_wiki import __version__
-from agent_wiki.directions import (
+from agent_wiki.guide import (
     END_MARKER,
     render_block,
-    render_directions,
+    render_guide,
 )
 
 
@@ -16,7 +16,7 @@ def test_render_block_marker_carries_version():
 
 
 def test_begin_marker_embeds_given_version():
-    from agent_wiki.directions import BEGIN_PREFIX, begin_marker
+    from agent_wiki.guide import BEGIN_PREFIX, begin_marker
 
     assert begin_marker("9.9.9") == "<!-- awiki:begin v9.9.9 -->"
     # the version-independent anchor agents grep for is a prefix of the marker
@@ -30,7 +30,7 @@ def test_render_block_contains_version_note():
     assert __version__ in block
     # ...and tells the agent how to detect/refresh a stale copy
     assert "awiki --version" in block
-    assert "awiki directions" in block
+    assert "awiki guide" in block
     assert "re-run" in block.lower()
 
 
@@ -40,16 +40,16 @@ def test_render_block_contains_literal_mechanical_bits():
         assert literal in block, f"missing literal: {literal}"
 
 
-def test_render_directions_default_includes_header_and_block():
-    out = render_directions()
+def test_render_guide_default_includes_header_and_block():
+    out = render_guide()
     # header markers / intent
     assert "SET UP THE AGENT WIKI" in out
     # the full marked block is contained verbatim
     assert render_block() in out
 
 
-def test_render_directions_header_instructs_version_readapt():
-    out = render_directions()
+def test_render_guide_header_instructs_version_readapt():
+    out = render_guide()
     lower = out.lower()
     # upgrade path re-adapts (preserving project customizations) rather than
     # blindly replacing — but copies the literal awiki commands verbatim.
@@ -60,8 +60,8 @@ def test_render_directions_header_instructs_version_readapt():
     assert "replace" not in lower  # not a blind wholesale replace
 
 
-def test_render_directions_raw_omits_header_keeps_block():
-    raw = render_directions(raw=True)
+def test_render_guide_raw_omits_header_keeps_block():
+    raw = render_guide(raw=True)
     assert "SET UP THE AGENT WIKI" not in raw
     assert raw == render_block()
 
@@ -71,21 +71,33 @@ from click.testing import CliRunner
 from agent_wiki.cli import cli
 
 
-def test_cli_directions_default_runs_without_vault():
+def test_cli_guide_default_runs_without_vault():
     # No AGENT_WIKI_CONFIG_DIR / no vault: must still succeed.
-    res = CliRunner().invoke(cli, ["directions"])
+    res = CliRunner().invoke(cli, ["guide"])
     assert res.exit_code == 0
     assert "SET UP THE AGENT WIKI" in res.output
     assert f"<!-- awiki:begin v{__version__} -->" in res.output
     assert END_MARKER in res.output
 
 
-def test_cli_directions_raw_flag_omits_header():
-    res = CliRunner().invoke(cli, ["directions", "--raw"])
+def test_cli_guide_raw_flag_omits_header():
+    res = CliRunner().invoke(cli, ["guide", "--raw"])
     assert res.exit_code == 0
     assert "SET UP THE AGENT WIKI" not in res.output
     assert f"<!-- awiki:begin v{__version__} -->" in res.output
     assert END_MARKER in res.output
+
+
+def test_cli_directions_alias_still_works():
+    # `directions` is a hidden, deprecated alias for `guide`: same output, so
+    # any muscle-memory invocation or half-installed block keeps working.
+    guide_out = CliRunner().invoke(cli, ["guide"])
+    alias_out = CliRunner().invoke(cli, ["directions"])
+    assert alias_out.exit_code == 0
+    assert alias_out.output == guide_out.output
+    # ...but it stays hidden from the top-level help listing.
+    help_out = CliRunner().invoke(cli, ["--help"])
+    assert "directions" not in help_out.output
 
 
 def test_cli_version_reports_package_version():

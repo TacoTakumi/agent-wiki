@@ -5,9 +5,20 @@ All notable changes to Agent Wiki are documented here. The format is based on
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The single source of truth for the version is `__version__` in
-`src/agent_wiki/__init__.py`; `awiki --version` and the `awiki directions`
-marker both derive from it. There are no release tags yet — the versions and
+`src/agent_wiki/__init__.py`; `awiki --version` and the `awiki guide`
+marker both derive from it. Release tags begin at `v0.5.0`; earlier versions and
 dates below are reconstructed from the commits that bumped `__version__`.
+
+## [0.5.0] – 2026-07-08
+
+### Changed
+- **Renamed `awiki directions` → `awiki guide`.** The command that prints the
+  self-installing agent-onboarding block now reads `awiki guide`, which reads
+  naturally as a "point your agent here and run this" call to action (and now
+  headlines the README's get-started line). The old name still works as a
+  **hidden, deprecated alias**, so existing muscle memory and any half-installed
+  memory-file blocks keep functioning. The `<!-- awiki:begin vX.Y.Z -->` marker
+  is unchanged, so installed blocks still detect staleness and re-sync normally.
 
 ## [0.4.0] – 2026-07-06
 
