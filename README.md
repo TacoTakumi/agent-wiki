@@ -1,6 +1,6 @@
 # Agent Wiki
 
-A personal knowledge base for AI agents, inspired by [Karpathy's LLM wiki concept](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). A Python CLI tool manages a plain-markdown vault that any agent can read and write. Agent skills provide tight integration, but the vault is just files — open it in Obsidian, grep it, script against it.
+**AI agents earn hard-won knowledge in every conversation — then lose it the moment the session ends.** Agent Wiki is the memory they keep instead: a single plain-markdown vault your agents search *before* reaching for the web, and write back to whenever they learn something worth keeping. One small CLI (`awiki`) is the only door in, so the same commands work whether the vault is a local folder or a server shared across every project and machine you point at it. And underneath it's just files — grep it, open it in Obsidian, script it in Python. No database, no lock-in. (Inspired by [Karpathy's LLM wiki concept](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f).)
 
 ## Features
 
