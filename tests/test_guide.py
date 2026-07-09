@@ -1,37 +1,22 @@
 from agent_wiki import __version__
 from agent_wiki.guide import (
-    END_MARKER,
     render_block,
     render_guide,
 )
 
 
-def test_render_block_marker_carries_version():
+def test_render_block_is_static_and_unversioned():
     block = render_block()
-    # begin marker now embeds the package version
-    assert block.startswith(f"<!-- awiki:begin v{__version__} -->")
-    assert block.rstrip().endswith(END_MARKER)
-    # canonical content is present
+    # canonical content is present...
     assert "Knowledge base: the Agent Wiki" in block
-
-
-def test_begin_marker_embeds_given_version():
-    from agent_wiki.guide import BEGIN_PREFIX, begin_marker
-
-    assert begin_marker("9.9.9") == "<!-- awiki:begin v9.9.9 -->"
-    # the version-independent anchor agents grep for is a prefix of the marker
-    assert begin_marker("9.9.9").startswith(BEGIN_PREFIX)
-    assert begin_marker() == f"<!-- awiki:begin v{__version__} -->"
-
-
-def test_render_block_contains_version_note():
-    block = render_block()
-    # the visible note carries the version number...
-    assert __version__ in block
-    # ...and tells the agent how to detect/refresh a stale copy
-    assert "awiki --version" in block
-    assert "awiki guide" in block
-    assert "re-run" in block.lower()
+    # ...but the block carries no version-gating: no markers, no version token,
+    # no staleness note.
+    assert "awiki:begin" not in block
+    assert "awiki:end" not in block
+    assert __version__ not in block
+    lower = block.lower()
+    assert "re-run" not in lower
+    assert "newer version" not in lower
 
 
 def test_render_block_contains_literal_mechanical_bits():
@@ -44,20 +29,23 @@ def test_render_guide_default_includes_header_and_block():
     out = render_guide()
     # header markers / intent
     assert "SET UP THE AGENT WIKI" in out
-    # the full marked block is contained verbatim
+    # the block is contained verbatim
     assert render_block() in out
 
 
-def test_render_guide_header_instructs_version_readapt():
+def test_render_guide_preamble_is_add_once_no_version_logic():
     out = render_guide()
     lower = out.lower()
-    # upgrade path re-adapts (preserving project customizations) rather than
-    # blindly replacing — but copies the literal awiki commands verbatim.
-    assert "older" in lower       # triggered by an older installed version
-    assert "re-adapt" in lower
-    assert "preserv" in lower     # preserve project-specific wording
-    assert "verbatim" in lower    # literal awiki commands copied as-is
-    assert "replace" not in lower  # not a blind wholesale replace
+    # add-once + leave-if-present, no version-compare/upgrade machinery
+    assert "once" in lower              # "add ... once"
+    assert "already present" in lower   # leave it if it's already there
+    assert "change nothing" in lower
+    # forbidden: any version-compare/upgrade steps or marker references
+    assert "awiki:begin" not in lower
+    assert "awiki:end" not in lower
+    assert "older" not in lower         # no "if the version is older" upgrade path
+    assert "newer" not in lower
+    assert "re-adapt" not in lower
 
 
 def test_render_guide_raw_omits_header_keeps_block():
@@ -76,16 +64,16 @@ def test_cli_guide_default_runs_without_vault():
     res = CliRunner().invoke(cli, ["guide"])
     assert res.exit_code == 0
     assert "SET UP THE AGENT WIKI" in res.output
-    assert f"<!-- awiki:begin v{__version__} -->" in res.output
-    assert END_MARKER in res.output
+    assert "Knowledge base: the Agent Wiki" in res.output
+    assert "awiki:begin" not in res.output
 
 
 def test_cli_guide_raw_flag_omits_header():
     res = CliRunner().invoke(cli, ["guide", "--raw"])
     assert res.exit_code == 0
     assert "SET UP THE AGENT WIKI" not in res.output
-    assert f"<!-- awiki:begin v{__version__} -->" in res.output
-    assert END_MARKER in res.output
+    assert "Knowledge base: the Agent Wiki" in res.output
+    assert "awiki:begin" not in res.output
 
 
 def test_cli_directions_alias_still_works():
@@ -101,9 +89,6 @@ def test_cli_directions_alias_still_works():
 
 
 def test_cli_version_reports_package_version():
-    # The re-sync mechanism compares `awiki --version` against the version
-    # stamped in the begin marker (agent_wiki.__version__). They must share one
-    # source, or "the version increased" can never be detected.
     res = CliRunner().invoke(cli, ["--version"])
     assert res.exit_code == 0
     assert __version__ in res.output
