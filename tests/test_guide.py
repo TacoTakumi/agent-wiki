@@ -118,10 +118,45 @@ def test_block_describes_shared_vault():
 
 
 def test_block_only_references_real_commands():
-    # Regression guard: the block tells agents to run `awiki search` / `awiki show`.
-    # Fail the build if either stops being a registered command — this is the
+    # Regression guard: the block tells agents to run these bare `awiki` verbs.
+    # Fail the build if any stops being a registered command — this is the
     # root cause of the historical "agents run `awiki show`, it errors" confusion.
     block = render_block()
-    for name in ("search", "show"):
+    for name in ("search", "show", "reingest", "raw"):
         assert f"awiki {name}" in block
         assert name in cli.commands, f"block references awiki {name}, not a real command"
+
+
+def test_block_is_trimmed_and_habits_inline():
+    # The packaged block is short and self-contained: the file itself is <=15
+    # non-blank lines, and the load-bearing habits live inline (not deferred to
+    # a pointer) — search->show, save, and the edit-raw->reingest edit-loop.
+    from importlib import resources
+
+    file_text = (resources.files("agent_wiki") / "data" / "guide.md").read_text(
+        encoding="utf-8"
+    )
+    nonblank = [ln for ln in file_text.splitlines() if ln.strip()]
+    assert len(nonblank) <= 15, f"block file has {len(nonblank)} non-blank lines (>15)"
+
+    block = render_block()
+    # (a) search-first then read the full page
+    assert "awiki search" in block
+    assert "awiki show" in block
+    # save nudge
+    assert "awiki-save" in block
+    # (b) exactly one edit-raw -> reingest loop, with a never-hand-edit sense
+    assert block.count("awiki reingest") == 1
+    assert "hand-edit" in block.lower()
+
+
+def test_block_drops_web_search_replacement_and_vault_branch():
+    # The wiki is framed as first-stop for durable project/domain knowledge, NOT
+    # as a general web-search replacement; and the edit-loop is one uniform
+    # instruction with no vault-type conditional.
+    # collapse whitespace so a line-wrap can't hide the phrase ("searching the\nweb")
+    flat = " ".join(render_block().lower().split())
+    assert "searching the web" not in flat
+    assert "instead of web search" not in flat
+    for branch in ("network vault", "remote vault", "local vault"):
+        assert branch not in flat
