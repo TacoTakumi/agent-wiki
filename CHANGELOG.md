@@ -5,9 +5,27 @@ All notable changes to Agent Wiki are documented here. The format is based on
 follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 The single source of truth for the version is `__version__` in
-`src/agent_wiki/__init__.py`; `awiki --version` and the `awiki guide`
-marker both derive from it. Release tags begin at `v0.5.0`; earlier versions and
-dates below are reconstructed from the commits that bumped `__version__`.
+`src/agent_wiki/__init__.py`; `awiki --version` and the build metadata both
+derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
+below are reconstructed from the commits that bumped `__version__`.
+
+## [0.6.0]
+
+### Changed
+- **`awiki guide` output is trimmed and de-versioned.** The self-installing
+  block is now a static, self-contained ~15-line block: it frames the wiki as
+  the first stop for durable project/domain knowledge (no longer pitched as a
+  general web-search replacement), keeps the search→show and edit-raw→reingest
+  habits inline, and carries the `awiki-save` nudge. The default `awiki guide`
+  preamble is a short "add this once; leave it if already present" instruction.
+
+### Removed
+- **BREAKING: the `<!-- awiki:begin vX.Y.Z -->` / `<!-- awiki:end -->` markers
+  and the version-staleness note are gone** from the `awiki guide` output. The
+  installed block is now static, so consumers add it once and re-adapt only when
+  they choose to — there is no marker to detect staleness or re-sync against.
+  Pre-1.0 this rides a minor bump, but it changes the `awiki guide` artifact
+  format, so it is called out explicitly.
 
 ## [0.5.0] – 2026-07-08
 
