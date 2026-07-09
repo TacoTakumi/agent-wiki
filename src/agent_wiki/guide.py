@@ -1,59 +1,30 @@
 """Build the `awiki guide` output: self-installing agent instructions.
 
 Pure and vault-free. The canonical block lives in packaged data
-(`data/guide.md`); this module wraps it in stable markers (the begin
-marker carries the package version) and, by default, prepends a header
-addressed to the installing agent.
+(`data/guide.md`); this module emits it verbatim and, by default, prepends a
+short header telling the installing agent to add it once. The block is static —
+there are no version markers or staleness notes to keep in sync.
 """
 
 from __future__ import annotations
 
 from importlib import resources
 
-from agent_wiki import __version__
-
-# The begin marker carries the version (e.g. `<!-- awiki:begin v0.1.0 -->`).
-# BEGIN_PREFIX is the version-independent anchor an agent greps for; END_MARKER
-# is constant.
-BEGIN_PREFIX = "<!-- awiki:begin"
-END_MARKER = "<!-- awiki:end -->"
-
 HEADER = """\
 SET UP THE AGENT WIKI FOR THIS PROJECT
 (agent: follow these steps; do not echo them back)
 
-1. Find this project's agent-memory file — CLAUDE.md, AGENTS.md, GEMINI.md, or
-   whatever this agent reads at startup. Prefer the project-level file; create
-   one if none exists.
-2. If a block between the awiki markers below already exists in that file, read
-   its version from the `<!-- awiki:begin vX.Y.Z -->` marker. If that version is
-   the same as (or newer than) the block below, the wiki is already set up —
-   STOP, change nothing.
-3. If the existing block's version is OLDER than the block below, re-adapt it (a
-   version upgrade) — do NOT blindly overwrite. Treat the block below as the
-   source of truth for substance and for every `awiki ...` command and skill
-   name (copy those verbatim); fold its changes into the existing block while
-   PRESERVING the project-specific wording and customizations already there;
-   then update the version in the `<!-- awiki:begin vX.Y.Z -->` marker to match.
-4. If no block exists yet, append the block below. You SHOULD adapt the prose to
-   this project (its name, domain, and the surrounding file's tone) — but keep
-   every `awiki ...` command, skill name (awiki-save, awiki-ingest), and the
-   awiki markers (including the version) EXACTLY as written; they are literal.
-5. Keep the begin/end markers in place so this command stays idempotent — only
-   the version inside the begin marker changes, and only on an upgrade.
+Add the block below, once, to this project's agent-memory file — CLAUDE.md,
+AGENTS.md, GEMINI.md, or whatever this agent reads at startup (prefer the
+project-level file; create one if none exists). You SHOULD adapt the prose to
+this project's name, domain, and the surrounding file's tone — but keep every
+`awiki ...` command and skill name (awiki-save, awiki-ingest) exactly as
+written; they are literal.
+
+If a "Knowledge base: the Agent Wiki" block is already present in that file,
+leave it as-is and change nothing. The block is static — there is nothing to
+keep in sync.
 """
-
-# Visible note appended inside the block so the version travels into the agent's
-# memory file and the agent knows how to detect/refresh a stale copy.
-VERSION_NOTE = """\
-*This guide block is awiki v{version}. If `awiki --version` ever reports a newer \
-version than the one in this block's `awiki:begin` marker, re-run \
-`awiki guide` and re-sync this block.*"""
-
-
-def begin_marker(version: str = __version__) -> str:
-    """The version-stamped begin marker, e.g. `<!-- awiki:begin v0.1.0 -->`."""
-    return f"{BEGIN_PREFIX} v{version} -->"
 
 
 def _load_block() -> str:
@@ -63,22 +34,19 @@ def _load_block() -> str:
     )
 
 
-def render_block(version: str = __version__) -> str:
-    """The canonical block wrapped in version-stamped begin/end markers.
+def render_block() -> str:
+    """The canonical block, verbatim (packaged data), with a single trailing newline.
 
-    Includes the version note so the embedded version lands in the agent's
-    memory file (no header).
+    Static: no version markers, no staleness note — nothing to keep in sync.
     """
-    body = _load_block().strip("\n")
-    note = VERSION_NOTE.format(version=version)
-    return f"{begin_marker(version)}\n{body}\n\n{note}\n{END_MARKER}\n"
+    return _load_block().strip("\n") + "\n"
 
 
 def render_guide(raw: bool = False) -> str:
     """Full `awiki guide` output.
 
-    raw=True  -> just the marked block (for a human pasting manually).
-    raw=False -> agent-directed header followed by the marked block.
+    raw=True  -> just the block (for a human pasting manually).
+    raw=False -> add-once header followed by the block.
     """
     block = render_block()
     if raw:
