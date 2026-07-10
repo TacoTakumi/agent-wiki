@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import click
+from agentsquire import BundledPackageDataSource, check_stale
 from agentsquire.cli import skills_command_group
 
 from agent_wiki import __version__
@@ -76,6 +77,15 @@ def _repair_stale_config_if_needed(fix, dry_run):
                    "one (also settable via AWIKI_VAULT). Forces a local vault.")
 def cli(vault):
     """Agent Wiki - A personal knowledge base for AI agents."""
+    # Proactive skill-staleness check (AgentSquire). Safe by design: swallows its
+    # own errors, never touches stdout or the exit code, and emits at most one
+    # stderr notice — on a TTY it offers to update, non-interactively (agents) it
+    # just names that an update is available. Runs before any subcommand dispatch.
+    check_stale(
+        BundledPackageDataSource("agent_wiki"),
+        source_package="agent_wiki",
+        source_version=__version__,
+    )
     # `vault` is read back from the root context by config.resolve_vault_override();
     # nothing to do here beyond letting click record it on the context.
     pass
