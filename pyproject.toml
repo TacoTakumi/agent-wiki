@@ -10,6 +10,7 @@ license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
+    "agentsquire",
     "click>=8.0",
     "pyyaml>=6.0",
     "ruamel.yaml>=0.18",
@@ -30,6 +31,13 @@ pdf-permissive = ["pdfplumber>=0.11"]
 [project.scripts]
 awiki = "agent_wiki.cli:cli"
 aw = "agent_wiki.cli:cli"
+
+# Dev-time editable override: resolve agentsquire from the sibling local checkout
+# until it is published to PyPI. Users who check out both repos side by side get
+# the editable local copy; without this override the bare `agentsquire` dependency
+# is intentionally unresolvable (see T-08).
+[tool.uv.sources]
+agentsquire = { path = "../AgentSquire", editable = true }
 
 [tool.hatch.version]
 path = "src/agent_wiki/__init__.py"
