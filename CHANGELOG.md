@@ -9,6 +9,31 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.7.0]
+
+### Added
+- **`awiki skills` command group.** A new subcommand group installs the three
+  bundled agent skills (`awiki-search`, `awiki-save`, `awiki-ingest`) into
+  whatever agent harness is detected (Claude Code, pi, Hermes, opencode),
+  backed by the AgentSquire library. `awiki skills install` copies them in with
+  a provenance stamp; `status`, `update`, and `uninstall` manage them;
+  `--scope user|project` selects the target and `--harness NAME` narrows to one
+  harness. The skills now ship inside the wheel as package data under
+  `src/agent_wiki/skills/`, so no source checkout is needed to install them.
+- **Proactive skill-staleness notice.** Every `awiki` invocation runs a safe
+  startup check: when your installed skills are older than the bundled copies
+  it prints one stderr line naming the update, without ever touching stdout or
+  the exit code. On a terminal it offers to update; non-interactively (agents)
+  it just notifies.
+
+### Migration
+- If you previously installed the skills by hand-copying the old repo-root
+  `skills/` directory, run `awiki skills update --force` once to adopt those
+  installs under provenance. Unstamped copies are classified as locally
+  modified and are never silently overwritten, so a plain `update` skips them;
+  `--force` overwrites and re-stamps. Alternatively, delete the old skill
+  directories and run `awiki skills install`.
+
 ## [0.6.0]
 
 ### Changed
