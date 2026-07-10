@@ -32,6 +32,12 @@ pdf-permissive = ["pdfplumber>=0.11"]
 awiki = "agent_wiki.cli:cli"
 aw = "agent_wiki.cli:cli"
 
+# Mark agent_wiki as a skill-carrying package (AgentSquire marker group). The key
+# and value are the importable package name, not the CLI name. Nothing reads this
+# today; it is reserved for a future environment-wide listing.
+[project.entry-points."agentsquire.skills"]
+agent_wiki = "agent_wiki"
+
 # Dev-time editable override: resolve agentsquire from the sibling local checkout
 # until it is published to PyPI. Users who check out both repos side by side get
 # the editable local copy; without this override the bare `agentsquire` dependency

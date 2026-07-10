@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import click
+from agentsquire.cli import skills_command_group
 
 from agent_wiki import __version__
 from agent_wiki.adapters import ADAPTER_NAMES
@@ -78,6 +79,13 @@ def cli(vault):
     # `vault` is read back from the root context by config.resolve_vault_override();
     # nothing to do here beyond letting click record it on the context.
     pass
+
+
+# Mount AgentSquire's ready-made skills command group. The three awiki skills
+# ride inside the wheel as package data under agent_wiki/skills/ (resource_path
+# defaults to "skills"); this exposes `awiki skills install|status|update|
+# uninstall`, each taking --scope user|project and --harness NAME.
+cli.add_command(skills_command_group("agent_wiki", default_scope="user"))
 
 
 @cli.command()
