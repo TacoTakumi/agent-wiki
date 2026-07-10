@@ -326,7 +326,7 @@ If a summarizer is configured, each wiki page body is replaced with a structured
 
 ## Agent Skills
 
-Three skills wrap the common flows for an agent. They ship as `SKILL.md` skills (usable by Claude Code and other agents that support the format), and because each one just shells out to the plain `awiki` CLI, any agent that can run a shell command can offer the same flows even without native skill support. Install them by adding the `skills/` directory to your agent's skill configuration.
+Three skills wrap the common flows for an agent. They ship as `SKILL.md` skills (usable by Claude Code and other agents that support the format), and because each one just shells out to the plain `awiki` CLI, any agent that can run a shell command can offer the same flows even without native skill support. They ride inside the wheel as package data under `src/agent_wiki/skills/`; install them with `awiki skills install`, which copies all three into whatever agent harness it detects (Claude Code, pi, Hermes, opencode). Use `awiki skills status` / `update` / `uninstall` to manage them, and `--scope project` to install into the current project instead of your user config.
 
 ### `/awiki-search`
 
@@ -448,11 +448,11 @@ agent-wiki/
     page.py        # Page model: frontmatter, slugify, wikilinks
     context.py     # Auto-context hook: keyword extract, search, format
     hooks/         # Per-agent install backends (claude, manual)
-  skills/
-    awiki-search/  # agent skill
-    awiki-save/    # agent skill
-    awiki-ingest/  # agent skill
-  tests/           # pytest test suite (472 tests)
+    skills/        # Bundled agent skills (package data; `awiki skills install`)
+      awiki-search/  # agent skill
+      awiki-save/    # agent skill
+      awiki-ingest/  # agent skill
+  tests/           # pytest test suite
 ```
 
 ### Obsidian / Logseq Compatibility
