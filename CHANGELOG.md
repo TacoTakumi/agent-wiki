@@ -9,6 +9,15 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.7.1]
+
+### Changed
+- **PyPI distribution renamed to `agentwiki`.** The `agent-wiki` name on PyPI
+  is owned by an unrelated, actively-maintained project, so the package is now
+  published as `agentwiki` (`pip install agentwiki`). Only the distribution
+  name changed - the import package is still `agent_wiki` and the `awiki` / `aw`
+  commands are unchanged, so existing installs and imports are unaffected.
+
 ## [0.7.0]
 
 ### Added
