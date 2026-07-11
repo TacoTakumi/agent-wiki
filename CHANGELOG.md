@@ -9,14 +9,22 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.7.2]
+
+### Changed
+- **Published to PyPI as `agent-wiki-kb`.** First public PyPI release. The
+  natural names are unavailable: `agent-wiki` is owned by an unrelated,
+  actively-maintained project, and `agentwiki` is rejected by PyPI's
+  name-similarity guard (it collapses to the same normalized form as
+  `agent-wiki`). It ships under `agent-wiki-kb` (`pip install agent-wiki-kb`).
+  Only the distribution name is affected - the import package is still
+  `agent_wiki` and the `awiki` / `aw` commands are unchanged.
+
 ## [0.7.1]
 
 ### Changed
-- **PyPI distribution renamed to `agentwiki`.** The `agent-wiki` name on PyPI
-  is owned by an unrelated, actively-maintained project, so the package is now
-  published as `agentwiki` (`pip install agentwiki`). Only the distribution
-  name changed - the import package is still `agent_wiki` and the `awiki` / `aw`
-  commands are unchanged, so existing installs and imports are unaffected.
+- Attempted to publish as `agentwiki`; blocked before publish by PyPI's
+  name-similarity guard. Superseded by 0.7.2 (`agent-wiki-kb`).
 
 ## [0.7.0]
 
