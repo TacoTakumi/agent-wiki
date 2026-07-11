@@ -34,13 +34,21 @@ Onboarding an agent is one command: **`awiki guide`** prints a self-installing u
 
 Requires Python 3.10+.
 
+From PyPI (the distribution is `agent-wiki-kb`; it installs the `awiki` command):
+
+```bash
+pip install agent-wiki-kb
+```
+
+Or from source, for development:
+
 ```bash
 cd agent-wiki
 uv venv && source .venv/bin/activate
 uv pip install -e .
 ```
 
-This installs two commands: `awiki` and `aw` (short alias). They are identical.
+Either way you get two commands: `awiki` and `aw` (short alias). They are identical.
 
 ### Optional
 
