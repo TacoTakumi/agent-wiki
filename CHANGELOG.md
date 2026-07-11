@@ -22,17 +22,22 @@ below are reconstructed from the commits that bumped `__version__`.
   `src/agent_wiki/skills/`, so no source checkout is needed to install them.
 - **Proactive skill-staleness notice.** Every `awiki` invocation runs a safe
   startup check: when your installed skills are older than the bundled copies
-  it prints one stderr line naming the update, without ever touching stdout or
-  the exit code. On a terminal it offers to update; non-interactively (agents)
-  it just notifies.
+  it prints one stderr line naming `awiki skills update`, without ever
+  prompting, reading stdin, or touching stdout or the exit code. Agents see the
+  notice too - it is not gated on an interactive terminal - and `CI` or
+  `AGENTSQUIRE_NO_UPDATE_CHECK` suppress it.
 
 ### Migration
-- If you previously installed the skills by hand-copying the old repo-root
-  `skills/` directory, run `awiki skills update --force` once to adopt those
-  installs under provenance. Unstamped copies are classified as locally
-  modified and are never silently overwritten, so a plain `update` skips them;
-  `--force` overwrites and re-stamps. Alternatively, delete the old skill
-  directories and run `awiki skills install`.
+- If you previously installed the skills by hand-copying **or symlinking** the
+  old repo-root `skills/` directory into a harness (e.g. `~/.claude/skills/`),
+  run `awiki skills update --force` once to adopt them under provenance. Both
+  unstamped copies and symlinks are classified as locally modified and are never
+  silently overwritten, so a plain `install`/`update` skips them with a reason
+  (it will not crash on a pre-existing symlink); `--force` replaces them with a
+  stamped copy (a symlink is removed, not followed). Alternatively, delete the
+  old skill directories or symlinks and run `awiki skills install`. Note that
+  this release deleted the old repo-root `skills/` tree, so any symlink pointing
+  into it is now dangling - `--force` it or remove it.
 
 ## [0.6.0]
 
