@@ -38,13 +38,6 @@ aw = "agent_wiki.cli:cli"
 [project.entry-points."agentsquire.skills"]
 agent_wiki = "agent_wiki"
 
-# Dev-time editable override: resolve agentsquire from the sibling local checkout
-# until it is published to PyPI. Users who check out both repos side by side get
-# the editable local copy; without this override the bare `agentsquire` dependency
-# is intentionally unresolvable (see T-08).
-[tool.uv.sources]
-agentsquire = { path = "../AgentSquire", editable = true }
-
 [tool.hatch.version]
 path = "src/agent_wiki/__init__.py"
 

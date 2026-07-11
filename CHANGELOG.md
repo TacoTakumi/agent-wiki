@@ -27,6 +27,13 @@ below are reconstructed from the commits that bumped `__version__`.
   notice too - it is not gated on an interactive terminal - and `CI` or
   `AGENTSQUIRE_NO_UPDATE_CHECK` suppress it.
 
+### Changed
+- **`agentsquire` now resolves from PyPI.** Now that `agentsquire` is published
+  to PyPI, the dev-time `[tool.uv.sources]` editable override that pinned it to
+  the sibling `../AgentSquire` checkout has been removed from `pyproject.toml`.
+  A fresh install or `uv sync` pulls `agentsquire>=0.2.1` (currently 0.3.0)
+  straight from the index - no side-by-side source checkout required.
+
 ### Migration
 - If you previously installed the skills by hand-copying **or symlinking** the
   old repo-root `skills/` directory into a harness (e.g. `~/.claude/skills/`),
