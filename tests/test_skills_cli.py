@@ -5,11 +5,12 @@ The group is AgentSquire's ready-made `skills_command_group`, mounted in
 CliRunner) against injected fixture harness trees, so they cover the wiring
 (package name, resource path, default scope) rather than re-testing AgentSquire.
 
-Fixture injection: AgentSquire's CLI resolves the user root from `Path.home()`
-and the project root from `Path.cwd()`. We patch `Path.home` to a fixture home
-and `chdir` into a fixture project, planting a `.claude` marker in each so the
-claude-code harness is detected in both scopes. That lets a no-flag install
-(user scope) and `--scope project` land in distinct, assertable directories.
+Fixture injection: the mounted group resolves its roots via AgentSquire's
+AGENTSQUIRE_HOME / AGENTSQUIRE_PROJECT env overrides (agentsquire 0.2.1), so we
+point both at fixture trees - no `Path.home` monkeypatch or `chdir` needed. Each
+tree carries a `.claude` marker so the claude-code harness is detected in both
+scopes; that lets a no-flag install (user scope) and `--scope project` land in
+distinct, assertable directories.
 """
 
 from pathlib import Path
@@ -32,10 +33,10 @@ def harness_env(tmp_path, monkeypatch):
     project = tmp_path / "project"
     (home / ".claude").mkdir(parents=True)
     (project / ".claude").mkdir(parents=True)
-    # AgentSquire's CLI reads Path.home() for the user root and Path.cwd() for
-    # the project root; point both at the fixtures.
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: home))
-    monkeypatch.chdir(project)
+    # The mounted skills group's targets() resolves roots via these env overrides
+    # (agentsquire 0.2.1), so no Path.home monkeypatch or chdir is needed.
+    monkeypatch.setenv("AGENTSQUIRE_HOME", str(home))
+    monkeypatch.setenv("AGENTSQUIRE_PROJECT", str(project))
     return home, project
 
 

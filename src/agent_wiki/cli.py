@@ -77,18 +77,20 @@ def _repair_stale_config_if_needed(fix, dry_run):
                    "one (also settable via AWIKI_VAULT). Forces a local vault.")
 def cli(vault):
     """Agent Wiki - A personal knowledge base for AI agents."""
-    # Proactive skill-staleness check (AgentSquire). Safe by design: swallows its
-    # own errors, never touches stdout or the exit code, and emits at most one
-    # stderr notice — on a TTY it offers to update, non-interactively (agents) it
-    # just names that an update is available. Runs before any subcommand dispatch.
+    # Proactive skill-staleness notice (AgentSquire). Safe by design: swallows
+    # its own errors, never reads stdin, never prompts, and never touches stdout
+    # or the exit code. It emits at most one stderr line naming
+    # `awiki skills update`, and it is intentionally NOT gated on an interactive
+    # TTY, so agents (which run awiki with captured, non-TTY stderr) see it too;
+    # CI or AGENTSQUIRE_NO_UPDATE_CHECK suppress it. Runs before any subcommand
+    # dispatch.
     check_stale(
         BundledPackageDataSource("agent_wiki"),
-        source_package="agent_wiki",
-        source_version=__version__,
+        prog_name="awiki",
+        update_command="awiki skills update",
     )
     # `vault` is read back from the root context by config.resolve_vault_override();
     # nothing to do here beyond letting click record it on the context.
-    pass
 
 
 # Mount AgentSquire's ready-made skills command group. The three awiki skills

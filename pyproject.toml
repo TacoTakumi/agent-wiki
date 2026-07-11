@@ -10,7 +10,7 @@ license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
-    "agentsquire",
+    "agentsquire>=0.2.1",
     "click>=8.0",
     "pyyaml>=6.0",
     "ruamel.yaml>=0.18",
