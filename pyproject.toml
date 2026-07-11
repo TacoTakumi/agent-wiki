@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agent-wiki"
+name = "agentwiki"
 dynamic = ["version"]
 description = "A personal knowledge base for AI agents"
 license = "GPL-3.0-or-later"
