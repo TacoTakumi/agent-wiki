@@ -50,6 +50,14 @@ uv pip install -e .
 
 Either way you get two commands: `awiki` and `aw` (short alias). They are identical.
 
+If your agent uses a skill-capable harness (Claude Code, pi, Hermes, opencode), install the bundled skills so it can search and save to the wiki:
+
+```bash
+awiki skills install
+```
+
+See [Agent Skills](#agent-skills) for the full lifecycle (`status` / `update` / `uninstall`, `--scope`, `--harness`).
+
 ### Optional
 
 - **ripgrep** (`rg`) — search uses ripgrep when available, falls back to a built-in Python scan.
@@ -335,6 +343,15 @@ If a summarizer is configured, each wiki page body is replaced with a structured
 ## Agent Skills
 
 Three skills wrap the common flows for an agent. They ship as `SKILL.md` skills (usable by Claude Code and other agents that support the format), and because each one just shells out to the plain `awiki` CLI, any agent that can run a shell command can offer the same flows even without native skill support. They ride inside the wheel as package data under `src/agent_wiki/skills/`; install them with `awiki skills install`, which copies all three into whatever agent harness it detects (Claude Code, pi, Hermes, opencode). Use `awiki skills status` / `update` / `uninstall` to manage them, and `--scope project` to install into the current project instead of your user config.
+
+```bash
+awiki skills install                    # install all three into every detected harness (user scope)
+awiki skills install --scope project    # install into the current project, not your user config
+awiki skills install --harness claude   # limit to one detected harness
+awiki skills status                     # show each skill's state per harness
+awiki skills update                     # refresh stale installs to the bundled version
+awiki skills uninstall                  # remove the skills this package installed
+```
 
 ### `/awiki-search`
 
