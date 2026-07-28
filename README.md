@@ -48,8 +48,12 @@ awiki skills install               # install the bundled skills into your agent 
 awiki hook install --agent claude  # optional: surface relevant pages on every prompt
 ```
 
-One vault per machine is the norm - it is shared across every project you work
-on, not created per repo. Prove it works:
+A vault is not per-repo. One vault serves every project you work on, and it can
+serve more than one machine too: `awiki serve` shares it over HTTP, and remote
+machines drive it through the same `awiki` commands. So `awiki init <path>` here
+creates a local vault, and `awiki init --remote <url> --token <secret>` on
+another machine points at this one instead. See
+[Network server](#network-server). Prove it works:
 
 ```bash
 awiki ingest my-notes.md --topic research --tags python,testing
