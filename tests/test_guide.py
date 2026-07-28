@@ -1,8 +1,31 @@
+import re
+from pathlib import Path
+
 from agent_wiki import __version__
 from agent_wiki.guide import (
     render_block,
     render_guide,
 )
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# The README embeds the block in a ```markdown fence so a reader on GitHub or
+# PyPI can see what they are pasting. Anchor on the block's own H2 rather than
+# fence order, so unrelated markdown fences can be added above it freely.
+_README_BLOCK = re.compile(
+    r"^```markdown\n(## Knowledge base: the Agent Wiki \(awiki\)\n.*?)^```$",
+    re.S | re.M,
+)
+
+
+def _readme_block() -> str:
+    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    match = _README_BLOCK.search(text)
+    assert match, (
+        "README.md has no ```markdown fence starting with "
+        "'## Knowledge base: the Agent Wiki (awiki)'"
+    )
+    return match.group(1)
 
 
 def test_render_block_is_static_and_unversioned():
@@ -23,6 +46,13 @@ def test_render_block_contains_literal_mechanical_bits():
     block = render_block()
     for literal in ("awiki search", "awiki show", "awiki-save", "awiki-ingest"):
         assert literal in block, f"missing literal: {literal}"
+
+
+def test_readme_carries_the_block_verbatim():
+    # README.md is where people actually read the block while onboarding, and
+    # data/guide.md is what `awiki guide` prints. Two copies drift silently, so
+    # they are held byte-identical: editing either one alone fails here.
+    assert _readme_block() == render_block()
 
 
 def test_render_guide_default_includes_header_and_block():
