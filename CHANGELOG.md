@@ -9,6 +9,35 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.7.3]
+
+### Changed
+- **README restructured for onboarding.** The front door now reads in newcomer
+  order: pitch + badges, a PyPI-first quick start, a "Using awiki with your
+  agent" section carrying the memory-file block itself, then the why, how the
+  vault works, and a command reference grouped by what you are trying to do
+  (setup / getting knowledge in / getting knowledge out / maintenance /
+  serving). Nothing was dropped: `awiki serve`, `token`, `skills` and
+  `init --remote` are now reachable from the reference instead of only from
+  their own sections, `awiki --version` is documented for the first time, and
+  the LICENSE / CHANGELOG / `Doc/` links are absolute so they resolve on PyPI.
+- **The README owns the memory-file block.** The "Knowledge base: the Agent
+  Wiki" block that `awiki guide` prints is embedded verbatim in the README, and
+  a test asserts the two stay byte-identical, so editing one copy alone fails
+  the suite instead of shipping two different blurbs.
+- **Published docs and the packaged block are ASCII-only.** `README.md`,
+  `CHANGELOG.md` and `data/guide.md` lost their em dashes, en dashes, arrows
+  and ellipses, and `tests/test_docs_ascii.py` keeps them out. The guide
+  block's wording is otherwise unchanged.
+
+### Fixed
+- **The README no longer describes marker-based guide installs.** It claimed
+  the block was wrapped in `<!-- awiki:begin vX.Y.Z -->` / `<!-- awiki:end -->`
+  markers carrying a version, and that an agent should re-run `awiki guide` and
+  re-adapt the block whenever a newer version shipped. None of that has been
+  true since the block became static; `tests/test_guide.py` has asserted the
+  markers' absence the whole time.
+
 ## [0.7.2]
 
 ### Changed
@@ -69,7 +98,7 @@ below are reconstructed from the commits that bumped `__version__`.
 - **`awiki guide` output is trimmed and de-versioned.** The self-installing
   block is now a static, self-contained ~15-line block: it frames the wiki as
   the first stop for durable project/domain knowledge (no longer pitched as a
-  general web-search replacement), keeps the search→show and edit-raw→reingest
+  general web-search replacement), keeps the search->show and edit-raw->reingest
   habits inline, and carries the `awiki-save` nudge. The default `awiki guide`
   preamble is a short "add this once; leave it if already present" instruction.
 
@@ -77,14 +106,14 @@ below are reconstructed from the commits that bumped `__version__`.
 - **BREAKING: the `<!-- awiki:begin vX.Y.Z -->` / `<!-- awiki:end -->` markers
   and the version-staleness note are gone** from the `awiki guide` output. The
   installed block is now static, so consumers add it once and re-adapt only when
-  they choose to — there is no marker to detect staleness or re-sync against.
+  they choose to - there is no marker to detect staleness or re-sync against.
   Pre-1.0 this rides a minor bump, but it changes the `awiki guide` artifact
   format, so it is called out explicitly.
 
-## [0.5.0] – 2026-07-08
+## [0.5.0] - 2026-07-08
 
 ### Changed
-- **Renamed `awiki directions` → `awiki guide`.** The command that prints the
+- **Renamed `awiki directions` -> `awiki guide`.** The command that prints the
   self-installing agent-onboarding block now reads `awiki guide`, which reads
   naturally as a "point your agent here and run this" call to action (and now
   headlines the README's get-started line). The old name still works as a
@@ -92,14 +121,14 @@ below are reconstructed from the commits that bumped `__version__`.
   memory-file blocks keep functioning. The `<!-- awiki:begin vX.Y.Z -->` marker
   is unchanged, so installed blocks still detect staleness and re-sync normally.
 
-## [0.4.0] – 2026-07-06
+## [0.4.0] - 2026-07-06
 
 ### Added
 - **`render_hash` drift guard.** Every rendered page now carries a `render_hash`
   fingerprint of its body in frontmatter, letting awiki tell an intended,
   raw-driven update apart from an out-of-band hand-edit of the page:
   - Editing `raw/<name>` and running `awiki reingest <name>` rebuilds the page
-    cleanly — **a raw edit no longer trips the guard**, so the canonical
+    cleanly - **a raw edit no longer trips the guard**, so the canonical
     edit-the-raw loop needs no `--force`.
   - The guard now fires only when the *page itself* was hand-edited out of band;
     `reingest` (and `ingest --update`) then print a page-vs-raw diff and stop
@@ -107,12 +136,12 @@ below are reconstructed from the commits that bumped `__version__`.
   - Lazy trust-on-first-use: pre-existing pages without a `render_hash` are
     trusted the first time they're touched and stamped going forward, so
     upgrading an existing vault needs no migration step.
-- **`awiki raw <name>`** — resolve a page to its `raw/<name>` source path,
+- **`awiki raw <name>`** - resolve a page to its `raw/<name>` source path,
   printed to stdout so it drops straight into command substitution
   (`$EDITOR "$(awiki raw my-notes.md)"`). Errors exactly as `reingest` does on a
   missing or ambiguous name; on a remote vault it prints the server-side
   reference and notes on stderr that the raw isn't locally editable.
-- **`awiki doctor` render-hash checks** — stamps `render_hash` on un-hashed but
+- **`awiki doctor` render-hash checks** - stamps `render_hash` on un-hashed but
   faithful pages, and reports un-hashed pages whose body has diverged from their
   `raw/` source.
 
@@ -122,28 +151,28 @@ below are reconstructed from the commits that bumped `__version__`.
   vault) on **stderr**. stdout stays byte-identical, so skills that parse command
   output verbatim are unaffected.
 
-## [0.3.1] – 2026-07-01
+## [0.3.1] - 2026-07-01
 
 ### Fixed
 - `awiki directions`: corrected the raw-editing guidance so the installed block
   tells agents to edit the `raw/` source and run `awiki reingest`, never
   hand-edit a rendered page.
-- Documented the page-update path — edit raw → `reingest`, or `ingest --update`
-  for an external file — in the directions block and the `awiki-save` skill,
+- Documented the page-update path - edit raw -> `reingest`, or `ingest --update`
+  for an external file - in the directions block and the `awiki-save` skill,
   including the remote-vault case.
 
-## [0.3.0] – 2026-06-27
+## [0.3.0] - 2026-06-27
 
 ### Added
 - **Tag vocabulary system.** An optional `tags:` block in `wiki.yaml`
-  (`mode: off | warn | strict` plus a preferred → aliases map) canonicalizes
+  (`mode: off | warn | strict` plus a preferred -> aliases map) canonicalizes
   tags across the vault:
-  - `awiki tag add <preferred> [--alias …]` — persist vocabulary entries through
+  - `awiki tag add <preferred> [--alias ...]` - persist vocabulary entries through
     a comment-preserving `wiki.yaml` writer (idempotent; refuses to steal an
     alias already bound to another term).
-  - `awiki tag suggest [--write]` — draft a vocabulary from the tags already in
+  - `awiki tag suggest [--write]` - draft a vocabulary from the tags already in
     use, grouping related tags as alias candidates.
-  - `awiki tag fix [--write] [--topic T] [PATH]` — canonicalize existing pages'
+  - `awiki tag fix [--write] [--topic T] [PATH]` - canonicalize existing pages'
     frontmatter tags (preview by default; page frontmatter only, never `raw/` or
     the page body).
   - Ingest canonicalizes tags at the single write boundary; `--tag-mode
@@ -156,32 +185,32 @@ below are reconstructed from the commits that bumped `__version__`.
 - Bare `mode: off` tag blocks round-trip safely through the `wiki.yaml` writer.
 - `canonicalize_tags` hardened against non-string tag values.
 
-## [0.2.1] – 2026-06-26
+## [0.2.1] - 2026-06-26
 
 ### Added
-- **`--vault PATH` / `AWIKI_VAULT`** — override the configured vault for a single
+- **`--vault PATH` / `AWIKI_VAULT`** - override the configured vault for a single
   invocation (forces a local vault).
 - `awiki doctor` now repairs a stale local `vault_path` (config pointing at a
   vault that no longer exists) instead of hard-stopping.
 
-## [0.2.0] – 2026-06-25
+## [0.2.0] - 2026-06-25
 
 ### Added
 - **URL ingest across the network server.** Remote clients fetch page content
   locally, so `awiki ingest <url>` works whether the vault is local or served
   over HTTP.
 - New `awiki lint` checks:
-  - `SOURCE` — a `raw/` file edited in place (drifted from its recorded sha256).
-  - `STALE` — a page whose body lags its newest source.
-  - `SIZE` — pages over 200 lines, flagged as split candidates.
-  - `INDEX` — pages missing from `index.md`.
-  - `lint --refetch` — re-fetch URL sources and flag any whose upstream content
+  - `SOURCE` - a `raw/` file edited in place (drifted from its recorded sha256).
+  - `STALE` - a page whose body lags its newest source.
+  - `SIZE` - pages over 200 lines, flagged as split candidates.
+  - `INDEX` - pages missing from `index.md`.
+  - `lint --refetch` - re-fetch URL sources and flag any whose upstream content
     changed (`UPSTREAM`; network, off by default, local vaults only).
 
 ### Fixed
 - `awiki doctor --reconcile-raw` refreshes the provenance sidecar's sha256.
 
-## [0.1.1] – 2026-06-20
+## [0.1.1] - 2026-06-20
 
 ### Added
 - **URL ingestion.** `awiki ingest <url>` fetches and ingests web pages:
@@ -201,7 +230,7 @@ below are reconstructed from the commits that bumped `__version__`.
 ### Fixed
 - `awiki lint` no longer flags provenance sidecars as un-ingested `raw/` files.
 
-## [0.1.0] – 2026-04-14
+## [0.1.0] - 2026-04-14
 
 Initial release.
 
@@ -209,25 +238,25 @@ Initial release.
 - **Core vault + CLI** (`awiki` / `aw`): `init`, `ingest` (files), `search`,
   `show`, `index`, `lint`, `status`, `log` over a plain-markdown vault with YAML
   frontmatter and `[[wikilinks]]`.
-- **Multi-word search** — AND-across-the-page matching with coverage-ranked
+- **Multi-word search** - AND-across-the-page matching with coverage-ranked
   results and a lower-ranked partial-match tier.
-- **`awiki show <path>`** — print any vault file verbatim by its vault-relative
+- **`awiki show <path>`** - print any vault file verbatim by its vault-relative
   path.
 - **`ingest --update`** plus a collision guard that refuses to clobber an
   existing `raw/` basename (per-file skip/continue in globs).
-- **`awiki reingest <name>`** — rebuild a page from its edited `raw/<name>`
+- **`awiki reingest <name>`** - rebuild a page from its edited `raw/<name>`
   source (diff-and-stop unless `--force`); the canonical page-edit loop.
-- **Conversation ingest** — adapters for Claude Code, OpenCode, and a drop-zone,
+- **Conversation ingest** - adapters for Claude Code, OpenCode, and a drop-zone,
   a canonical Conversation Bundle format, `awiki sync` (state-tracked,
   idempotent), `awiki adapt`, `awiki ingest-conversation`, and optional
   summarization (`none` / `claude-p` / `local-openai`).
-- **Auto-context hook** — `awiki context` (YAKE keyword extraction → search →
+- **Auto-context hook** - `awiki context` (YAKE keyword extraction -> search ->
   compact pointer block) and `awiki hook install|uninstall|status` to wire it
   into an agent CLI's `UserPromptSubmit` hook.
-- **`awiki directions`** — a self-installing wiki-usage block for agent memory
-  files (`CLAUDE.md`, `AGENTS.md`, …).
-- **Network server** — `awiki serve` (FastAPI, bearer auth, role-gated
+- **`awiki directions`** - a self-installing wiki-usage block for agent memory
+  files (`CLAUDE.md`, `AGENTS.md`, ...).
+- **Network server** - `awiki serve` (FastAPI, bearer auth, role-gated
   reader/writer/admin), `awiki token add|list|revoke`, a transparent remote
-  client (`awiki init --remote … --token …`), per-vault file locks, and
+  client (`awiki init --remote ... --token ...`), per-vault file locks, and
   `awiki doctor` for schema-drift repair.
-- **Claude Code skills** — `awiki-search`, `awiki-save`, `awiki-ingest`.
+- **Claude Code skills** - `awiki-search`, `awiki-save`, `awiki-ingest`.
