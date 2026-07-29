@@ -30,13 +30,18 @@ below are reconstructed from the commits that bumped `__version__`.
   up from the current directory to `$HOME`; the nearest one merges additively
   over the global config (local wins on name collision). Honored only after
   `awiki vault trust <dir>`; an untrusted local config is ignored with a
-  one-line stderr notice.
+  one-line stderr notice. A relative `path:` in a local config resolves
+  against the directory containing `.agent-wiki`, not the process cwd.
 - **Cross-vault reads.** `search` spans all configured vaults with one merged
   coverage-ranked list whose paths carry a `vault:` qualifier that pastes
   straight into `show`/`raw`/`reingest`; those commands accept qualified and
   unqualified references (unique match wins, ambiguity is a hard error listing
-  the candidates). The auto-context hook spans vaults, skips unreachable ones,
-  and honors a per-vault `auto_context: false` opt-out.
+  the candidates); an unqualified `raw`/`reingest` name probes local vaults
+  only - qualify it to target a remote vault's server-side raws. The
+  auto-context hook spans vaults, skips unreachable ones, and honors a
+  per-vault `auto_context: false` opt-out (local vaults only - the wire
+  contract exposes no such flag, so a reachable remote vault is always
+  included).
 - **Topic-routed writes.** `ingest --topic` lands in the unique vault whose
   `wiki.yaml` declares that topic; a doubly-declared topic is a hard error
   that `--vault` or a `vault:` prefix on the topic resolves.
@@ -74,6 +79,18 @@ below are reconstructed from the commits that bumped `__version__`.
   block's wording is otherwise unchanged.
 
 ### Fixed
+- **`awiki init` no longer wipes the config file.** A bare `init <path>`
+  merges `vault_path` over the existing config, so `trusted_dirs` and any
+  `server` key survive; `init --remote` against a config holding `vaults:` or
+  `trusted_dirs` preserves every entry and the trust allowlist, landing the
+  remote as a `vaults:` entry (previously each rewrote the file wholesale).
+- **Migration keeps a hybrid `main`.** A legacy config holding both
+  `vault_path` and `server` migrates to a `main` entry preserving both keys
+  (the url wins at backend selection, the path serves local resolution), so
+  local `serve`/`tag`/`doctor` keep working after any migrating write.
+- **Stale-vault errors name the real key.** With a `vaults:` schema config,
+  a missing vault is reported by entry name and its `path:` key in the
+  declaring config file; legacy configs keep the `vault_path` wording.
 - **The README no longer describes marker-based guide installs.** It claimed
   the block was wrapped in `<!-- awiki:begin vX.Y.Z -->` / `<!-- awiki:end -->`
   markers carrying a version, and that an agent should re-run `awiki guide` and
