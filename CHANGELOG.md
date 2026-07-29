@@ -43,8 +43,11 @@ below are reconstructed from the commits that bumped `__version__`.
   contract exposes no such flag, so a reachable remote vault is always
   included).
 - **Topic-routed writes.** `ingest --topic` lands in the unique vault whose
-  `wiki.yaml` declares that topic; a doubly-declared topic is a hard error
-  that `--vault` or a `vault:` prefix on the topic resolves.
+  `wiki.yaml` declares that topic. A topic several vaults declare routes to
+  the default vault when the default is among them (one stderr notice) -
+  since every named vault is born with the standard topics, the common
+  save-to-default case needs no qualifier. A collision among non-default
+  vaults is a hard error that `--vault` or a `vault:` prefix resolves.
 - **Multi-vault maintenance.** `lint`, `doctor` diagnostics, and `index`
   sweep every vault with per-vault sections and announced skips;
   `lint --strict` exits nonzero on a TAG finding in any vault. Mutating
