@@ -218,3 +218,53 @@ def test_sync_cli_source_filter(tmp_path, monkeypatch):
     forced = runner.invoke(cli, ["sync", "--source", "claude-code"])
     assert forced.exit_code == 0
     assert "1 new" in forced.output
+
+
+# --- multi-vault: sync touches exactly one vault (T-15, REQ-19) ----------------
+
+def test_sync_touches_only_default_vault(tmp_path, monkeypatch):
+    from conftest import make_vault
+
+    work = tmp_path / "work-vault"
+    work.mkdir()
+    cc_root = tmp_path / "claude-projects"
+    _write_cc_session(cc_root, "s1", title="Multi Vault Sync")
+    config = {
+        "vault": {"name": "w", "version": 1},
+        "topics": ["research", "sessions"],
+        "default_topic": "research",
+        "conversations": {"topic": "sessions"},
+        "summarizer": {"type": "none"},
+        "sources": {
+            "claude_code": {"enabled": True, "path": str(cc_root),
+                            "include_live": True},
+            "opencode": {"enabled": False},
+            "drop_zone": {"enabled": False},
+        },
+    }
+    (work / "wiki.yaml").write_text(yaml.dump(config))
+    (work / "raw").mkdir()
+    (work / "raw" / "sessions").mkdir()
+    for t in config["topics"]:
+        (work / t).mkdir()
+    (work / "log.md").write_text("# Activity Log\n\n")
+
+    personal = make_vault(tmp_path / "personal-vault")
+    personal_before = sorted(str(p) for p in personal.rglob("*"))
+
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yaml").write_text(yaml.dump({
+        "default_vault": "work",
+        "vaults": {"work": {"path": str(work)},
+                   "personal": {"path": str(personal)}},
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cfg_dir))
+
+    result = CliRunner().invoke(cli, ["sync"])
+    assert result.exit_code == 0, result.output
+    assert "claude-code:s1" in result.output
+
+    # The sync landed in the default vault; the other vault is untouched.
+    assert list((work / "sessions").glob("*.md"))
+    assert sorted(str(p) for p in personal.rglob("*")) == personal_before
