@@ -26,6 +26,9 @@ class VaultEntry:
     path: "Path | None" = None
     url: "str | None" = None
     token: "str | None" = None
+    # The config file that declared this entry (stamped by the loader;
+    # parse_registry itself does not know the file it is parsing).
+    origin: "str | None" = None
 
     @property
     def is_remote(self) -> bool:

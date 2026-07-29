@@ -157,10 +157,11 @@ def discover_local_config(cwd: "Path | None" = None) -> "Path | None":
 _untrusted_noticed: set = set()
 
 
-def _local_config_if_trusted(global_config: dict) -> "dict | None":
-    """Return the discovered local config dict when its directory is on the
-    global trust allowlist (trusted_dirs). An untrusted one is ignored with a
-    single stderr notice naming the file and the trust command."""
+def _local_config_if_trusted(global_config: dict) -> "tuple | None":
+    """Return (path, dict) for the discovered local config when its directory
+    is on the global trust allowlist (trusted_dirs). An untrusted one is
+    ignored with a single stderr notice naming the file and the trust
+    command."""
     local_file = discover_local_config()
     if local_file is None:
         return None
@@ -179,20 +180,30 @@ def _local_config_if_trusted(global_config: dict) -> "dict | None":
             )
         return None
     with open(local_file) as f:
-        return yaml.safe_load(f) or {}
+        return local_file, (yaml.safe_load(f) or {})
 
 
 def load_effective_config() -> tuple:
     """Return (registry, default_vault) — the global registry with the nearest
     trusted local config merged additively over it, local winning on vault-name
     collision and its default_vault beating the global one. Read-only."""
+    from dataclasses import replace
     from agent_wiki.registry import parse_registry
     global_config = load_user_config()
-    registry = parse_registry(global_config)
+    global_file = str(get_config_dir() / "config.yaml")
+    registry = {
+        name: replace(entry, origin=global_file)
+        for name, entry in parse_registry(global_config).items()
+    }
     default_vault = global_config.get("default_vault")
-    local_config = _local_config_if_trusted(global_config)
-    if local_config is not None:
-        registry = {**registry, **parse_registry(local_config)}
+    local = _local_config_if_trusted(global_config)
+    if local is not None:
+        local_file, local_config = local
+        local_registry = {
+            name: replace(entry, origin=str(local_file))
+            for name, entry in parse_registry(local_config).items()
+        }
+        registry = {**registry, **local_registry}
         if local_config.get("default_vault"):
             default_vault = local_config["default_vault"]
     return registry, default_vault

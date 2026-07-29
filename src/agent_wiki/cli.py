@@ -261,6 +261,47 @@ def vault():
     """Manage the named vault registry."""
 
 
+@vault.command("list")
+def vault_list():
+    """List configured vaults: name, kind, target, reachability, declaring
+    config, and a * marker on the default vault. Read-only."""
+    from agent_wiki.config import backend_for_entry, load_effective_config
+    from agent_wiki.registry import resolve_default_vault
+
+    registry, default_vault = load_effective_config()
+    if not registry:
+        click.echo("No vaults configured. Run 'awiki init <path>' first.")
+        return
+
+    try:
+        default_name = resolve_default_vault(registry, default_vault).name
+    except click.UsageError:
+        default_name = None  # ambiguous or unset: no marker
+
+    name_width = max(len(n) for n in registry)
+    target_width = max(
+        len(entry.url or str(entry.path)) for entry in registry.values())
+    for name in sorted(registry):
+        entry = registry[name]
+        if entry.url:
+            kind, target = "remote", entry.url
+            try:
+                backend_for_entry(entry).status()
+                reach = "ok"
+            except Exception:
+                reach = "unreachable"
+        else:
+            kind, target = "local", str(entry.path)
+            reach = (
+                "ok" if (entry.path / "wiki.yaml").is_file() else "unreachable"
+            )
+        marker = "*" if name == default_name else " "
+        click.echo(
+            f"{marker} {name:<{name_width}}  {kind:<6}  "
+            f"{target:<{target_width}}  {reach:<11}  {entry.origin or '-'}"
+        )
+
+
 @vault.command("trust")
 @click.argument("directory", type=click.Path(exists=True, file_okay=False))
 def vault_trust(directory):
