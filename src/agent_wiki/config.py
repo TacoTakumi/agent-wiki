@@ -151,36 +151,62 @@ def load_vault_config(vault_path: Path) -> dict:
         return yaml.safe_load(f)
 
 
-def resolve_vault_override() -> "Path | None":
-    """Return an explicit vault override, or None.
+def _raw_vault_override() -> "str | None":
+    """Return the raw override value (--vault flag or AWIKI_VAULT), or None.
 
     Precedence: the `--vault` group option (read from the active click context)
-    beats the `AWIKI_VAULT` env var; both beat the configured vault. The override
-    is not validated here — callers decide how to report a missing path."""
+    beats the `AWIKI_VAULT` env var; both beat the configured vaults."""
     flag = None
     ctx = click.get_current_context(silent=True)
     if ctx is not None:
         # The --vault option lives on the top-level group; its value sits on the
         # root context's params regardless of which subcommand is running.
         flag = ctx.find_root().params.get("vault")
-    raw = flag or os.environ.get("AWIKI_VAULT")
-    if not raw:
-        return None
-    return Path(raw).expanduser()
+    return flag or os.environ.get("AWIKI_VAULT") or None
 
 
-def _override_path_or_raise() -> "Path | None":
-    """Resolve and validate a vault override. Raises a friendly UsageError when an
-    override is set but points nowhere; returns None when no override is set."""
-    override = resolve_vault_override()
-    if override is None:
+def _name_eligible(value: str) -> bool:
+    """True when an override value may be looked up as a configured vault name.
+
+    A ./ or ../ prefix, a ~ prefix, an absolute path, or any path separator
+    forces path interpretation."""
+    return (
+        not os.path.isabs(value)
+        and not value.startswith((".", "~"))
+        and os.sep not in value
+    )
+
+
+def resolve_vault_override():
+    """Return the vault override as a VaultEntry, or None.
+
+    A bare value matching a configured vault name narrows to that entry (local
+    or remote); any other value is a config-free local vault at that path. The
+    entry is not validated here — callers decide how to report a missing path."""
+    from agent_wiki.registry import VaultEntry, parse_registry
+    raw = _raw_vault_override()
+    if raw is None:
         return None
-    if not override.exists():
+    if _name_eligible(raw):
+        entry = parse_registry(load_user_config()).get(raw)
+        if entry is not None:
+            return entry
+    return VaultEntry(name=raw, path=Path(raw).expanduser())
+
+
+def _override_entry_or_raise():
+    """Resolve and validate a vault override. Raises a friendly UsageError when
+    an override's local path points nowhere; returns None when no override is
+    set. Remote (url) entries carry no path to validate."""
+    entry = resolve_vault_override()
+    if entry is None:
+        return None
+    if entry.path is not None and not entry.path.exists():
         raise click.UsageError(
-            f"Vault override points at {override}, which does not exist "
+            f"Vault override points at {entry.path}, which does not exist "
             f"(set via --vault or AWIKI_VAULT)."
         )
-    return override
+    return entry
 
 
 def _stale_vault_error(path: Path) -> click.UsageError:
@@ -204,9 +230,14 @@ def _default_entry():
 def get_vault_path() -> Path:
     """Get the vault path: override (--vault/AWIKI_VAULT) first, then the
     registry's default vault (which a legacy vault_path config synthesizes)."""
-    override = _override_path_or_raise()
+    override = _override_entry_or_raise()
     if override is not None:
-        return override
+        if override.path is None:
+            raise click.UsageError(
+                f"Vault '{override.name}' is remote (url); this operation "
+                f"needs a local vault."
+            )
+        return override.path
     entry = _default_entry()
     if entry.path is None:
         raise click.UsageError(
@@ -231,12 +262,12 @@ def backend_for_entry(entry):
 
 
 def get_backend():
-    """Resolve the default vault into a VaultService. An explicit override
-    forces a local vault; otherwise the registry's default entry decides."""
-    override = _override_path_or_raise()
+    """Resolve the vault into a VaultService. An explicit override wins — a
+    name-matched entry may be remote; a path override is always local — then
+    the registry's default entry decides."""
+    override = _override_entry_or_raise()
     if override is not None:
-        from agent_wiki.service import LocalVaultService
-        return LocalVaultService(override)
+        return backend_for_entry(override)
     return backend_for_entry(_default_entry())
 
 
