@@ -52,3 +52,46 @@ def test_init_vault_already_exists(tmp_path, monkeypatch):
 
     with pytest.raises(FileExistsError):
         init_vault(vault_path)
+
+
+# --- named init and registry-aware registration (T-18) -------------------------
+
+def test_init_vault_named_registers_in_vaults_schema(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    vault_path = tmp_path / "personal-wiki"
+    init_vault(vault_path, name="personal")
+
+    persisted = yaml.safe_load((config_dir / "config.yaml").read_text())
+    assert "vault_path" not in persisted
+    assert persisted["vaults"]["personal"] == {"path": str(vault_path.resolve())}
+
+
+def test_init_vault_bare_keeps_legacy_form(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    vault_path = tmp_path / "my-wiki"
+    init_vault(vault_path)
+
+    persisted = yaml.safe_load((config_dir / "config.yaml").read_text())
+    assert persisted == {"vault_path": str(vault_path.resolve())}
+
+
+def test_init_vault_bare_on_vaults_config_registers_main(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    other = tmp_path / "other-vault"
+    (config_dir / "config.yaml").write_text(yaml.dump({
+        "vaults": {"work": {"path": str(other)}},
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    vault_path = tmp_path / "new-wiki"
+    init_vault(vault_path)
+
+    persisted = yaml.safe_load((config_dir / "config.yaml").read_text())
+    assert "vault_path" not in persisted
+    assert persisted["vaults"]["work"] == {"path": str(other)}
+    assert persisted["vaults"]["main"] == {"path": str(vault_path.resolve())}

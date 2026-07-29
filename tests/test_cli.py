@@ -685,3 +685,38 @@ def test_reingest_unqualified_ambiguous_is_loud(two_vault_config, tmp_path):
     combined = result.output + result.stderr
     assert "work:both" in combined
     assert "personal:both" in combined
+
+
+# --- init --name (T-18) --------------------------------------------------------
+
+def test_init_name_flag_creates_and_registers_named_vault(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    vault_path = tmp_path / "personal-wiki"
+    result = CliRunner().invoke(
+        cli, ["init", str(vault_path), "--name", "personal"])
+    assert result.exit_code == 0, result.output
+    assert (vault_path / "wiki.yaml").is_file()
+
+    listed = CliRunner().invoke(cli, ["vault", "list"])
+    assert listed.exit_code == 0, listed.output
+    assert "personal" in listed.output
+
+
+def test_init_name_rejects_illegal_and_duplicate_names(tmp_path, monkeypatch):
+    config_dir = tmp_path / "config"
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    bad = CliRunner().invoke(
+        cli, ["init", str(tmp_path / "v1"), "--name", "Bad Name"])
+    assert bad.exit_code != 0
+    assert not (tmp_path / "v1").exists()
+
+    assert CliRunner().invoke(
+        cli, ["init", str(tmp_path / "v2"), "--name", "personal"]
+    ).exit_code == 0
+    dup = CliRunner().invoke(
+        cli, ["init", str(tmp_path / "v3"), "--name", "personal"])
+    assert dup.exit_code != 0
+    assert not (tmp_path / "v3").exists()

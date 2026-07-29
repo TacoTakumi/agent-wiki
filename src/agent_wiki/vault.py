@@ -16,8 +16,14 @@ def _default_sources_config() -> dict:
     }
 
 
-def init_vault(vault_path: Path) -> None:
-    """Initialize a new wiki vault at the given path."""
+def init_vault(vault_path: Path, name: str | None = None) -> None:
+    """Initialize a new wiki vault at the given path.
+
+    With ``name``, the vault registers under that name in the config's
+    vaults: schema (migrating a legacy config). Bare init keeps today's
+    behavior: a legacy ``vault_path`` write — unless the config already
+    carries a vaults: block, in which case it registers as ``main`` there
+    instead of clobbering the registry."""
     vault_path = vault_path.resolve()
 
     if (vault_path / "wiki.yaml").exists():
@@ -51,4 +57,18 @@ def init_vault(vault_path: Path) -> None:
     (vault_path / "index.md").write_text("# Index\n\n*Run `awiki index` to rebuild.*\n")
     (vault_path / "log.md").write_text("# Activity Log\n\n")
 
-    save_user_config({"vault_path": str(vault_path)})
+    _register_vault(vault_path, name)
+
+
+def _register_vault(vault_path: Path, name: str | None) -> None:
+    from agent_wiki.config import load_user_config, migrate_to_vaults_schema
+
+    config = load_user_config()
+    if name is None and not config.get("vaults"):
+        # Legacy form, byte-equivalent to the current release (REQ-24).
+        save_user_config({"vault_path": str(vault_path)})
+        return
+    config = migrate_to_vaults_schema(config)
+    config.setdefault("vaults", {})[name or "main"] = {
+        "path": str(vault_path)}
+    save_user_config(config)

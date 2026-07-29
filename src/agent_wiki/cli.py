@@ -216,7 +216,10 @@ cli.add_command(skills_command_group("agent_wiki", default_scope="user"))
 @click.option("--token", default=None, help="Bearer token for the remote server.")
 @click.option("--clear", "clear", is_flag=True, default=False,
               help="Remove remote-server config from this client.")
-def init(path, url, token, clear):
+@click.option("--name", "vault_name", default=None,
+              help="Register the new vault under this name in the vaults: "
+                   "schema (bare init registers as main).")
+def init(path, url, token, clear, vault_name):
     """Initialize a vault: local (a path) or remote (--remote URL --token T).
 
     With no arguments, prompts for local vs remote.
@@ -249,8 +252,20 @@ def init(path, url, token, clear):
 
     # local
     vault_path = Path(path).resolve()
+    if vault_name is not None:
+        from agent_wiki.page import slugify
+        from agent_wiki.registry import parse_registry
+        if not vault_name or slugify(vault_name) != vault_name:
+            raise click.UsageError(
+                f"vault name {vault_name!r} is not slug-legal; use lowercase "
+                f"letters, digits, and hyphens."
+            )
+        if vault_name in parse_registry(load_user_config()):
+            raise click.UsageError(
+                f"vault '{vault_name}' is already configured."
+            )
     try:
-        init_vault(vault_path)   # also writes vault_path to user config
+        init_vault(vault_path, name=vault_name)   # also registers in user config
         click.echo(f"Vault initialized at {vault_path}")
     except FileExistsError as e:
         raise click.ClickException(str(e))
