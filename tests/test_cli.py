@@ -648,75 +648,32 @@ def test_ingest_no_topic_lands_in_default_vault_default_topic(
     assert (work / "research" / "plain.md").exists()
 
 
-def test_ingest_topic_collision_with_default_routes_to_default(
+def test_ingest_doubly_declared_topic_is_loud_and_resolvable(
     two_vault_config, tmp_path
 ):
-    """T-32 (REQ-29): 'research' is declared by both vaults, and the default
-    (work) is one of them - the write routes to the default with one stderr
-    notice instead of erroring; stdout keeps today's shape."""
     work, personal = _routing_config(two_vault_config, tmp_path)
     src = tmp_path / "shared.md"
     src.write_text("# Shared\n\nbody\n")
 
+    # 'research' is declared by both vaults: hard error naming them.
     result = CliRunner().invoke(cli, ["ingest", str(src), "--topic", "research"])
-    assert result.exit_code == 0, result.output
-    assert (work / "research" / "shared.md").exists()
-    assert not (personal / "research" / "shared.md").exists()
-    assert "Ingested" in result.output
-    notice_lines = [l for l in result.stderr.splitlines() if l.strip()]
-    assert len(notice_lines) == 1
-    assert "work" in notice_lines[0] and "personal" in notice_lines[0]
-
-
-def test_ingest_topic_collision_among_non_default_vaults_still_errors(
-    two_vault_config, tmp_path
-):
-    """T-32 (REQ-30): a topic declared only by two non-default vaults stays a
-    hard error naming the candidates."""
-    work, personal = _routing_config(two_vault_config, tmp_path)
-    archive = tmp_path / "archive-vault"
-    from conftest import make_vault
-    make_vault(archive, name="Archive Wiki")
-    for extra in (personal, archive):
-        wiki = yaml.safe_load((extra / "wiki.yaml").read_text())
-        if "journal" not in wiki["topics"]:
-            wiki["topics"].append("journal")
-        (extra / "wiki.yaml").write_text(yaml.dump(wiki))
-        (extra / "journal").mkdir(exist_ok=True)
-    cfg = yaml.safe_load(two_vault_config.read_text())
-    cfg["vaults"]["archive"] = {"path": str(archive)}
-    two_vault_config.write_text(yaml.dump(cfg))
-    src = tmp_path / "entry.md"
-    src.write_text("# Entry\n\ndear diary\n")
-
-    # 'journal' is declared by personal and archive; work (default) does not
-    # declare it - loud ambiguity survives.
-    result = CliRunner().invoke(cli, ["ingest", str(src), "--topic", "journal"])
     assert result.exit_code != 0
     combined = result.output + result.stderr
-    assert "personal" in combined and "archive" in combined
+    assert "work" in combined and "personal" in combined
 
-
-def test_ingest_explicit_selection_beats_topic_routing(
-    two_vault_config, tmp_path
-):
-    """T-32 (REQ-30): --vault and a vault: prefix still beat topic routing,
-    including on a topic the default vault also declares."""
-    work, personal = _routing_config(two_vault_config, tmp_path)
-    src = tmp_path / "shared.md"
-    src.write_text("# Shared\n\nbody\n")
-
+    # --vault resolves it.
     result = CliRunner().invoke(
         cli, ["--vault", "personal", "ingest", str(src), "--topic", "research"])
     assert result.exit_code == 0, result.output
     assert (personal / "research" / "shared.md").exists()
 
+    # A vault: prefix on the topic resolves it too.
     src2 = tmp_path / "shared2.md"
     src2.write_text("# Shared Two\n\nbody\n")
     result = CliRunner().invoke(
-        cli, ["ingest", str(src2), "--topic", "personal:research"])
+        cli, ["ingest", str(src2), "--topic", "work:research"])
     assert result.exit_code == 0, result.output
-    assert (personal / "research" / "shared-two.md").exists()
+    assert (work / "research" / "shared-two.md").exists()
 
 
 def test_reingest_unqualified_ambiguous_is_loud(two_vault_config, tmp_path):
