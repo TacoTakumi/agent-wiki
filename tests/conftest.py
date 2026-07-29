@@ -60,14 +60,12 @@ def url_fetcher_cls():
     return _CannedFetcher
 
 
-@pytest.fixture
-def tmp_vault(tmp_path):
-    """Create a temporary vault directory with wiki.yaml and standard structure."""
-    vault = tmp_path / "vault"
-    vault.mkdir()
+def make_vault(vault, name="Test Wiki"):
+    """Create a vault directory with wiki.yaml and the standard structure."""
+    vault.mkdir(parents=True, exist_ok=True)
 
     config = {
-        "vault": {"name": "Test Wiki", "version": 1},
+        "vault": {"name": name, "version": 1},
         "topics": ["projects", "decisions", "research", "tools"],
         "default_topic": "research",
     }
@@ -83,12 +81,39 @@ def tmp_vault(tmp_path):
 
 
 @pytest.fixture
+def tmp_vault(tmp_path):
+    """Create a temporary vault directory with wiki.yaml and standard structure."""
+    return make_vault(tmp_path / "vault")
+
+
+@pytest.fixture
 def tmp_config(tmp_path, tmp_vault, monkeypatch):
     """Create a temporary user config pointing to tmp_vault."""
     config_dir = tmp_path / "config"
     config_dir.mkdir()
     config_file = config_dir / "config.yaml"
     config_file.write_text(yaml.dump({"vault_path": str(tmp_vault)}))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    return config_file
+
+
+@pytest.fixture
+def two_vault_config(tmp_path, monkeypatch):
+    """Two local vaults registered under a vaults: map in an isolated config dir.
+
+    Returns the config file path; the vaults live at <tmp>/work-vault and
+    <tmp>/personal-vault under the names 'work' and 'personal'."""
+    work = make_vault(tmp_path / "work-vault", name="Work Wiki")
+    personal = make_vault(tmp_path / "personal-vault", name="Personal Wiki")
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    config_file = config_dir / "config.yaml"
+    config_file.write_text(yaml.dump({
+        "vaults": {
+            "work": {"path": str(work)},
+            "personal": {"path": str(personal)},
+        }
+    }))
     monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
     return config_file
 
