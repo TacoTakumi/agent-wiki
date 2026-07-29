@@ -29,6 +29,7 @@ search the wiki first, read full pages, and save what is worth keeping.
 - **Tag vocabulary** - an optional, CLI-managed vocabulary canonicalizes tags (aliases to preferred), with `awiki tag fix` and a lint-based CI gate. See [`awiki tag`](#awiki-tag-addsuggestfix).
 - **Vault linting** - audit broken links, orphans, raw/page drift, stale pages, oversized pages, index gaps, and tag issues in one pass. See [`awiki lint`](#awiki-lint).
 - **Network vault** - `awiki serve` shares one vault over HTTP; remote machines use the **same `awiki` CLI** transparently, with bearer-token auth and reader/writer/admin roles. See [Network server](#network-server).
+- **Multiple named vaults** - one config registers many vaults (local paths or remote URLs); reads span them all with `vault:`-qualified results, writes stay narrow, and a repo can carry its own trust-gated `.agent-wiki/config.yaml`. See [Multiple vaults](#multiple-vaults).
 - **Agent-first integration** - agent skills plus a self-installing `awiki guide` block that teaches any agent (via `CLAUDE.md` / `AGENTS.md`) to search the wiki first and save what is worth keeping. See [Using awiki with your agent](#using-awiki-with-your-agent).
 
 ## Quick start
@@ -770,7 +771,9 @@ prints exactly as before. With more than one:
 A repo can carry its own `.agent-wiki/config.yaml` declaring extra vaults
 (and optionally its own `default_vault`). awiki finds the nearest one walking
 up from the current directory to `$HOME` and merges it additively over the
-global config, the local file winning on name collision. Because a checked-in
+global config, the local file winning on name collision. A relative `path:`
+in a local config resolves against the directory containing `.agent-wiki`,
+so the config means the same vault from any subdirectory. Because a checked-in
 config is repo-controlled content, it is honored only after you trust its
 directory explicitly:
 
