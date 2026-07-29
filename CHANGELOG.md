@@ -54,6 +54,15 @@ below are reconstructed from the commits that bumped `__version__`.
   name, kind, target, reachability, declaring config, default marker),
   `awiki vault add <name> <path|url>`, `awiki vault trust <dir>`, and
   `awiki init --name <name>`.
+- **`awiki init --topics "a, b"`** seeds a new vault's topic list (the first
+  listed topic becomes its `default_topic`). An init beside existing vaults no
+  longer clones the standard default topics - duplicated topics made every
+  unqualified `--topic` ambiguous across vaults; instead it prompts for a
+  topic list on a terminal, or creates the vault with no topics plus a
+  how-to-add-them warning when non-interactive. A first vault (and a legacy
+  bare re-init, which replaces the sole vault rather than adding one) keeps
+  the standard defaults. Choosing a topic another vault already declares
+  prints a warning naming the vault.
 - With one configured vault every command's output is byte-identical to the
   previous release; `vault:` qualifiers appear only in multi-vault configs.
   `awiki serve` still serves exactly one vault per instance (pick it with
@@ -77,8 +86,18 @@ below are reconstructed from the commits that bumped `__version__`.
   `CHANGELOG.md` and `data/guide.md` lost their em dashes, en dashes, arrows
   and ellipses, and `tests/test_docs_ascii.py` keeps them out. The guide
   block's wording is otherwise unchanged.
+- **Untargeted ingest into a vault without a `default_topic` is a hard
+  error.** Previously it silently fell back to `research`, minting an
+  undeclared topic folder; now it asks for `--topic` or a `default_topic` in
+  `wiki.yaml`. Unreachable for existing vaults - init has always written a
+  `default_topic`.
 
 ### Fixed
+- **`init --name` reclaims a stale registry name.** A registry entry whose
+  local vault directory no longer holds a `wiki.yaml` (deleted or moved
+  vault) no longer blocks re-initing under the same name; a stderr note
+  reports the reclaim. A live local vault or a remote entry still refuses
+  the duplicate name.
 - **`awiki init` no longer wipes the config file.** A bare `init <path>`
   merges `vault_path` over the existing config, so `trusted_dirs` and any
   `server` key survive; `init --remote` against a config holding `vaults:`,
