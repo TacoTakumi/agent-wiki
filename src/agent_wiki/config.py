@@ -139,9 +139,10 @@ def migrate_to_vaults_schema(config: dict) -> dict:
     """Return a copy of a user-config dict in the vaults: schema (REQ-24).
 
     A config already carrying a vaults: block is returned unchanged (copied).
-    Legacy keys synthesize the 'main' entry and are dropped: a server url wins
-    over vault_path when both are present (matching resolution precedence).
-    Pure — writes nothing."""
+    Legacy keys synthesize the 'main' entry and are dropped: a config holding
+    both vault_path and a server url keeps both on 'main', matching the read
+    layer's synthesis (url wins at backend selection, the path serves local
+    resolution). Pure — writes nothing."""
     config = dict(config)
     if config.get("vaults"):
         return config
@@ -152,7 +153,7 @@ def migrate_to_vaults_schema(config: dict) -> dict:
         entry["url"] = str(server["url"])
         if server.get("token") is not None:
             entry["token"] = str(server["token"])
-    elif vault_path:
+    if vault_path:
         entry["path"] = str(vault_path)
     if entry:
         config["vaults"] = {"main": entry}

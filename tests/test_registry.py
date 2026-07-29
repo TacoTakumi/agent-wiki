@@ -45,14 +45,19 @@ def test_entry_with_neither_path_nor_url_errors_naming_entry():
         parse_registry(config)
 
 
-def test_entry_with_both_path_and_url_errors_naming_entry(tmp_path):
+def test_entry_with_both_path_and_url_keeps_both_url_wins(tmp_path):
+    """An entry may carry both keys — a migrated legacy config does (T-22).
+    The pair parses with the legacy-synthesis precedence: url wins at backend
+    selection, the path stays for local resolution."""
     config = {
         "vaults": {
-            "confused": {"path": str(tmp_path), "url": "https://example.com"}
+            "hybrid": {"path": str(tmp_path), "url": "https://example.com"}
         }
     }
-    with pytest.raises(click.UsageError, match="confused"):
-        parse_registry(config)
+    entry = parse_registry(config)["hybrid"]
+    assert str(entry.path) == str(tmp_path)
+    assert entry.url == "https://example.com"
+    assert entry.is_remote
 
 
 def test_non_mapping_entry_errors_naming_entry():
