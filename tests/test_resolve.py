@@ -78,19 +78,16 @@ def test_zero_matches_resolve_to_none():
 
 # --- resolve_ref: the full rule ------------------------------------------------
 
-def test_qualified_ref_probes_only_the_named_vault():
+def test_qualified_ref_scopes_to_the_named_vault_without_probing():
     registry = _registry("work", "personal")
-    # Both vaults would match, but the qualifier scopes to one: no ambiguity.
+    # The qualifier scopes to one vault and skips the probe entirely — the
+    # caller's backend surfaces a miss itself (a remote vault's raws, for
+    # instance, cannot be probed locally). A probe that finds nothing
+    # therefore does not block a qualified reference.
     entry, resolved = resolve_ref(
-        "personal:research/foo.md", registry, _probe_in("work", "personal"))
+        "personal:research/foo.md", registry, _probe_in())
     assert entry is registry["personal"]
-    assert resolved == "personal/research/foo.md"
-
-
-def test_qualified_ref_missing_in_named_vault_is_none():
-    registry = _registry("work", "personal")
-    assert resolve_ref(
-        "personal:nope.md", registry, _probe_in("work")) is None
+    assert resolved == "research/foo.md"
 
 
 def test_unqualified_ref_falls_through_to_cross_vault_resolution():
