@@ -522,6 +522,88 @@ def test_search_no_results_across_vaults(two_vault_config):
     assert "No results found." in result.output
 
 
+# --- topic-driven ingest routing (T-11) ---------------------------------------
+
+def _routing_config(two_vault_config, tmp_path):
+    """Make 'work' the default vault and declare topic 'journal' only in
+    personal's wiki.yaml. Returns (work, personal)."""
+    work = tmp_path / "work-vault"
+    personal = tmp_path / "personal-vault"
+    cfg = yaml.safe_load(two_vault_config.read_text())
+    cfg["default_vault"] = "work"
+    two_vault_config.write_text(yaml.dump(cfg))
+    wiki = yaml.safe_load((personal / "wiki.yaml").read_text())
+    wiki["topics"].append("journal")
+    (personal / "wiki.yaml").write_text(yaml.dump(wiki))
+    (personal / "journal").mkdir()
+    return work, personal
+
+
+def test_ingest_topic_routes_to_unique_declaring_vault(
+    two_vault_config, tmp_path
+):
+    work, personal = _routing_config(two_vault_config, tmp_path)
+    src = tmp_path / "entry.md"
+    src.write_text("# Entry\n\ndear diary\n")
+
+    result = CliRunner().invoke(cli, ["ingest", str(src), "--topic", "journal"])
+    assert result.exit_code == 0, result.output
+    assert (personal / "journal" / "entry.md").exists()
+    assert not (work / "journal" / "entry.md").exists()
+
+
+def test_ingest_undeclared_topic_falls_back_to_default_vault(
+    two_vault_config, tmp_path
+):
+    work, personal = _routing_config(two_vault_config, tmp_path)
+    src = tmp_path / "odd.md"
+    src.write_text("# Odd\n\nbody\n")
+
+    result = CliRunner().invoke(cli, ["ingest", str(src), "--topic", "misc"])
+    assert result.exit_code == 0, result.output
+    assert (work / "misc" / "odd.md").exists()
+
+
+def test_ingest_no_topic_lands_in_default_vault_default_topic(
+    two_vault_config, tmp_path
+):
+    work, _personal = _routing_config(two_vault_config, tmp_path)
+    src = tmp_path / "plain.md"
+    src.write_text("# Plain\n\nbody\n")
+
+    result = CliRunner().invoke(cli, ["ingest", str(src)])
+    assert result.exit_code == 0, result.output
+    assert (work / "research" / "plain.md").exists()
+
+
+def test_ingest_doubly_declared_topic_is_loud_and_resolvable(
+    two_vault_config, tmp_path
+):
+    work, personal = _routing_config(two_vault_config, tmp_path)
+    src = tmp_path / "shared.md"
+    src.write_text("# Shared\n\nbody\n")
+
+    # 'research' is declared by both vaults: hard error naming them.
+    result = CliRunner().invoke(cli, ["ingest", str(src), "--topic", "research"])
+    assert result.exit_code != 0
+    combined = result.output + result.stderr
+    assert "work" in combined and "personal" in combined
+
+    # --vault resolves it.
+    result = CliRunner().invoke(
+        cli, ["--vault", "personal", "ingest", str(src), "--topic", "research"])
+    assert result.exit_code == 0, result.output
+    assert (personal / "research" / "shared.md").exists()
+
+    # A vault: prefix on the topic resolves it too.
+    src2 = tmp_path / "shared2.md"
+    src2.write_text("# Shared Two\n\nbody\n")
+    result = CliRunner().invoke(
+        cli, ["ingest", str(src2), "--topic", "work:research"])
+    assert result.exit_code == 0, result.output
+    assert (work / "research" / "shared-two.md").exists()
+
+
 def test_reingest_unqualified_ambiguous_is_loud(two_vault_config, tmp_path):
     _seed_ingested(tmp_path / "work-vault", "both.md", "# Both\n\nw\n")
     _seed_ingested(tmp_path / "personal-vault", "both.md", "# Both\n\np\n")

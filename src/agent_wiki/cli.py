@@ -53,6 +53,54 @@ def _dispatch_ref(value, probe):
     return backend_for_entry(entry), resolved
 
 
+def _vault_topics(entry):
+    """The topics a vault declares, best-effort: a vault that cannot be read
+    (unreachable remote, stale path) declares nothing."""
+    from agent_wiki.config import backend_for_entry, load_vault_config
+    try:
+        if entry.url:
+            st = backend_for_entry(entry).status()
+            return [t["topic"] for t in st.get("topics", [])]
+        return load_vault_config(entry.path).get("topics") or []
+    except Exception:
+        return []
+
+
+def _ingest_service(topic):
+    """Resolve the target vault for an ingest; returns (service, topic).
+
+    Explicit selection always beats topic routing: an override
+    (--vault/AWIKI_VAULT) or a vault: prefix on the topic narrows directly.
+    Otherwise a topic declared by exactly one vault routes there, a topic
+    declared by several is a hard error naming them, and an undeclared topic
+    (or no topic) falls back to the default vault — today's semantics."""
+    from agent_wiki.config import (
+        backend_for_entry, load_registry, resolve_vault_override)
+    if resolve_vault_override() is not None:
+        return _service(), topic
+    registry = load_registry()
+    if len(registry) <= 1:
+        return _service(), topic
+    if topic:
+        from agent_wiki.resolve import split_vault_ref
+        entry, topic_ref = split_vault_ref(topic, registry)
+        if entry is not None:
+            return backend_for_entry(entry), topic_ref
+        declaring = [
+            registry[name] for name in sorted(registry)
+            if topic in _vault_topics(registry[name])
+        ]
+        if len(declaring) > 1:
+            names = ", ".join(e.name for e in declaring)
+            raise click.UsageError(
+                f"topic '{topic}' is declared by multiple vaults ({names}); "
+                f"pass --vault NAME or qualify the topic as NAME:{topic}."
+            )
+        if declaring:
+            return backend_for_entry(declaring[0]), topic
+    return _service(), topic
+
+
 def _show_probe(entry, ref):
     """Does `ref` exist (as a showable file) in this vault? Unreachable or
     denying vaults are skipped with a one-line stderr note."""
@@ -248,8 +296,13 @@ def vault_trust(directory):
               help="Force the tag vocabulary mode for this ingest only "
                    "(does not change the vault's configured mode)")
 def ingest(files, topic, tags, update, force, tag_mode):
-    """Ingest files or URLs into the wiki vault."""
-    svc = _service()
+    """Ingest files or URLs into the wiki vault.
+
+    With multiple vaults configured, --topic routes to the unique vault
+    declaring that topic (a doubly-declared topic is a hard error); --vault
+    or a vault: prefix on the topic always beats topic routing; an
+    undeclared topic or no topic falls back to the default vault."""
+    svc, topic = _ingest_service(topic)
     tag_list = [t.strip() for t in tags.split(",")] if tags else None
 
     expanded = []
