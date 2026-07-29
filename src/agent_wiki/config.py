@@ -135,11 +135,75 @@ def save_user_config(config: dict) -> None:
         yaml.dump(config, f, default_flow_style=False)
 
 
-def load_registry() -> dict:
-    """Load the user config and parse it into the named vault registry
-    ({name: VaultEntry}). Read-only — never writes the config file."""
+def discover_local_config(cwd: "Path | None" = None) -> "Path | None":
+    """Return the nearest .agent-wiki/config.yaml walking up from cwd to $HOME
+    inclusive, or None. Only the nearest one counts; outside $HOME's tree there
+    is no discovery."""
+    cur = (Path(cwd) if cwd is not None else Path.cwd()).resolve()
+    home = Path.home().resolve()
+    if cur != home and home not in cur.parents:
+        return None
+    for directory in (cur, *cur.parents):
+        candidate = directory / ".agent-wiki" / "config.yaml"
+        if candidate.is_file():
+            return candidate
+        if directory == home:
+            break
+    return None
+
+
+# Local-config files already noticed as untrusted this process, so a command
+# that resolves the registry more than once emits the notice exactly once.
+_untrusted_noticed: set = set()
+
+
+def _local_config_if_trusted(global_config: dict) -> "dict | None":
+    """Return the discovered local config dict when its directory is on the
+    global trust allowlist (trusted_dirs). An untrusted one is ignored with a
+    single stderr notice naming the file and the trust command."""
+    local_file = discover_local_config()
+    if local_file is None:
+        return None
+    project_dir = local_file.parent.parent
+    trusted = {
+        str(Path(t).expanduser().resolve())
+        for t in (global_config.get("trusted_dirs") or [])
+    }
+    if str(project_dir.resolve()) not in trusted:
+        if str(local_file) not in _untrusted_noticed:
+            _untrusted_noticed.add(str(local_file))
+            click.echo(
+                f"Ignoring untrusted local config {local_file}; run "
+                f"'awiki vault trust {project_dir}' to trust it.",
+                err=True,
+            )
+        return None
+    with open(local_file) as f:
+        return yaml.safe_load(f) or {}
+
+
+def load_effective_config() -> tuple:
+    """Return (registry, default_vault) — the global registry with the nearest
+    trusted local config merged additively over it, local winning on vault-name
+    collision and its default_vault beating the global one. Read-only."""
     from agent_wiki.registry import parse_registry
-    return parse_registry(load_user_config())
+    global_config = load_user_config()
+    registry = parse_registry(global_config)
+    default_vault = global_config.get("default_vault")
+    local_config = _local_config_if_trusted(global_config)
+    if local_config is not None:
+        registry = {**registry, **parse_registry(local_config)}
+        if local_config.get("default_vault"):
+            default_vault = local_config["default_vault"]
+    return registry, default_vault
+
+
+def load_registry() -> dict:
+    """The named vault registry ({name: VaultEntry}): the global config with
+    the nearest trusted local config merged over it. Read-only — never writes
+    a config file."""
+    registry, _default_vault = load_effective_config()
+    return registry
 
 
 def load_vault_config(vault_path: Path) -> dict:
@@ -183,12 +247,12 @@ def resolve_vault_override():
     A bare value matching a configured vault name narrows to that entry (local
     or remote); any other value is a config-free local vault at that path. The
     entry is not validated here — callers decide how to report a missing path."""
-    from agent_wiki.registry import VaultEntry, parse_registry
+    from agent_wiki.registry import VaultEntry
     raw = _raw_vault_override()
     if raw is None:
         return None
     if _name_eligible(raw):
-        entry = parse_registry(load_user_config()).get(raw)
+        entry = load_registry().get(raw)
         if entry is not None:
             return entry
     return VaultEntry(name=raw, path=Path(raw).expanduser())
@@ -220,11 +284,11 @@ def _stale_vault_error(path: Path) -> click.UsageError:
 
 
 def _default_entry():
-    """Resolve the registry's default vault entry from the user config."""
-    from agent_wiki.registry import parse_registry, resolve_default_vault
-    config = load_user_config()
-    return resolve_default_vault(
-        parse_registry(config), config.get("default_vault"))
+    """Resolve the default vault entry from the merged (global + trusted
+    local) registry view."""
+    from agent_wiki.registry import resolve_default_vault
+    registry, default_vault = load_effective_config()
+    return resolve_default_vault(registry, default_vault)
 
 
 def get_vault_path() -> Path:
