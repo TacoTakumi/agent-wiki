@@ -68,9 +68,11 @@ def _ingest_service(topic):
 
     Explicit selection always beats topic routing: an override
     (--vault/AWIKI_VAULT) or a vault: prefix on the topic narrows directly.
-    Otherwise a topic declared by exactly one vault routes there, a topic
-    declared by several is a hard error naming them, and an undeclared topic
-    (or no topic) falls back to the default vault — today's semantics."""
+    Otherwise a topic declared by exactly one vault routes there; a topic
+    declared by several routes to the default vault when the default is among
+    them (one stderr notice) and is a hard error naming the candidates
+    otherwise; an undeclared topic (or no topic) falls back to the default
+    vault — today's semantics."""
     from agent_wiki.config import (
         backend_for_entry, load_registry, resolve_vault_override)
     if resolve_vault_override() is not None:
@@ -89,6 +91,24 @@ def _ingest_service(topic):
         ]
         if len(declaring) > 1:
             names = ", ".join(e.name for e in declaring)
+            # The default vault wins a collision it is part of: writes act on
+            # the default unless narrowed, matching every other mutating
+            # command (REQ-29). Only a collision among non-default vaults is
+            # genuinely ambiguous.
+            from agent_wiki.config import _default_entry
+            try:
+                default = _default_entry()
+            except click.UsageError:
+                default = None
+            if default is not None and any(
+                    e.name == default.name for e in declaring):
+                click.echo(
+                    f"topic '{topic}' is declared by multiple vaults "
+                    f"({names}); writing to default vault '{default.name}'. "
+                    f"Qualify the topic as NAME:{topic} to target another.",
+                    err=True,
+                )
+                return backend_for_entry(default), topic
             raise click.UsageError(
                 f"topic '{topic}' is declared by multiple vaults ({names}); "
                 f"pass --vault NAME or qualify the topic as NAME:{topic}."

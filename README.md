@@ -756,10 +756,12 @@ prints exactly as before. With more than one:
   vault's server-side `auto_context: false` cannot suppress it in the hook -
   a reachable remote vault is always included.
 - **Writes stay narrow.** `ingest --topic` routes to the unique vault whose
-  `wiki.yaml` declares that topic; a topic declared by two vaults is a hard
-  error resolved by `--vault` or a `vault:` prefix on the topic. Everything
-  else that mutates (`tag`, `sync`, `doctor` fixes) acts on the default
-  vault only unless you narrow with `--vault`.
+  `wiki.yaml` declares that topic. When several vaults declare it and the
+  default vault is one of them, the write goes to the default vault with a
+  one-line stderr notice; only a collision among non-default vaults is a
+  hard error, resolved by `--vault` or a `vault:` prefix on the topic.
+  Everything else that mutates (`tag`, `sync`, `doctor` fixes) acts on the
+  default vault only unless you narrow with `--vault`.
 - **Maintenance sweeps are sectioned.** `lint`, `doctor` (diagnostics), and
   `index` visit every vault with a labeled section per vault; a vault that
   cannot support an operation is skipped with a printed notice, and skips
