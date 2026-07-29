@@ -247,12 +247,22 @@ the directory structure, default topics, and saves the vault location to
 
 ```bash
 awiki init ~/vaults/agent-wiki
+awiki init ~/vaults/personal-wiki --name personal               # create AND register under a name
 awiki init --remote https://wiki.example.com --token <secret>   # point at a served vault instead
 awiki init --clear                                              # drop the remote config from this client
 ```
 
 Local and remote vaults are mutually exclusive: setting one clears the other. See
-[Network server](#network-server) for the remote side.
+[Network server](#network-server) for the remote side, and
+[Multiple vaults](#multiple-vaults) for named registration with `--name`.
+
+#### `awiki vault list|add|trust`
+
+Manage the named vault registry: `vault list` is a read-only view (name, kind,
+target, reachability, declaring config, default marker), `vault add NAME
+PATH|URL` registers an existing vault, and `vault trust DIR` allows a
+repo-local `.agent-wiki/config.yaml` to be honored. See
+[Multiple vaults](#multiple-vaults).
 
 #### `awiki guide [--raw]`
 
@@ -503,7 +513,9 @@ fixable/novel tags as **TAG** findings, and `awiki lint --strict` gates on them.
 #### `awiki serve [--bind HOST] [--port PORT]`
 
 Run the HTTP server for the local vault so remote machines can use it through the
-same CLI. See [Network server](#network-server).
+same CLI. One vault per instance: the default vault, or pick one with
+`awiki --vault NAME serve --port PORT`. See [Network server](#network-server)
+and [Multiple vaults](#multiple-vaults).
 
 #### `awiki token add|list|revoke`
 
@@ -645,12 +657,39 @@ Set automatically by `awiki init`. Override to point to a different vault.
 The config directory can be overridden with the `AGENT_WIKI_CONFIG_DIR`
 environment variable.
 
-To use a different vault for a **single invocation** without touching the config,
-pass `--vault PATH` (or set `AWIKI_VAULT`). This forces a local vault and
-overrides both the configured local and remote settings for that one command:
+The config can also hold a **named vault registry** instead of the single
+`vault_path` (see [Multiple vaults](#multiple-vaults)):
+
+```yaml
+default_vault: work
+vaults:
+  work:
+    path: ~/vaults/work-wiki
+  personal:
+    path: ~/vaults/personal-wiki
+  team:
+    url: https://wiki.example.com:8731
+    token: <secret>
+```
+
+Each entry declares `path:` (a local vault) or `url:` plus optional `token:`
+(a remote one), mixed freely. A legacy `vault_path`/`server` config keeps
+working unchanged - it reads as a single vault named `main` - and config
+writes stay in the legacy form until the first write that needs more (a
+second vault, a named init, a remote entry), which rewrites the file to the
+`vaults:` schema. The default vault is `default_vault` if set, else the vault
+named `main`, else a sole configured vault. No command writes `default_vault`
+and there is no `awiki use` - repoint the default by editing the file.
+
+To use a different vault for a **single invocation** without touching the
+config, pass `--vault NAME|PATH` (or set `AWIKI_VAULT`). A bare value that
+matches a configured vault name narrows to that vault - including a remote
+one; any other value is a config-free local vault at that path (`./` or an
+absolute path forces path interpretation):
 
 ```bash
-awiki --vault /tmp/scratch-vault status
+awiki --vault personal status                # a configured vault, by name
+awiki --vault /tmp/scratch-vault status      # any local vault, by path
 AWIKI_VAULT=~/vaults/other awiki search "raft"
 ```
 
@@ -681,6 +720,68 @@ the `topics` / `default_topic` keys are hand-edited.
 The `tags:` block is different: it has a sanctioned CLI write path. Manage it with
 [`awiki tag add`](#awiki-tag-addsuggestfix) and `awiki tag suggest --write` (both
 use a comment-preserving writer) rather than editing it by hand.
+
+## Multiple vaults
+
+One machine can hold several vaults - say a `work` wiki, a `personal` one, and
+a shared `team` vault served over HTTP - all reachable from one CLI. Register
+them in the user config's `vaults:` map (see
+[User config](#user-config-configagent-wikiconfigyaml)) or with the CLI:
+
+```bash
+awiki init ~/vaults/personal-wiki --name personal   # create and register
+awiki vault add work ~/vaults/work-wiki             # register an existing vault
+awiki vault add team https://wiki.example.com:8731 --token <secret>
+awiki vault list                                    # name, kind, target, reachability, default marker
+```
+
+With a single configured vault nothing changes - every command behaves and
+prints exactly as before. With more than one:
+
+- **Reads span vaults.** `awiki search` prints one merged coverage-ranked
+  list; every hit path carries a `vault:` qualifier
+  (`work:research/raft.md`) that pastes straight into `show`, `raw`, or
+  `reingest`. Unqualified references resolve across vaults: a unique match
+  wins silently, an ambiguous one is a hard error listing the qualified
+  candidates. The auto-context hook spans vaults too, skips unreachable
+  ones, and a vault with `auto_context: false` in its `wiki.yaml` stays out
+  of the hook while remaining fully searchable.
+- **Writes stay narrow.** `ingest --topic` routes to the unique vault whose
+  `wiki.yaml` declares that topic; a topic declared by two vaults is a hard
+  error resolved by `--vault` or a `vault:` prefix on the topic. Everything
+  else that mutates (`tag`, `sync`, `doctor` fixes) acts on the default
+  vault only unless you narrow with `--vault`.
+- **Maintenance sweeps are sectioned.** `lint`, `doctor` (diagnostics), and
+  `index` visit every vault with a labeled section per vault; a vault that
+  cannot support an operation is skipped with a printed notice, and skips
+  never change the exit code. `lint --strict` exits nonzero on a TAG finding
+  in any vault.
+
+### Per-project vaults
+
+A repo can carry its own `.agent-wiki/config.yaml` declaring extra vaults
+(and optionally its own `default_vault`). awiki finds the nearest one walking
+up from the current directory to `$HOME` and merges it additively over the
+global config, the local file winning on name collision. Because a checked-in
+config is repo-controlled content, it is honored only after you trust its
+directory explicitly:
+
+```bash
+awiki vault trust ~/code/my-project
+```
+
+An untrusted local config is ignored with a one-line stderr notice naming the
+file and the trust command - never silently. A vault absent from the merged
+view is invisible to every command, even if its directory exists on disk.
+
+### Serving
+
+`awiki serve` serves exactly **one vault per instance** - the default vault
+unless you pick one with `--vault NAME` - and `--port` overrides the
+`server.yaml` port, so one config dir can serve several vaults from separate
+processes on different ports. The HTTP wire contract stays vault-implicit
+(no vault selector in the routes). A single multiplexed server that mounts
+several vaults under one port is the planned evolution of this design.
 
 ## Network server
 

@@ -9,7 +9,50 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
-## [0.7.3]
+## [0.8.0]
+
+### Added
+- **Multiple named vaults.** `config.yaml` gains a `vaults:` map: each entry
+  declares `path:` (local) or `url:` plus optional `token:` (remote), mixed
+  freely in one config. A legacy `vault_path`/`server` config keeps working
+  unchanged, read as a single vault named `main`; config writes stay in legacy
+  form until the first write that needs more (a second vault, a named init, a
+  remote entry), which rewrites the file to the `vaults:` schema.
+- **Default vault resolution.** `default_vault` in the config picks the
+  default; absent that, the vault named `main`, else a sole configured vault.
+  No command writes the key - repoint it by hand-editing the config. There is
+  deliberately no `awiki use`.
+- **`--vault` / `AWIKI_VAULT` accept a vault name or a path.** A bare value
+  matching a configured name narrows to that vault (local or remote); any
+  other value is a config-free local vault at that path (`./` or an absolute
+  path forces path interpretation).
+- **Per-project vaults via `.agent-wiki/config.yaml`.** Discovered by walking
+  up from the current directory to `$HOME`; the nearest one merges additively
+  over the global config (local wins on name collision). Honored only after
+  `awiki vault trust <dir>`; an untrusted local config is ignored with a
+  one-line stderr notice.
+- **Cross-vault reads.** `search` spans all configured vaults with one merged
+  coverage-ranked list whose paths carry a `vault:` qualifier that pastes
+  straight into `show`/`raw`/`reingest`; those commands accept qualified and
+  unqualified references (unique match wins, ambiguity is a hard error listing
+  the candidates). The auto-context hook spans vaults, skips unreachable ones,
+  and honors a per-vault `auto_context: false` opt-out.
+- **Topic-routed writes.** `ingest --topic` lands in the unique vault whose
+  `wiki.yaml` declares that topic; a doubly-declared topic is a hard error
+  that `--vault` or a `vault:` prefix on the topic resolves.
+- **Multi-vault maintenance.** `lint`, `doctor` diagnostics, and `index`
+  sweep every vault with per-vault sections and announced skips;
+  `lint --strict` exits nonzero on a TAG finding in any vault. Mutating
+  maintenance (`tag`, `sync`, fixes) touches only the default vault unless
+  narrowed.
+- **Vault management.** `awiki vault list` (read-only registry view:
+  name, kind, target, reachability, declaring config, default marker),
+  `awiki vault add <name> <path|url>`, `awiki vault trust <dir>`, and
+  `awiki init --name <name>`.
+- With one configured vault every command's output is byte-identical to the
+  previous release; `vault:` qualifiers appear only in multi-vault configs.
+  `awiki serve` still serves exactly one vault per instance (pick it with
+  `--vault`); a single multiplexed server is a planned evolution.
 
 ### Changed
 - **README restructured for onboarding.** The front door now reads in newcomer
