@@ -65,8 +65,10 @@ def _register_vault(vault_path: Path, name: str | None) -> None:
 
     config = load_user_config()
     if name is None and not config.get("vaults"):
-        # Legacy form, byte-equivalent to the current release (REQ-24).
-        save_user_config({"vault_path": str(vault_path)})
+        # Legacy form (REQ-24), merged over the existing config: only
+        # vault_path changes — trusted_dirs and server keys survive.
+        config["vault_path"] = str(vault_path)
+        save_user_config(config)
         return
     config = migrate_to_vaults_schema(config)
     config.setdefault("vaults", {})[name or "main"] = {
