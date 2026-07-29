@@ -336,6 +336,53 @@ def reingest(name, force):
     click.echo(svc.describe_location(out["page"]), err=True)
 
 
+def _merged_search(registry, query, topic, limit, partial_limit=5):
+    """Search every configured vault and merge into one coverage-ranked
+    result dict (same shape _service().search returns), with every hit path
+    vault-qualified. Unreachable vaults are skipped with a stderr note. A
+    vault-qualified --topic narrows the sweep to that vault."""
+    from agent_wiki.config import backend_for_entry
+    from agent_wiki.resolve import split_vault_ref
+
+    entries = [registry[name] for name in sorted(registry)]
+    if topic:
+        topic_entry, topic_ref = split_vault_ref(topic, registry)
+        if topic_entry is not None:
+            entries = [topic_entry]
+            topic = topic_ref
+
+    all_pool, partial_pool, total = [], [], 0
+    for entry in entries:
+        try:
+            out = backend_for_entry(entry).search(
+                query, topic=topic, limit=limit)
+        except Exception as e:
+            click.echo(f"skipping vault '{entry.name}': {e}", err=True)
+            continue
+        for r in out["all"] + out["partial"]:
+            r["path"] = f"{entry.name}:{r['path']}"
+        all_pool.extend(out["all"])
+        partial_pool.extend(out["partial"])
+        total += out["total"]
+
+    # The same ordering _rank uses, applied across vaults.
+    def rank_key(r):
+        return (-r["coverage"], -len(r["matches"]), r["title"])
+
+    all_pool.sort(key=rank_key)
+    partial_pool.sort(key=rank_key)
+    shown_all = all_pool[:limit]
+    shown_partial = partial_pool[:partial_limit]
+    shown = len(shown_all) + len(shown_partial)
+    return {
+        "all": shown_all,
+        "partial": shown_partial,
+        "total": total,
+        "shown": shown,
+        "truncated": shown < total,
+    }
+
+
 def _echo_result(r, show_coverage=False):
     """Print one search result in the standard title/path/snippet format."""
     suffix = f"  ({r['coverage']}/{r['term_count']} terms)" if show_coverage else ""
@@ -352,8 +399,19 @@ def _echo_result(r, show_coverage=False):
               type=click.IntRange(min=1),
               help="Max results to show in the all-terms tier")
 def search(query, topic, limit):
-    """Search the wiki vault."""
-    out = _service().search(query, topic=topic, limit=limit)
+    """Search the wiki vault.
+
+    With multiple vaults configured the search spans all of them and prints
+    one merged coverage-ranked list whose paths carry a vault: qualifier that
+    pastes straight into show/raw/reingest; --topic accepts the same
+    qualifier to narrow the sweep to one vault's topic."""
+    from agent_wiki.config import load_registry, resolve_vault_override
+
+    registry = load_registry() if resolve_vault_override() is None else {}
+    if len(registry) > 1:
+        out = _merged_search(registry, query, topic, limit)
+    else:
+        out = _service().search(query, topic=topic, limit=limit)
 
     if out["total"] == 0:
         click.echo("No results found.")

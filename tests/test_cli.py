@@ -486,6 +486,42 @@ def test_reingest_qualified_and_unqualified_across_vaults(two_vault_config, tmp_
     assert "third" in (personal / "research" / "evolve.md").read_text()
 
 
+def test_search_spans_vaults_with_qualified_pasteable_paths(two_vault_config, tmp_path):
+    _seed_ingested(tmp_path / "work-vault", "zeb-work.md",
+                   "# Zeb Work\n\nzebras migrate seasonally\n")
+    _seed_ingested(tmp_path / "personal-vault", "zeb-home.md",
+                   "# Zeb Home\n\nzebras in the garden\n")
+
+    result = CliRunner().invoke(cli, ["search", "zebras"])
+    assert result.exit_code == 0, result.output
+    assert "work:research/zeb-work.md" in result.output
+    assert "personal:research/zeb-home.md" in result.output
+
+    # A printed path pastes directly into show.
+    shown = CliRunner().invoke(cli, ["show", "personal:research/zeb-home.md"])
+    assert shown.exit_code == 0, shown.output
+    assert "garden" in shown.stdout
+
+
+def test_search_topic_accepts_vault_prefix(two_vault_config, tmp_path):
+    _seed_ingested(tmp_path / "work-vault", "lion-work.md",
+                   "# Lion Work\n\nlions roam\n")
+    _seed_ingested(tmp_path / "personal-vault", "lion-home.md",
+                   "# Lion Home\n\nlions sleep\n")
+
+    result = CliRunner().invoke(cli, ["search", "lions",
+                                      "--topic", "personal:research"])
+    assert result.exit_code == 0, result.output
+    assert "personal:research/lion-home.md" in result.output
+    assert "lion-work.md" not in result.output
+
+
+def test_search_no_results_across_vaults(two_vault_config):
+    result = CliRunner().invoke(cli, ["search", "xylophone"])
+    assert result.exit_code == 0, result.output
+    assert "No results found." in result.output
+
+
 def test_reingest_unqualified_ambiguous_is_loud(two_vault_config, tmp_path):
     _seed_ingested(tmp_path / "work-vault", "both.md", "# Both\n\nw\n")
     _seed_ingested(tmp_path / "personal-vault", "both.md", "# Both\n\np\n")
