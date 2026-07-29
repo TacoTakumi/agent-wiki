@@ -90,6 +90,29 @@ def test_stale_configured_vault_names_config_file_and_key(tmp_path, isolated_env
     assert "--vault" in msg         # offers the escape hatch
 
 
+def test_stale_vault_error_names_registry_entry_for_vaults_schema(
+    tmp_path, isolated_env
+):
+    """T-28: a vaults:-schema entry pointing nowhere is reported by vault name
+    and its path: key — not the legacy vault_path wording."""
+    config_dir = tmp_path / "config"
+    cfg = _write_config(config_dir, {
+        "vaults": {"work": {"path": str(tmp_path / "gone")}},
+    })
+    isolated_env.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    import click
+    with pytest.raises(click.UsageError) as exc:
+        get_vault_path()
+    msg = str(exc.value)
+    assert str(tmp_path / "gone") in msg   # the missing path
+    assert "'work'" in msg                 # names the registry entry
+    assert "path:" in msg                  # names the entry's key
+    assert str(cfg) in msg                 # names the config file
+    assert "vault_path" not in msg         # legacy wording gone for vaults: schema
+    assert "--vault" in msg                # keeps the escape hatch
+
+
 def test_override_forces_local_vault_over_configured_server(tmp_path, isolated_env):
     override = _make_vault(tmp_path / "override")
     config_dir = tmp_path / "config"

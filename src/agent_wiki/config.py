@@ -319,12 +319,18 @@ def _override_entry_or_raise():
     return entry
 
 
-def _stale_vault_error(path: Path) -> click.UsageError:
+def _stale_vault_error(entry) -> click.UsageError:
     """A 'Vault not found' error that names the offending config file and key and
-    points at the override escape hatch."""
-    config_file = get_config_dir() / "config.yaml"
+    points at the override escape hatch. A vaults:-schema entry is cited by
+    vault name and its path: key; a legacy config keeps the vault_path
+    wording the user actually wrote."""
+    config_file = entry.origin or str(get_config_dir() / "config.yaml")
+    if entry.legacy:
+        source = f"vault_path in {config_file}"
+    else:
+        source = f"vault '{entry.name}' (path: in {config_file})"
     return click.UsageError(
-        f"Vault not found at {path} — vault_path in {config_file} points there. "
+        f"Vault not found at {entry.path} — {source} points there. "
         f"Edit it, pass --vault PATH, or set AWIKI_VAULT."
     )
 
@@ -354,7 +360,7 @@ def get_vault_path() -> Path:
             "No vault configured. Run 'awiki init <path>' first."
         )
     if not entry.path.exists():
-        raise _stale_vault_error(entry.path)
+        raise _stale_vault_error(entry)
     return entry.path
 
 
@@ -367,7 +373,7 @@ def backend_for_entry(entry):
         return RemoteVaultService(entry.url, entry.token)
     from agent_wiki.service import LocalVaultService
     if not entry.path.exists():
-        raise _stale_vault_error(entry.path)
+        raise _stale_vault_error(entry)
     return LocalVaultService(entry.path)
 
 
