@@ -554,9 +554,30 @@ def directions(ctx, raw):
 
 @cli.command("index")
 def index_cmd():
-    """Rebuild the wiki index."""
-    _service().rebuild_index()
-    click.echo("Index rebuilt.")
+    """Rebuild the wiki index.
+
+    With multiple vaults configured, every vault's index is rebuilt serially
+    with output sectioned per vault; --vault narrows to one. A vault that
+    cannot support the operation is skipped with a printed notice."""
+    from agent_wiki.config import (
+        backend_for_entry, load_registry, resolve_vault_override)
+
+    registry = load_registry() if resolve_vault_override() is None else {}
+    if len(registry) <= 1:
+        _service().rebuild_index()
+        click.echo("Index rebuilt.")
+        return
+
+    for position, name in enumerate(sorted(registry)):
+        if position:
+            click.echo("")
+        click.echo(f"vault: {name}")
+        try:
+            backend_for_entry(registry[name]).rebuild_index()
+        except Exception as e:
+            click.echo(f"  skipped: {' '.join(str(e).split())}")
+            continue
+        click.echo("  Index rebuilt.")
 
 
 # Canonical lint-type -> CLI label mapping. One distinct label per lint type;
@@ -708,8 +729,18 @@ def adapt(source, ref, output):
 @click.option("--reconcile-raw", "reconcile_raw", is_flag=True, default=False,
               help="Rewrite raw/ from drifted pages (server-local only)")
 def doctor(fix, dry_run, reconcile_raw):
-    """Inspect the vault and offer to fix drift from current schema."""
+    """Inspect the vault and offer to fix drift from current schema.
+
+    With multiple vaults configured, a plain doctor runs a read-only
+    diagnostics sweep across every vault (sectioned output, announced skips,
+    exit 0). Fix intent (--fix/--dry-run/--reconcile-raw) keeps today's flow
+    against the default vault; --vault narrows to any one vault."""
     _repair_stale_config_if_needed(fix, dry_run)
+    from agent_wiki.config import load_registry, resolve_vault_override
+    registry = load_registry() if resolve_vault_override() is None else {}
+    if len(registry) > 1 and not (fix or dry_run or reconcile_raw):
+        _doctor_diagnostics_sweep(registry)
+        return
     svc = _service()
     from agent_wiki.remote import RemoteVaultService
     if reconcile_raw and isinstance(svc, RemoteVaultService):
@@ -774,6 +805,44 @@ def doctor(fix, dry_run, reconcile_raw):
             skipped += 1
 
     click.echo(f"\n{applied} applied, {skipped} skipped")
+
+
+def _doctor_diagnostics_sweep(registry):
+    """Read-only doctor diagnostics across every configured vault: one
+    labeled section per vault, findings listed but never fixed, unsupported
+    or unreachable vaults skipped with a printed notice. Always exits 0."""
+    from agent_wiki.config import backend_for_entry
+    from agent_wiki.doctor import run_checks
+    from agent_wiki.remote import RemoteVaultService
+
+    for position, name in enumerate(sorted(registry)):
+        if position:
+            click.echo("")
+        click.echo(f"vault: {name}")
+        try:
+            svc = backend_for_entry(registry[name])
+            if isinstance(svc, RemoteVaultService):
+                out = svc.doctor(fix=False, dry_run=True)
+                findings = [
+                    (f["name"], f["detail"], f["description"])
+                    for f in out["findings"]
+                ]
+            else:
+                findings = [
+                    (f.check.name, f.detail, f.check.description)
+                    for f in run_checks(svc.vault_path)
+                ]
+        except Exception as e:
+            click.echo(f"  skipped: {' '.join(str(e).split())}")
+            continue
+        if not findings:
+            click.echo("  No issues found.")
+            continue
+        click.echo(f"  Found {len(findings)} issue(s):")
+        for check_name, detail, description in findings:
+            click.echo(f"  [{check_name}] {detail}")
+            click.echo(f"    → {description}")
+        click.echo("  (diagnostics only — pass --vault NAME to fix this vault)")
 
 
 @cli.command("ingest-conversation")

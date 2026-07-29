@@ -45,3 +45,40 @@ def test_rebuild_index_shows_tags(tmp_vault):
     index_content = (tmp_vault / "index.md").read_text()
     assert "devops" in index_content
     assert "containers" in index_content
+
+
+# --- multi-vault index rebuild (T-13) ------------------------------------------
+
+def test_index_multi_vault_sections(two_vault_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    result = CliRunner().invoke(cli, ["index"])
+    assert result.exit_code == 0, result.output
+    assert "vault: work" in result.output
+    assert "vault: personal" in result.output
+    assert result.output.count("Index rebuilt.") == 2
+
+
+def test_index_multi_vault_skips_unreachable_with_notice(tmp_path, monkeypatch):
+    import yaml
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    from conftest import make_vault
+
+    work = make_vault(tmp_path / "work-vault")
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(yaml.dump({
+        "vaults": {
+            "work": {"path": str(work)},
+            "team": {"url": "http://127.0.0.1:9", "token": None},
+        }
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    result = CliRunner().invoke(cli, ["index"])
+    assert result.exit_code == 0, result.output
+    assert "vault: team" in result.output
+    assert "skipped" in result.output
+    assert "Index rebuilt." in result.output
