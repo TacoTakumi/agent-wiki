@@ -74,6 +74,33 @@ def test_vault_trust_missing_dir_errors(tmp_path, monkeypatch):
     assert result.exit_code != 0
 
 
+def test_bare_init_after_vault_trust_preserves_config_keys(tmp_path, monkeypatch):
+    """T-24: a bare init's legacy vault_path write merges over the existing
+    config — trusted_dirs (from vault trust) and any server key survive; only
+    vault_path changes."""
+    config_dir = tmp_path / "global-config"
+    config_file = _write_yaml(
+        config_dir / "config.yaml",
+        {"server": {"url": "http://x:8731", "token": "tok"}},
+    )
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    proj = tmp_path / "proj"
+    proj.mkdir()
+
+    runner = CliRunner()
+    trusted = runner.invoke(cli, ["vault", "trust", str(proj)])
+    assert trusted.exit_code == 0, trusted.output
+
+    inited = runner.invoke(cli, ["init", str(tmp_path / "new-vault")])
+    assert inited.exit_code == 0, inited.output
+
+    persisted = yaml.safe_load(config_file.read_text())
+    assert persisted["vault_path"] == str(tmp_path / "new-vault")
+    assert persisted["trusted_dirs"] == [str(proj.resolve())]
+    assert persisted["server"] == {"url": "http://x:8731", "token": "tok"}
+    assert "vaults" not in persisted  # the write stays in legacy form (REQ-24)
+
+
 # --- vault add + lazy schema migration (T-17, REQ-22, REQ-24) ------------------
 
 def _legacy_config(tmp_path, monkeypatch):
