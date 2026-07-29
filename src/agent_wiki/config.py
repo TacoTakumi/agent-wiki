@@ -223,8 +223,19 @@ def load_effective_config() -> tuple:
     local = _local_config_if_trusted(global_config)
     if local is not None:
         local_file, local_config = local
+        # A relative path: is anchored to the directory containing .agent-wiki,
+        # not the process cwd — the config means the same vault from any subdir.
+        base = local_file.parent.parent
         local_registry = {
-            name: replace(entry, origin=str(local_file))
+            name: replace(
+                entry,
+                origin=str(local_file),
+                path=(
+                    entry.path
+                    if entry.path is None or entry.path.is_absolute()
+                    else base / entry.path
+                ),
+            )
             for name, entry in parse_registry(local_config).items()
         }
         registry = {**registry, **local_registry}

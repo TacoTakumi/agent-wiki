@@ -191,6 +191,29 @@ def test_no_local_config_is_global_only(tmp_path, monkeypatch, capsys):
     assert capsys.readouterr().err == ""
 
 
+def test_relative_path_resolves_against_local_config_dir(tmp_path, monkeypatch):
+    """REQ-05 (T-27): a relative path: in a local config resolves against the
+    directory containing .agent-wiki, not the process cwd."""
+    from agent_wiki.config import load_registry
+
+    proj = tmp_path / "home" / "proj"
+    make_vault(proj / "vault")
+    _setup(
+        tmp_path, monkeypatch,
+        global_config={},
+        trust=(proj,),
+    )
+    _write_yaml(
+        proj / ".agent-wiki" / "config.yaml",
+        {"vaults": {"personal": {"path": "vault"}}},
+    )
+    nested = proj / "src" / "deep"
+    nested.mkdir(parents=True)
+    monkeypatch.chdir(nested)
+
+    assert load_registry()["personal"].path == proj / "vault"
+
+
 def test_name_override_sees_local_vaults(tmp_path, monkeypatch):
     """REQ-06: --vault/AWIKI_VAULT name lookup consults the merged view."""
     from agent_wiki.config import get_vault_path
