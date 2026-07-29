@@ -98,3 +98,65 @@ def test_show_remote_read_location_is_server_ref(remote_service, tmp_vault, monk
     assert remote_service.base in result.stderr         # server URL
     assert "research/srv.md" in result.stderr           # vault-relative path
     assert str(tmp_vault) not in result.stderr          # no local absolute path
+
+
+# --- multi-vault dispatch (vault: prefix + cross-vault resolution) ------------
+
+def _seed_page(vault, rel, content):
+    path = vault / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return path
+
+
+def test_show_qualified_ref_opens_page_in_named_vault(two_vault_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    work = tmp_path / "work-vault"
+    personal = tmp_path / "personal-vault"
+    _seed_page(work, "research/foo.md", "# Foo\n\nwork copy\n")
+    _seed_page(personal, "research/foo.md", "# Foo\n\npersonal copy\n")
+
+    result = CliRunner().invoke(cli, ["show", "personal:research/foo.md"])
+    assert result.exit_code == 0, result.output
+    assert "personal copy" in result.stdout
+
+
+def test_show_unqualified_unique_match_resolves_silently(two_vault_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    personal = tmp_path / "personal-vault"
+    _seed_page(personal, "research/only-here.md", "# Only\n\nfound it\n")
+
+    result = CliRunner().invoke(cli, ["show", "research/only-here.md"])
+    assert result.exit_code == 0, result.output
+    assert "found it" in result.stdout
+
+
+def test_show_unqualified_ambiguous_lists_qualified_candidates(two_vault_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    _seed_page(tmp_path / "work-vault", "research/dup.md", "# Dup\n\nwork\n")
+    _seed_page(tmp_path / "personal-vault", "research/dup.md", "# Dup\n\npersonal\n")
+
+    result = CliRunner().invoke(cli, ["show", "research/dup.md"])
+    assert result.exit_code != 0
+    combined = result.output + result.stderr
+    assert "work:research/dup.md" in combined
+    assert "personal:research/dup.md" in combined
+
+
+def test_show_non_matching_prefix_is_a_literal_path(two_vault_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    # A colon in the filename with no vault named 'weird': the whole string is
+    # a plain path, resolved cross-vault as-is.
+    _seed_page(tmp_path / "work-vault", "research/weird:name.md", "# W\n\nliteral\n")
+
+    result = CliRunner().invoke(cli, ["show", "research/weird:name.md"])
+    assert result.exit_code == 0, result.output
+    assert "literal" in result.stdout

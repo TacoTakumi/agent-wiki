@@ -26,6 +26,62 @@ def _service():
     return get_backend()
 
 
+def _dispatch_ref(value, probe):
+    """Resolve a possibly vault-qualified reference to (service, ref).
+
+    Single-vault configs and override (--vault/AWIKI_VAULT) invocations keep
+    today's behavior exactly: the default service and the untouched value.
+    With multiple vaults, a vault: prefix narrows to that vault; an
+    unqualified reference resolves across all vaults via the probe — unique
+    match wins, ambiguity errors listing qualified candidates."""
+    from agent_wiki.config import (
+        backend_for_entry, load_registry, resolve_vault_override)
+    if resolve_vault_override() is not None:
+        return _service(), value
+    registry = load_registry()
+    if len(registry) <= 1:
+        return _service(), value
+    from agent_wiki.resolve import resolve_across_vaults, split_vault_ref
+    entry, ref = split_vault_ref(value, registry)
+    if entry is not None:
+        return backend_for_entry(entry), ref
+    result = resolve_across_vaults(ref, registry, probe)
+    if result is None:
+        raise click.ClickException(
+            f"'{value}' not found in any configured vault")
+    entry, resolved = result
+    return backend_for_entry(entry), resolved
+
+
+def _show_probe(entry, ref):
+    """Does `ref` exist (as a showable file) in this vault? Unreachable or
+    denying vaults are skipped with a one-line stderr note."""
+    from agent_wiki.config import backend_for_entry
+    try:
+        backend_for_entry(entry).show(ref)
+        return ref
+    except (FileNotFoundError, ValueError):
+        return None
+    except Exception as e:
+        click.echo(f"skipping vault '{entry.name}': {e}", err=True)
+        return None
+
+
+def _raw_name_probe(entry, ref):
+    """Does a raw file matching `ref` exist in this LOCAL vault? Remote vaults
+    are skipped for unqualified raw names — their raws live server-side;
+    qualify (vault:name) to target one. A name ambiguous within one vault
+    propagates its ValueError."""
+    from agent_wiki.ingest import resolve_raw
+    if entry.url:
+        return None
+    try:
+        resolve_raw(entry.path, ref)
+        return ref
+    except FileNotFoundError:
+        return None
+
+
 def _repair_stale_config_if_needed(fix, dry_run):
     """If the configured local vault_path is stale (missing), help fix the config.
 
@@ -265,16 +321,16 @@ def reingest(name, force):
     `# H1`, tags, created) is regenerated — keep the H1 stable or the slug (and thus
     the page path) changes, which can orphan the page.
     """
-    svc = _service()
     try:
-        out = svc.reingest(name, force=force)
+        svc, ref = _dispatch_ref(name, _raw_name_probe)
+        out = svc.reingest(ref, force=force)
     except PageDriftError as e:
         if e.diff:
             click.echo(e.diff, err=True)
         raise click.ClickException(str(e))
     except (FileNotFoundError, ValueError) as e:
         raise click.ClickException(str(e))
-    click.echo(f"Reingested {name} -> {out['page']}")
+    click.echo(f"Reingested {ref} -> {out['page']}")
     # Surface where the page landed on stderr (REQ-12): a local absolute path, or
     # for a remote vault the server URL + vault-relative path. stdout stays clean.
     click.echo(svc.describe_location(out["page"]), err=True)
@@ -323,17 +379,21 @@ def search(query, topic, limit):
 @cli.command()
 @click.argument("path")
 def show(path):
-    """Print a wiki page (or any vault file) by its vault-relative path."""
-    svc = _service()
+    """Print a wiki page (or any vault file) by its vault-relative path.
+
+    With multiple vaults configured the path may carry a vault: prefix; an
+    unqualified path resolves across all vaults (unique match wins, ambiguity
+    is a hard error listing the qualified candidates)."""
+    svc, ref = _dispatch_ref(path, _show_probe)
     try:
-        content = svc.show(path)
+        content = svc.show(ref)
     except (ValueError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
     click.echo(content, nl=False)
     # Surface where the content was read from on stderr (REQ-13): a local absolute
     # path, or for a remote vault the server URL + vault-relative path. stdout stays
     # byte-identical to the file so skills that parse show output verbatim are unaffected.
-    click.echo(svc.describe_location(path), err=True)
+    click.echo(svc.describe_location(ref), err=True)
 
 
 @cli.command()
@@ -349,15 +409,15 @@ def raw(name):
     the server-side reference and notes on stderr that it is not editable locally.
     """
     from agent_wiki.remote import RemoteVaultService
-    svc = _service()
-    if isinstance(svc, RemoteVaultService):
-        click.echo(svc.describe_location(f"raw/{name}"))
-        click.echo(
-            "remote vault: this raw source lives on the server and is not "
-            "directly editable locally.", err=True)
-        return
     try:
-        raw_path = resolve_raw(svc.vault_path, name)
+        svc, ref = _dispatch_ref(name, _raw_name_probe)
+        if isinstance(svc, RemoteVaultService):
+            click.echo(svc.describe_location(f"raw/{ref}"))
+            click.echo(
+                "remote vault: this raw source lives on the server and is not "
+                "directly editable locally.", err=True)
+            return
+        raw_path = resolve_raw(svc.vault_path, ref)
     except (FileNotFoundError, ValueError) as e:
         raise click.ClickException(str(e))
     click.echo(str(raw_path))

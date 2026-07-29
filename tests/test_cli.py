@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from click.testing import CliRunner
 from agent_wiki.cli import cli
 from agent_wiki.page import render_page
@@ -424,3 +426,72 @@ def test_lint_label_renders_in_output(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli, ["lint"])
     assert result.exit_code == 0
     assert "[SIZE]" in result.output
+
+
+# --- multi-vault dispatch for raw and reingest (T-08) -------------------------
+
+def _seed_ingested(vault, name, body):
+    """Ingest a real page (raw + rendered) into a vault; returns the raw path."""
+    import tempfile, os
+    from agent_wiki.ingest import ingest_file
+    with tempfile.TemporaryDirectory() as td:
+        src = os.path.join(td, name)
+        with open(src, "w") as f:
+            f.write(body)
+        ingest_file(Path(src), vault)
+    return vault / "raw" / name
+
+
+def test_raw_qualified_ref_targets_named_vault(two_vault_config, tmp_path):
+    personal = tmp_path / "personal-vault"
+    _seed_ingested(personal, "notes.md", "# Notes\n\nbody\n")
+
+    result = CliRunner().invoke(cli, ["raw", "personal:notes"])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == str(personal / "raw" / "notes.md")
+
+
+def test_raw_unqualified_unique_resolves_across_vaults(two_vault_config, tmp_path):
+    work = tmp_path / "work-vault"
+    _seed_ingested(work, "only-work.md", "# Only Work\n\nbody\n")
+
+    result = CliRunner().invoke(cli, ["raw", "only-work"])
+    assert result.exit_code == 0, result.output
+    assert result.output.strip() == str(work / "raw" / "only-work.md")
+
+
+def test_raw_unqualified_ambiguous_lists_qualified_candidates(two_vault_config, tmp_path):
+    _seed_ingested(tmp_path / "work-vault", "dup.md", "# Dup\n\nw\n")
+    _seed_ingested(tmp_path / "personal-vault", "dup.md", "# Dup\n\np\n")
+
+    result = CliRunner().invoke(cli, ["raw", "dup"])
+    assert result.exit_code != 0
+    combined = result.output + result.stderr
+    assert "work:dup" in combined
+    assert "personal:dup" in combined
+
+
+def test_reingest_qualified_and_unqualified_across_vaults(two_vault_config, tmp_path):
+    personal = tmp_path / "personal-vault"
+    raw_path = _seed_ingested(personal, "evolve.md", "# Evolve\n\nfirst\n")
+
+    raw_path.write_text("# Evolve\n\nsecond\n")
+    result = CliRunner().invoke(cli, ["reingest", "personal:evolve"])
+    assert result.exit_code == 0, result.output
+    assert "second" in (personal / "research" / "evolve.md").read_text()
+
+    raw_path.write_text("# Evolve\n\nthird\n")
+    result = CliRunner().invoke(cli, ["reingest", "evolve"])
+    assert result.exit_code == 0, result.output
+    assert "third" in (personal / "research" / "evolve.md").read_text()
+
+
+def test_reingest_unqualified_ambiguous_is_loud(two_vault_config, tmp_path):
+    _seed_ingested(tmp_path / "work-vault", "both.md", "# Both\n\nw\n")
+    _seed_ingested(tmp_path / "personal-vault", "both.md", "# Both\n\np\n")
+
+    result = CliRunner().invoke(cli, ["reingest", "both"])
+    assert result.exit_code != 0
+    combined = result.output + result.stderr
+    assert "work:both" in combined
+    assert "personal:both" in combined
