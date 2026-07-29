@@ -105,6 +105,34 @@ def test_vault_add_migrates_legacy_config_to_vaults_schema(tmp_path, monkeypatch
     assert "second" in listed.output
 
 
+def test_migration_keeps_both_vault_path_and_server_on_main(tmp_path):
+    """T-22 (REQ-24/REQ-02): a legacy config holding vault_path AND server
+    migrates to a main entry preserving both keys, and that entry parses to
+    the same VaultEntry the legacy synthesis produces — url wins at backend
+    selection, the path stays for local resolution (serve/tag/doctor)."""
+    from agent_wiki.config import migrate_to_vaults_schema
+    from agent_wiki.registry import parse_registry
+
+    legacy = {
+        "vault_path": str(tmp_path / "v"),
+        "server": {"url": "https://wiki.example.com", "token": "tok"},
+    }
+    migrated = migrate_to_vaults_schema(legacy)
+    assert "vault_path" not in migrated
+    assert "server" not in migrated
+    assert migrated["vaults"]["main"] == {
+        "url": "https://wiki.example.com",
+        "token": "tok",
+        "path": str(tmp_path / "v"),
+    }
+
+    main = parse_registry(migrated)["main"]
+    assert str(main.path) == str(tmp_path / "v")
+    assert main.url == "https://wiki.example.com"
+    assert main.token == "tok"
+    assert main.is_remote
+
+
 def test_vault_add_remote_url_with_token(tmp_path, monkeypatch):
     config_file, _legacy = _legacy_config(tmp_path, monkeypatch)
 

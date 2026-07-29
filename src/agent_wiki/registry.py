@@ -18,9 +18,11 @@ LEGACY_VAULT_NAME = "main"
 
 @dataclass(frozen=True)
 class VaultEntry:
-    """One named vault: a local path, a remote url+token, or (legacy-synthesized
-    only) both — a legacy config may hold vault_path and server together, and
-    the single 'main' entry carries both so existing precedence survives."""
+    """One named vault: a local path, a remote url+token, or both — a legacy
+    config may hold vault_path and server together, and both its synthesized
+    'main' and the migrated vaults: entry carry the pair so existing
+    precedence survives (url wins at backend selection, the path serves
+    local resolution)."""
 
     name: str
     path: "Path | None" = None
@@ -43,9 +45,10 @@ def parse_registry(config) -> dict:
     """Parse a loaded user-config dict into {name: VaultEntry}.
 
     A `vaults:` map wins over the legacy keys. Each explicit entry must declare
-    exactly one of `path` or `url`; violations raise a UsageError naming the
-    entry. With no `vaults:` map, `vault_path`/`server` synthesize a single
-    entry named 'main'; an empty config yields an empty registry."""
+    `path` or `url` (both is allowed — a migrated legacy config carries the
+    pair); an entry with neither raises a UsageError naming it. With no
+    `vaults:` map, `vault_path`/`server` synthesize a single entry named
+    'main'; an empty config yields an empty registry."""
     config = config or {}
     vaults = config.get("vaults")
     if vaults:
@@ -95,11 +98,6 @@ def _parse_entry(name: str, spec) -> VaultEntry:
         )
     path = spec.get("path")
     url = spec.get("url")
-    if path and url:
-        raise click.UsageError(
-            f"vault '{name}' in config.yaml declares both 'path' and 'url'; "
-            f"a vault is local (path) or remote (url), not both."
-        )
     if not path and not url:
         raise click.UsageError(
             f"vault '{name}' in config.yaml declares neither 'path' nor "
