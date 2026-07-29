@@ -135,6 +135,30 @@ def save_user_config(config: dict) -> None:
         yaml.dump(config, f, default_flow_style=False)
 
 
+def migrate_to_vaults_schema(config: dict) -> dict:
+    """Return a copy of a user-config dict in the vaults: schema (REQ-24).
+
+    A config already carrying a vaults: block is returned unchanged (copied).
+    Legacy keys synthesize the 'main' entry and are dropped: a server url wins
+    over vault_path when both are present (matching resolution precedence).
+    Pure — writes nothing."""
+    config = dict(config)
+    if config.get("vaults"):
+        return config
+    vault_path = config.pop("vault_path", None)
+    server = config.pop("server", None) or {}
+    entry = {}
+    if server.get("url"):
+        entry["url"] = str(server["url"])
+        if server.get("token") is not None:
+            entry["token"] = str(server["token"])
+    elif vault_path:
+        entry["path"] = str(vault_path)
+    if entry:
+        config["vaults"] = {"main": entry}
+    return config
+
+
 def discover_local_config(cwd: "Path | None" = None) -> "Path | None":
     """Return the nearest .agent-wiki/config.yaml walking up from cwd to $HOME
     inclusive, or None. Only the nearest one counts; outside $HOME's tree there

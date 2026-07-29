@@ -74,6 +74,94 @@ def test_vault_trust_missing_dir_errors(tmp_path, monkeypatch):
     assert result.exit_code != 0
 
 
+# --- vault add + lazy schema migration (T-17, REQ-22, REQ-24) ------------------
+
+def _legacy_config(tmp_path, monkeypatch):
+    """A legacy vault_path config; returns (config_file, legacy_vault)."""
+    legacy = make_vault(tmp_path / "legacy-vault")
+    config_dir = tmp_path / "global-config"
+    config_file = _write_yaml(
+        config_dir / "config.yaml", {"vault_path": str(legacy)})
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    return config_file, legacy
+
+
+def test_vault_add_migrates_legacy_config_to_vaults_schema(tmp_path, monkeypatch):
+    config_file, legacy = _legacy_config(tmp_path, monkeypatch)
+    second = make_vault(tmp_path / "second-vault")
+
+    result = CliRunner().invoke(cli, ["vault", "add", "second", str(second)])
+    assert result.exit_code == 0, result.output
+
+    persisted = yaml.safe_load(config_file.read_text())
+    assert "vault_path" not in persisted
+    assert "server" not in persisted
+    assert persisted["vaults"]["main"] == {"path": str(legacy)}
+    assert persisted["vaults"]["second"] == {"path": str(second)}
+
+    listed = CliRunner().invoke(cli, ["vault", "list"])
+    assert listed.exit_code == 0, listed.output
+    assert "main" in listed.output
+    assert "second" in listed.output
+
+
+def test_vault_add_remote_url_with_token(tmp_path, monkeypatch):
+    config_file, _legacy = _legacy_config(tmp_path, monkeypatch)
+
+    result = CliRunner().invoke(
+        cli, ["vault", "add", "team", "http://127.0.0.1:9", "--token", "tok"])
+    assert result.exit_code == 0, result.output
+
+    persisted = yaml.safe_load(config_file.read_text())
+    assert persisted["vaults"]["team"] == {
+        "url": "http://127.0.0.1:9", "token": "tok"}
+
+
+def test_vault_add_rejects_illegal_name(tmp_path, monkeypatch):
+    config_file, _legacy = _legacy_config(tmp_path, monkeypatch)
+    second = make_vault(tmp_path / "second-vault")
+    before = config_file.read_bytes()
+
+    for bad in ("Bad Name", "UPPER", "with/slash", ""):
+        result = CliRunner().invoke(cli, ["vault", "add", bad, str(second)])
+        assert result.exit_code != 0, f"accepted illegal name {bad!r}"
+    assert config_file.read_bytes() == before
+
+
+def test_vault_add_rejects_path_without_wiki_yaml(tmp_path, monkeypatch):
+    config_file, _legacy = _legacy_config(tmp_path, monkeypatch)
+    bare = tmp_path / "not-a-vault"
+    bare.mkdir()
+    before = config_file.read_bytes()
+
+    result = CliRunner().invoke(cli, ["vault", "add", "bare", str(bare)])
+    assert result.exit_code != 0
+    assert "wiki.yaml" in result.output + result.stderr
+    assert config_file.read_bytes() == before
+
+
+def test_vault_add_rejects_malformed_url(tmp_path, monkeypatch):
+    config_file, _legacy = _legacy_config(tmp_path, monkeypatch)
+    before = config_file.read_bytes()
+
+    for bad in ("http://", "ftp://host", "http://host/some/path"):
+        result = CliRunner().invoke(cli, ["vault", "add", "team", bad])
+        assert result.exit_code != 0, f"accepted malformed url {bad!r}"
+    assert config_file.read_bytes() == before
+
+
+def test_vault_add_rejects_duplicate_name(tmp_path, monkeypatch):
+    config_file, _legacy = _legacy_config(tmp_path, monkeypatch)
+    second = make_vault(tmp_path / "second-vault")
+    assert CliRunner().invoke(
+        cli, ["vault", "add", "second", str(second)]).exit_code == 0
+    before = config_file.read_bytes()
+
+    result = CliRunner().invoke(cli, ["vault", "add", "second", str(second)])
+    assert result.exit_code != 0
+    assert config_file.read_bytes() == before
+
+
 # --- vault list: read-only registry view (T-16, REQ-21) ------------------------
 
 def test_vault_list_shows_both_rows_and_writes_nothing(tmp_path, monkeypatch):
