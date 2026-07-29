@@ -258,13 +258,13 @@ def init(path, url, token, clear, vault_name):
             token = click.prompt("Token", hide_input=True)
         config = load_user_config()
         if (vault_name is not None or config.get("vaults")
-                or config.get("trusted_dirs")):
-            # A named init, or a config already beyond the legacy
-            # single-vault form: the remote lands as a vaults: entry via the
-            # REQ-24 migration, preserving every existing entry and
-            # trusted_dirs. Merging onto an existing entry keeps its path
-            # beside the url (the hybrid form: url wins at backend selection,
-            # the path serves local resolution).
+                or config.get("trusted_dirs") or config.get("vault_path")):
+            # A named init, or a config holding anything a wipe would lose
+            # (a registry, a trust allowlist, a local vault_path): the remote
+            # lands as a vaults: entry via the REQ-24 migration, preserving
+            # every existing entry and trusted_dirs. Merging onto an existing
+            # entry keeps its path beside the url (the hybrid form: url wins
+            # at backend selection, the path serves local resolution).
             from agent_wiki.config import migrate_to_vaults_schema
             config = migrate_to_vaults_schema(config)
             name = vault_name or "main"
