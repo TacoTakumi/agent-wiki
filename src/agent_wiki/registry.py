@@ -49,6 +49,37 @@ def parse_registry(config) -> dict:
     return _synthesize_legacy(config)
 
 
+def resolve_default_vault(registry: dict, default_vault=None) -> VaultEntry:
+    """Resolve the default vault from a parsed registry.
+
+    Precedence: an explicit default_vault name, else the vault named 'main',
+    else the sole configured vault. Multiple vaults with neither 'main' nor a
+    default_vault key is a hard error, as is a default_vault naming an
+    unconfigured vault. The default_vault key is read-only to the CLI: it is
+    repointed by hand-editing the config only (REQ-04)."""
+    if default_vault is not None:
+        entry = registry.get(str(default_vault))
+        if entry is None:
+            raise click.UsageError(
+                f"default_vault names '{default_vault}', which is not a "
+                f"configured vault. Configured: "
+                f"{', '.join(sorted(registry)) or 'none'}."
+            )
+        return entry
+    if LEGACY_VAULT_NAME in registry:
+        return registry[LEGACY_VAULT_NAME]
+    if len(registry) == 1:
+        return next(iter(registry.values()))
+    if not registry:
+        raise click.UsageError(
+            "No vault configured. Run 'awiki init <path>' first."
+        )
+    raise click.UsageError(
+        f"Multiple vaults configured ({', '.join(sorted(registry))}) with no "
+        f"'main' entry; set default_vault in config.yaml to pick one."
+    )
+
+
 def _parse_entry(name: str, spec) -> VaultEntry:
     if not isinstance(spec, dict):
         raise click.UsageError(
