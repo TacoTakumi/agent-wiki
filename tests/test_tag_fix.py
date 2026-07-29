@@ -184,3 +184,32 @@ def test_fix_rejects_both_topic_and_path(tmp_config, tmp_vault):
     result = CliRunner().invoke(
         cli, ["tag", "fix", "--topic", "research", "research"])
     assert result.exit_code != 0
+
+
+# --- multi-vault: tag fix mutates the default vault only (T-15, REQ-19) --------
+
+def test_write_touches_only_default_vault_in_multi_vault_config(
+        two_vault_config, tmp_path):
+    work = tmp_path / "work-vault"
+    personal = tmp_path / "personal-vault"
+    cfg = yaml.safe_load(two_vault_config.read_text())
+    cfg["default_vault"] = "work"
+    two_vault_config.write_text(yaml.dump(cfg))
+
+    _set_vocab(work)
+    _set_vocab(personal)
+    work_page = _page(work, "research", "Work Alias", ["asr"])
+    personal_page = _page(personal, "research", "Personal Alias", ["asr"])
+    personal_before = personal_page.read_text()
+
+    result = CliRunner().invoke(cli, ["tag", "fix", "--write"])
+    assert result.exit_code == 0, result.output
+    assert parse_page(work_page)["meta"]["tags"] == ["stt"]
+    # The non-default vault is byte-untouched, alias intact.
+    assert personal_page.read_text() == personal_before
+
+    # Explicit narrowing reaches the other vault.
+    result = CliRunner().invoke(
+        cli, ["--vault", "personal", "tag", "fix", "--write"])
+    assert result.exit_code == 0, result.output
+    assert parse_page(personal_page)["meta"]["tags"] == ["stt"]
