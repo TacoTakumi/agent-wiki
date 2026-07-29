@@ -193,43 +193,51 @@ def _stale_vault_error(path: Path) -> click.UsageError:
     )
 
 
+def _default_entry():
+    """Resolve the registry's default vault entry from the user config."""
+    from agent_wiki.registry import parse_registry, resolve_default_vault
+    config = load_user_config()
+    return resolve_default_vault(
+        parse_registry(config), config.get("default_vault"))
+
+
 def get_vault_path() -> Path:
-    """Get the vault path: override (--vault/AWIKI_VAULT) first, then user config."""
+    """Get the vault path: override (--vault/AWIKI_VAULT) first, then the
+    registry's default vault (which a legacy vault_path config synthesizes)."""
     override = _override_path_or_raise()
     if override is not None:
         return override
-    config = load_user_config()
-    vault_path = config.get("vault_path")
-    if not vault_path:
+    entry = _default_entry()
+    if entry.path is None:
         raise click.UsageError(
             "No vault configured. Run 'awiki init <path>' first."
         )
-    path = Path(vault_path).expanduser()
-    if not path.exists():
-        raise _stale_vault_error(path)
-    return path
+    if not entry.path.exists():
+        raise _stale_vault_error(entry.path)
+    return entry.path
+
+
+def backend_for_entry(entry):
+    """Build a VaultService for a registry entry: a url entry is remote, a path
+    entry local. A legacy-synthesized entry may carry both; url wins, matching
+    the pre-registry server-over-vault_path precedence."""
+    if entry.url:
+        from agent_wiki.remote import RemoteVaultService
+        return RemoteVaultService(entry.url, entry.token)
+    from agent_wiki.service import LocalVaultService
+    if not entry.path.exists():
+        raise _stale_vault_error(entry.path)
+    return LocalVaultService(entry.path)
 
 
 def get_backend():
-    """Resolve the vault into a VaultService. An explicit override forces a local
-    vault; otherwise a configured remote server wins, then the local vault_path."""
+    """Resolve the default vault into a VaultService. An explicit override
+    forces a local vault; otherwise the registry's default entry decides."""
     override = _override_path_or_raise()
     if override is not None:
         from agent_wiki.service import LocalVaultService
         return LocalVaultService(override)
-    config = load_user_config()
-    server = config.get("server")
-    if server and server.get("url"):
-        from agent_wiki.remote import RemoteVaultService
-        return RemoteVaultService(server["url"], server.get("token"))
-    vault_path = config.get("vault_path")
-    if vault_path:
-        from agent_wiki.service import LocalVaultService
-        path = Path(vault_path).expanduser()
-        if not path.exists():
-            raise _stale_vault_error(path)
-        return LocalVaultService(path)
-    raise click.UsageError("No vault configured. Run 'awiki init <path>' first.")
+    return backend_for_entry(_default_entry())
 
 
 def auto_context_enabled(vault_path: Path) -> bool:

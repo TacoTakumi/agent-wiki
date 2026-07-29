@@ -193,6 +193,68 @@ def test_default_empty_registry_errors():
         resolve_default_vault({}, default_vault=None)
 
 
+def _write_user_config(tmp_path, monkeypatch, data):
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(yaml.dump(data))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+
+def test_get_backend_local_for_path_entry(tmp_vault, tmp_path, monkeypatch):
+    from agent_wiki.config import get_backend
+    from agent_wiki.service import LocalVaultService
+
+    _write_user_config(
+        tmp_path, monkeypatch, {"vaults": {"work": {"path": str(tmp_vault)}}}
+    )
+    backend = get_backend()
+    assert isinstance(backend, LocalVaultService)
+    assert backend.vault_path == tmp_vault
+
+
+def test_get_backend_remote_for_url_entry(tmp_path, monkeypatch):
+    from agent_wiki.config import get_backend
+    from agent_wiki.remote import RemoteVaultService
+
+    _write_user_config(
+        tmp_path, monkeypatch,
+        {"vaults": {"team": {"url": "https://wiki.example.com",
+                             "token": "tok"}}},
+    )
+    backend = get_backend()
+    assert isinstance(backend, RemoteVaultService)
+
+
+def test_get_backend_honors_default_vault_key(tmp_vault, tmp_path, monkeypatch):
+    from agent_wiki.config import get_backend
+    from agent_wiki.service import LocalVaultService
+
+    _write_user_config(
+        tmp_path, monkeypatch,
+        {
+            "default_vault": "work",
+            "vaults": {
+                "work": {"path": str(tmp_vault)},
+                "team": {"url": "https://wiki.example.com"},
+            },
+        },
+    )
+    backend = get_backend()
+    assert isinstance(backend, LocalVaultService)
+    assert backend.vault_path == tmp_vault
+
+
+def test_get_vault_path_resolves_vaults_map_entry(
+    tmp_vault, tmp_path, monkeypatch
+):
+    from agent_wiki.config import get_vault_path
+
+    _write_user_config(
+        tmp_path, monkeypatch, {"vaults": {"work": {"path": str(tmp_vault)}}}
+    )
+    assert get_vault_path() == tmp_vault
+
+
 def test_vault_entry_is_frozen():
     entry = VaultEntry(name="x", path=None, url="https://e.com", token=None)
     with pytest.raises(Exception):
