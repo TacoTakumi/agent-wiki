@@ -100,6 +100,107 @@ def build_context_block(
     return "\n".join(lines) + "\n"
 
 
+def build_multi_vault_block(
+    hits: list[dict],
+    topic_order: list[str],
+    limit: int = 5,
+) -> str:
+    """Render the pointer block for multi-vault hits.
+
+    Each hit carries an explicit 'topic' plus a vault-qualified 'path'
+    (build_context_block's leading-segment parse cannot see through the
+    vault: prefix, so the topic rides along instead)."""
+    capped = hits[:limit]
+    by_topic: dict[str, list[dict]] = {}
+    for hit in capped:
+        if hit["topic"] not in topic_order:
+            continue
+        by_topic.setdefault(hit["topic"], []).append(hit)
+
+    if not by_topic:
+        return ""
+
+    total = sum(len(v) for v in by_topic.values())
+    lines = [
+        f"<!-- agent-wiki: {total} possibly-relevant "
+        f"{'page' if total == 1 else 'pages'}. "
+        f"Use `awiki show <path>` to read any in full. -->",
+    ]
+    for topic in topic_order:
+        if topic not in by_topic:
+            continue
+        lines.append(f"## {topic}")
+        for hit in by_topic[topic]:
+            lines.append(f"- [{hit['title']}]({hit['path']})")
+    return "\n".join(lines) + "\n"
+
+
+def run_context_multi(prompt: str, registry: dict) -> str | None:
+    """Auto-context across every configured vault.
+
+    Spans the registry with merged coverage ranking and vault-qualified
+    paths. A vault that errors (unreachable remote, stale path) is skipped
+    without suppressing the others; a local vault whose wiki.yaml sets
+    auto_context: false is excluded. Never raises — any failure returns
+    None, keeping the hook's silent exit-0 contract."""
+    from agent_wiki.config import (
+        auto_context_enabled, backend_for_entry, load_vault_config)
+
+    try:
+        if should_skip(prompt):
+            return None
+        # Explicit env kill switch disables the whole hook, remotes included.
+        env = os.environ.get("AWIKI_AUTO_CONTEXT")
+        if env is not None and env.strip().lower() not in (
+                "1", "true", "yes", "on"):
+            return None
+
+        keywords = extract_keywords(prompt)
+        if not keywords:
+            return None
+        query = " ".join(keywords)
+
+        merged: list[dict] = []
+        topic_order: list[str] = []
+        for name in sorted(registry):
+            entry = registry[name]
+            try:
+                if entry.url:
+                    # Remote: topics come from status; auto_context is a
+                    # vault-side wiki.yaml flag the wire contract does not
+                    # expose, so a remote vault is included when reachable.
+                    st = backend_for_entry(entry).status()
+                    topics = [t["topic"] for t in st.get("topics", [])]
+                else:
+                    if not auto_context_enabled(entry.path):
+                        continue
+                    topics = load_vault_config(entry.path).get("topics") or []
+                out = backend_for_entry(entry).search(query)
+                for hit in out["all"] + out["partial"]:
+                    topic = hit["path"].split("/", 1)[0]
+                    if topic not in topics:
+                        continue
+                    merged.append({
+                        **hit,
+                        "topic": topic,
+                        "path": f"{entry.name}:{hit['path']}",
+                    })
+                for topic in topics:
+                    if topic not in topic_order:
+                        topic_order.append(topic)
+            except Exception:
+                continue
+
+        if not merged:
+            return None
+        merged.sort(key=lambda h: (
+            -h.get("coverage", 0), -len(h.get("matches", [])), h["path"]))
+        return build_multi_vault_block(merged, topic_order) or None
+    except Exception as exc:  # pragma: no cover — silent-fail net
+        _log_error(f"run_context_multi: {type(exc).__name__}: {exc}")
+        return None
+
+
 def _cache_dir() -> Path:
     return Path(
         os.environ.get("XDG_CACHE_HOME", str(Path.home() / ".cache"))
