@@ -31,6 +31,65 @@ def test_init_remote_writes_server_block(tmp_path, monkeypatch):
     assert data["server"] == {"url": "http://x:8731", "token": "tok"}
 
 
+def test_init_remote_preserves_registry_and_trust(tmp_path, monkeypatch):
+    """T-23: init --remote against a config holding vaults: and trusted_dirs
+    preserves every entry and the allowlist — the remote lands as a vaults:
+    entry via the REQ-24 migration, never a config wipe."""
+    cd = tmp_path / "config"
+    _write_user_config(cd, {
+        "vaults": {"work": {"path": str(tmp_path / "work")}},
+        "trusted_dirs": [str(tmp_path / "proj")],
+    })
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cd))
+    res = CliRunner().invoke(
+        cli, ["init", "--remote", "http://x:8731", "--token", "tok"])
+    assert res.exit_code == 0, res.output
+    data = yaml.safe_load((cd / "config.yaml").read_text())
+    assert data["vaults"]["work"] == {"path": str(tmp_path / "work")}
+    assert data["vaults"]["main"] == {"url": "http://x:8731", "token": "tok"}
+    assert data["trusted_dirs"] == [str(tmp_path / "proj")]
+    assert "server" not in data
+
+
+def test_init_remote_with_name_registers_named_entry(tmp_path, monkeypatch):
+    """T-23: a named remote init is a needs-more write (REQ-24) and lands in
+    the vaults: schema even from an empty config."""
+    cd = tmp_path / "config"
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cd))
+    res = CliRunner().invoke(
+        cli, ["init", "--remote", "http://x:8731", "--token", "tok",
+              "--name", "team"])
+    assert res.exit_code == 0, res.output
+    data = yaml.safe_load((cd / "config.yaml").read_text())
+    assert data["vaults"]["team"] == {"url": "http://x:8731", "token": "tok"}
+    assert "server" not in data
+
+
+def test_init_remote_on_trusted_legacy_config_keeps_local_main(
+    tmp_path, monkeypatch
+):
+    """T-23: a legacy vault_path config with trusted_dirs migrates on remote
+    init; the url/token merge onto main beside its path (T-22 hybrid form)."""
+    cd = tmp_path / "config"
+    _write_user_config(cd, {
+        "vault_path": str(tmp_path / "v"),
+        "trusted_dirs": [str(tmp_path / "proj")],
+    })
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cd))
+    res = CliRunner().invoke(
+        cli, ["init", "--remote", "http://x:8731", "--token", "tok"])
+    assert res.exit_code == 0, res.output
+    data = yaml.safe_load((cd / "config.yaml").read_text())
+    assert data["vaults"]["main"] == {
+        "path": str(tmp_path / "v"),
+        "url": "http://x:8731",
+        "token": "tok",
+    }
+    assert data["trusted_dirs"] == [str(tmp_path / "proj")]
+    assert "vault_path" not in data
+    assert "server" not in data
+
+
 def test_init_clear_removes_server(tmp_path, monkeypatch):
     cd = tmp_path / "config"
     _write_user_config(cd, {"server": {"url": "http://x", "token": "t"}})

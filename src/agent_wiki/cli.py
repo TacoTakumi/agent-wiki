@@ -240,15 +240,6 @@ def init(path, url, token, clear, vault_name):
         else:
             path = click.prompt("Vault path", default=".")
 
-    if url is not None:  # remote
-        if not token:
-            token = click.prompt("Token", hide_input=True)
-        save_user_config({"server": {"url": url, "token": token}})
-        click.echo(f"Connected to remote vault at {url}")
-        return
-
-    # local
-    vault_path = Path(path).resolve()
     if vault_name is not None:
         from agent_wiki.page import slugify
         from agent_wiki.registry import parse_registry
@@ -261,6 +252,34 @@ def init(path, url, token, clear, vault_name):
             raise click.UsageError(
                 f"vault '{vault_name}' is already configured."
             )
+
+    if url is not None:  # remote
+        if not token:
+            token = click.prompt("Token", hide_input=True)
+        config = load_user_config()
+        if (vault_name is not None or config.get("vaults")
+                or config.get("trusted_dirs")):
+            # A named init, or a config already beyond the legacy
+            # single-vault form: the remote lands as a vaults: entry via the
+            # REQ-24 migration, preserving every existing entry and
+            # trusted_dirs. Merging onto an existing entry keeps its path
+            # beside the url (the hybrid form: url wins at backend selection,
+            # the path serves local resolution).
+            from agent_wiki.config import migrate_to_vaults_schema
+            config = migrate_to_vaults_schema(config)
+            name = vault_name or "main"
+            entry = dict((config.get("vaults") or {}).get(name) or {})
+            entry.update({"url": url, "token": token})
+            config.setdefault("vaults", {})[name] = entry
+            save_user_config(config)
+        else:
+            # Legacy form, byte-equivalent to the current release (REQ-24).
+            save_user_config({"server": {"url": url, "token": token}})
+        click.echo(f"Connected to remote vault at {url}")
+        return
+
+    # local
+    vault_path = Path(path).resolve()
     try:
         init_vault(vault_path, name=vault_name)   # also registers in user config
         click.echo(f"Vault initialized at {vault_path}")
