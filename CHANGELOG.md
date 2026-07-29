@@ -81,9 +81,10 @@ below are reconstructed from the commits that bumped `__version__`.
 ### Fixed
 - **`awiki init` no longer wipes the config file.** A bare `init <path>`
   merges `vault_path` over the existing config, so `trusted_dirs` and any
-  `server` key survive; `init --remote` against a config holding `vaults:` or
-  `trusted_dirs` preserves every entry and the trust allowlist, landing the
-  remote as a `vaults:` entry (previously each rewrote the file wholesale).
+  `server` key survive; `init --remote` against a config holding `vaults:`,
+  `trusted_dirs`, or a `vault_path` preserves them all, landing the remote as
+  a `vaults:` entry - a local `vault_path` is kept beside the new url on
+  `main` (previously each rewrote the file wholesale).
 - **Migration keeps a hybrid `main`.** A legacy config holding both
   `vault_path` and `server` migrates to a `main` entry preserving both keys
   (the url wins at backend selection, the path serves local resolution), so

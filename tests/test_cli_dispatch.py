@@ -90,6 +90,28 @@ def test_init_remote_on_trusted_legacy_config_keeps_local_main(
     assert "server" not in data
 
 
+def test_init_remote_on_vault_path_only_config_keeps_local_path(
+    tmp_path, monkeypatch
+):
+    """T-30: init --remote against a config holding only vault_path must not
+    drop the local vault — it migrates to a hybrid main entry carrying the
+    path beside the new url/token (the last destructive init path)."""
+    cd = tmp_path / "config"
+    _write_user_config(cd, {"vault_path": str(tmp_path / "v")})
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cd))
+    res = CliRunner().invoke(
+        cli, ["init", "--remote", "http://x:8731", "--token", "tok"])
+    assert res.exit_code == 0, res.output
+    data = yaml.safe_load((cd / "config.yaml").read_text())
+    assert data["vaults"]["main"] == {
+        "path": str(tmp_path / "v"),
+        "url": "http://x:8731",
+        "token": "tok",
+    }
+    assert "vault_path" not in data
+    assert "server" not in data
+
+
 def test_init_clear_removes_server(tmp_path, monkeypatch):
     cd = tmp_path / "config"
     _write_user_config(cd, {"server": {"url": "http://x", "token": "t"}})
