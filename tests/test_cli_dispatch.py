@@ -65,3 +65,32 @@ def test_init_remote_prompt_shows_url_example(tmp_path, monkeypatch):
     res = CliRunner().invoke(cli, ["init"], input="r\nhttp://myhost:8731\nsecret\n")
     assert res.exit_code == 0
     assert "Server URL (e.g. http://host:8731)" in res.output
+
+
+# --- no default-vault mutator exists (T-20, REQ-04) ----------------------------
+
+def test_awiki_use_is_an_unknown_command():
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    result = CliRunner().invoke(cli, ["use", "work"])
+    assert result.exit_code != 0
+    assert "No such command" in result.output
+
+
+def test_no_source_write_path_for_default_vault_key():
+    """Source scan: no subscript assignment or dict-literal construction of
+    the default_vault key anywhere in the package - the key is repointed by
+    hand-editing config only."""
+    import re
+    from pathlib import Path
+    import agent_wiki
+
+    src_root = Path(agent_wiki.__file__).parent
+    offenders = []
+    for path in src_root.rglob("*.py"):
+        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+            if re.search(r"\[.default_vault.\]\s*=", line) or \
+               re.search(r"[\"']default_vault[\"']\s*:", line):
+                offenders.append(f"{path}:{lineno}: {line.strip()}")
+    assert offenders == []

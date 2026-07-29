@@ -248,3 +248,44 @@ def test_vault_trust_keeps_legacy_config_keys(tmp_path, monkeypatch):
     assert persisted["vault_path"] == str(vault_dir)
     assert "vaults" not in persisted
     assert str(proj.resolve()) in persisted["trusted_dirs"]
+
+
+# --- absence guard: unconfigured vaults are invisible (T-20, REQ-27) -----------
+
+def test_unconfigured_vault_is_invisible_everywhere(tmp_path, monkeypatch):
+    """A vault directory absent from the merged config view is unreachable:
+    search, show, the hook, and vault list never reference it."""
+    import json
+
+    work = make_vault(tmp_path / "work-vault")
+    # The personal vault exists on disk with content - but is not configured.
+    personal = make_vault(tmp_path / "personal-vault")
+    (personal / "research" / "zeb.md").write_text(
+        "---\ntitle: Zeb\ntopic: research\n---\n\n# Zeb\n\n"
+        "zebras migrate seasonally across the plains\n")
+    config_dir = tmp_path / "cfg"
+    config_file = _write_yaml(
+        config_dir / "config.yaml", {"vaults": {"work": {"path": str(work)}}})
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    runner = CliRunner()
+
+    searched = runner.invoke(cli, ["search", "zebras"])
+    assert searched.exit_code == 0, searched.output
+    assert "No results found." in searched.output
+    assert "personal" not in searched.output
+
+    shown = runner.invoke(cli, ["show", "research/zeb.md"])
+    assert shown.exit_code != 0
+    assert "personal" not in shown.output
+
+    hook = runner.invoke(
+        cli, ["context", "--output-format", "plain"],
+        input=json.dumps(
+            {"prompt": "tell me how zebras migrate seasonally across plains"}))
+    assert hook.exit_code == 0
+    assert "personal" not in hook.output
+
+    listed = runner.invoke(cli, ["vault", "list"])
+    assert listed.exit_code == 0, listed.output
+    assert "personal" not in listed.output
+    assert str(config_file) in listed.output
