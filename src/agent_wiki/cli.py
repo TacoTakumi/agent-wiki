@@ -584,22 +584,57 @@ LINT_LABELS = {
               help="CI gate: exit non-zero if any tag-audit (TAG) finding exists. "
                    "Does not change which findings print.")
 def lint(refetch, strict):
-    """Audit the wiki vault for issues."""
-    issues = _service().lint(refetch=refetch)
+    """Audit the wiki vault for issues.
 
-    if not issues:
-        click.echo("No issues found.")
+    With multiple vaults configured, every vault is checked serially with
+    output sectioned per vault; --vault narrows to one. A vault that cannot
+    support the operation is skipped with a printed notice — skips alone
+    never change the exit code."""
+    from agent_wiki.config import (
+        backend_for_entry, load_registry, resolve_vault_override)
+
+    registry = load_registry() if resolve_vault_override() is None else {}
+    if len(registry) <= 1:
+        issues = _service().lint(refetch=refetch)
+
+        if not issues:
+            click.echo("No issues found.")
+            return
+
+        for issue in issues:
+            label = LINT_LABELS.get(issue["type"], issue["type"].upper())
+            click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
+
+        click.echo(f"\n{len(issues)} issue(s) found.")
+
+        # --strict gates the exit code only (REQ-13): tag-audit findings fail CI
+        # while plain lint stays report-only. The printed findings are unchanged.
+        if strict and any(i["type"] == "tag_audit" for i in issues):
+            sys.exit(1)
         return
 
-    for issue in issues:
-        label = LINT_LABELS.get(issue["type"], issue["type"].upper())
-        click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
+    strict_hit = False
+    for position, name in enumerate(sorted(registry)):
+        if position:
+            click.echo("")
+        click.echo(f"vault: {name}")
+        try:
+            issues = backend_for_entry(registry[name]).lint(refetch=refetch)
+        except Exception as e:
+            msg = " ".join(str(e).split())
+            click.echo(f"  skipped: {msg}")
+            continue
+        if not issues:
+            click.echo("  No issues found.")
+            continue
+        for issue in issues:
+            label = LINT_LABELS.get(issue["type"], issue["type"].upper())
+            click.echo(f"  [{label}] {issue['detail']}  ({issue['path']})")
+        click.echo(f"  {len(issues)} issue(s) found.")
+        strict_hit = strict_hit or any(
+            i["type"] == "tag_audit" for i in issues)
 
-    click.echo(f"\n{len(issues)} issue(s) found.")
-
-    # --strict gates the exit code only (REQ-13): tag-audit findings fail CI
-    # while plain lint stays report-only. The printed findings are unchanged.
-    if strict and any(i["type"] == "tag_audit" for i in issues):
+    if strict and strict_hit:
         sys.exit(1)
 
 

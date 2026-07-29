@@ -522,6 +522,78 @@ def test_search_no_results_across_vaults(two_vault_config):
     assert "No results found." in result.output
 
 
+# --- multi-vault lint (T-12) ---------------------------------------------------
+
+def _seed_broken_link(vault, slug="linker"):
+    meta = {"title": slug.title(), "topic": "research", "tags": [],
+            "created": "2026-01-01", "updated": "2026-01-01", "sources": []}
+    (vault / "research" / f"{slug}.md").write_text(
+        render_page(meta, f"# {slug.title()}\n\nSee [[No Such Page]].\n"))
+
+
+def test_lint_multi_vault_prints_labeled_sections(two_vault_config, tmp_path):
+    _seed_broken_link(tmp_path / "work-vault")
+
+    result = CliRunner().invoke(cli, ["lint"])
+    assert result.exit_code == 0, result.output
+    assert "vault: work" in result.output
+    assert "vault: personal" in result.output
+    assert "[LINK]" in result.output
+
+
+def test_lint_vault_flag_narrows_to_one(two_vault_config, tmp_path):
+    _seed_broken_link(tmp_path / "work-vault")
+
+    result = CliRunner().invoke(cli, ["--vault", "work", "lint"])
+    assert result.exit_code == 0, result.output
+    assert "[LINK]" in result.output
+    assert "vault: work" not in result.output  # single-vault output shape
+
+
+def test_lint_strict_exits_nonzero_on_second_vault_tag_finding(
+    two_vault_config, tmp_path
+):
+    # sorted order is (personal, work): put the TAG finding in work, the
+    # second section, and keep personal vocabulary-free (tag audit inert).
+    work = tmp_path / "work-vault"
+    wiki = yaml.safe_load((work / "wiki.yaml").read_text())
+    wiki["tags"] = {"mode": "warn", "vocabulary": {"Python": ["py"]}}
+    (work / "wiki.yaml").write_text(yaml.dump(wiki))
+    meta = {"title": "Tagged", "topic": "research", "tags": ["py"],
+            "created": "2026-01-01", "updated": "2026-01-01", "sources": []}
+    (work / "research" / "tagged.md").write_text(
+        render_page(meta, "# Tagged\n\nbody\n"))
+
+    result = CliRunner().invoke(cli, ["lint"])
+    assert result.exit_code == 0, result.output
+
+    result = CliRunner().invoke(cli, ["lint", "--strict"])
+    assert result.exit_code != 0
+    assert "[TAG]" in result.output
+
+
+def test_lint_unsupported_vault_skips_with_notice_and_exit_zero(
+    tmp_path, monkeypatch
+):
+    from conftest import make_vault
+    work = make_vault(tmp_path / "work-vault")
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(yaml.dump({
+        "vaults": {
+            "work": {"path": str(work)},
+            "team": {"url": "http://127.0.0.1:9", "token": None},
+        }
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    result = CliRunner().invoke(cli, ["lint"])
+    assert result.exit_code == 0, result.output
+    assert "vault: team" in result.output
+    assert "skipped" in result.output
+    assert "vault: work" in result.output
+
+
 # --- topic-driven ingest routing (T-11) ---------------------------------------
 
 def _routing_config(two_vault_config, tmp_path):
