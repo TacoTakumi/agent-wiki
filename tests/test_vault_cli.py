@@ -74,6 +74,71 @@ def test_vault_trust_missing_dir_errors(tmp_path, monkeypatch):
     assert result.exit_code != 0
 
 
+# --- vault list: read-only registry view (T-16, REQ-21) ------------------------
+
+def test_vault_list_shows_both_rows_and_writes_nothing(tmp_path, monkeypatch):
+    work = make_vault(tmp_path / "work-vault")
+    config_dir = tmp_path / "global-config"
+    config_file = _write_yaml(config_dir / "config.yaml", {
+        "vaults": {
+            "main": {"path": str(work)},
+            "team": {"url": "http://127.0.0.1:9", "token": "t"},
+        },
+    })
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    before = config_file.read_bytes()
+
+    result = CliRunner().invoke(cli, ["vault", "list"])
+    assert result.exit_code == 0, result.output
+
+    lines = result.output.splitlines()
+    main_row = next(line for line in lines if " main " in f" {line} ")
+    team_row = next(line for line in lines if " team " in f" {line} ")
+
+    assert "local" in main_row
+    assert str(work) in main_row
+    assert "ok" in main_row
+    assert main_row.lstrip().startswith("*")  # the default marker
+
+    assert "remote" in team_row
+    assert "http://127.0.0.1:9" in team_row
+    assert "unreachable" in team_row
+    assert not team_row.lstrip().startswith("*")
+
+    # Declaring config is named on both rows; nothing was written.
+    assert str(config_file) in main_row
+    assert str(config_file) in team_row
+    assert config_file.read_bytes() == before
+
+
+def test_vault_list_names_declaring_local_config(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    g_main = make_vault(tmp_path / "g-main")
+    personal = make_vault(tmp_path / "personal")
+    proj = home / "proj"
+    config_dir = tmp_path / "global-config"
+    config_file = _write_yaml(config_dir / "config.yaml", {
+        "vaults": {"main": {"path": str(g_main)}},
+        "trusted_dirs": [str(proj)],
+    })
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    local_file = _write_yaml(
+        proj / ".agent-wiki" / "config.yaml",
+        {"vaults": {"personal": {"path": str(personal)}}},
+    )
+    monkeypatch.chdir(proj)
+
+    result = CliRunner().invoke(cli, ["vault", "list"])
+    assert result.exit_code == 0, result.output
+    lines = result.output.splitlines()
+    personal_row = next(line for line in lines if "personal" in line)
+    main_row = next(line for line in lines if " main " in f" {line} ")
+    assert str(local_file) in personal_row
+    assert str(config_file) in main_row
+
+
 def test_vault_trust_keeps_legacy_config_keys(tmp_path, monkeypatch):
     """Trusting must not rewrite a legacy config into the vaults: schema."""
     home = tmp_path / "home"
