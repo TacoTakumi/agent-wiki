@@ -29,6 +29,10 @@ class VaultEntry:
     # The config file that declared this entry (stamped by the loader;
     # parse_registry itself does not know the file it is parsing).
     origin: "str | None" = None
+    # True when synthesized from the legacy flat keys (vault_path/server)
+    # rather than declared in a vaults: map — error messages cite the key the
+    # user actually wrote.
+    legacy: bool = False
 
     @property
     def is_remote(self) -> bool:
@@ -124,5 +128,6 @@ def _synthesize_legacy(config: dict) -> dict:
                 str(server["token"]) if server.get("token") is not None
                 else None
             ),
+            legacy=True,
         )
     }
