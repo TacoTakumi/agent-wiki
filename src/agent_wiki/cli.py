@@ -746,12 +746,13 @@ def context_cmd(output_format, debug):
         return
 
     try:
-        svc = _service()
-    except Exception:
-        return
-
-    try:
-        block = svc.context(prompt)
+        from agent_wiki.config import load_registry, resolve_vault_override
+        registry = load_registry() if resolve_vault_override() is None else {}
+        if len(registry) > 1:
+            from agent_wiki.context import run_context_multi
+            block = run_context_multi(prompt, registry)
+        else:
+            block = _service().context(prompt)
     except Exception:
         return
 

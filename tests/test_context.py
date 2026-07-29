@@ -256,3 +256,101 @@ def test_run_context_works_without_ripgrep(tmp_vault, monkeypatch):
     )
     assert result is not None
     assert "Ingest Pipeline" in result
+
+
+# --- multi-vault hook (T-10) ---------------------------------------------------
+
+from agent_wiki.context import run_context_multi
+from agent_wiki.registry import VaultEntry
+
+
+def _entries(**vaults):
+    return {n: VaultEntry(name=n, path=p) for n, p in vaults.items()}
+
+
+@pytest.fixture
+def two_seeded_vaults(tmp_path):
+    from conftest import make_vault
+    work = make_vault(tmp_path / "work-vault")
+    personal = make_vault(tmp_path / "personal-vault")
+    _seed_page(work, "research", "ingest-pipeline",
+               "Ingest Pipeline", "The ingest pipeline handles codex sessions.")
+    _seed_page(personal, "research", "codex-notes",
+               "Codex Notes", "Personal notes about codex sessions and ingest.")
+    return work, personal
+
+
+PROMPT = "how do I configure the ingest pipeline for codex sessions"
+
+
+def test_multi_hook_spans_vaults_with_qualified_paths(two_seeded_vaults):
+    work, personal = two_seeded_vaults
+    block = run_context_multi(PROMPT, _entries(work=work, personal=personal))
+    assert block is not None
+    assert "work:research/ingest-pipeline.md" in block
+    assert "personal:research/codex-notes.md" in block
+
+
+def test_multi_hook_survives_unreachable_remote(two_seeded_vaults):
+    work, _personal = two_seeded_vaults
+    registry = {
+        "work": VaultEntry(name="work", path=work),
+        "team": VaultEntry(name="team", url="http://127.0.0.1:9", token=None),
+    }
+    block = run_context_multi(PROMPT, registry)
+    assert block is not None
+    assert "work:research/ingest-pipeline.md" in block
+
+
+def test_multi_hook_excludes_auto_context_false_vault_but_search_covers_it(
+    two_seeded_vaults, tmp_path, monkeypatch
+):
+    work, personal = two_seeded_vaults
+    wiki = personal / "wiki.yaml"
+    cfg = _yaml.safe_load(wiki.read_text())
+    cfg["auto_context"] = False
+    wiki.write_text(_yaml.dump(cfg))
+
+    block = run_context_multi(PROMPT, _entries(work=work, personal=personal))
+    assert block is not None
+    assert "work:research/ingest-pipeline.md" in block
+    assert "personal:" not in block
+
+    # search still fully covers the opted-out vault
+    import yaml
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(yaml.dump({
+        "vaults": {"work": {"path": str(work)},
+                   "personal": {"path": str(personal)}}
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    result = CliRunner().invoke(cli, ["search", "codex ingest"])
+    assert result.exit_code == 0, result.output
+    assert "personal:research/codex-notes.md" in result.output
+
+
+def test_multi_hook_cli_dispatch_emits_qualified_paths(
+    two_seeded_vaults, tmp_path, monkeypatch
+):
+    import json
+    import yaml
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    work, personal = two_seeded_vaults
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(yaml.dump({
+        "vaults": {"work": {"path": str(work)},
+                   "personal": {"path": str(personal)}}
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    result = CliRunner().invoke(
+        cli, ["context", "--output-format", "plain"],
+        input=json.dumps({"prompt": PROMPT}))
+    assert result.exit_code == 0, result.output
+    assert "work:research/ingest-pipeline.md" in result.output
