@@ -302,6 +302,64 @@ def vault_list():
         )
 
 
+@vault.command("add")
+@click.argument("name")
+@click.argument("target")
+@click.option("--token", default=None, help="Bearer token for a remote (url) vault.")
+def vault_add(name, target, token):
+    """Register an existing vault as NAME in the global config.
+
+    TARGET is a local vault directory (must contain wiki.yaml) or a remote
+    base URL (http[s]://host[:port], no path). The first write that outgrows
+    the legacy single-vault form rewrites the config to the vaults: schema.
+    Any validation failure writes nothing."""
+    from pathlib import Path
+    from urllib.parse import urlparse
+    from agent_wiki.page import slugify
+    from agent_wiki.config import (
+        load_user_config, migrate_to_vaults_schema, save_user_config)
+    from agent_wiki.registry import parse_registry
+
+    if not name or slugify(name) != name:
+        raise click.UsageError(
+            f"vault name {name!r} is not slug-legal; use lowercase letters, "
+            f"digits, and hyphens (e.g. {slugify(name) or 'my-vault'!r})."
+        )
+    config = load_user_config()
+    if name in parse_registry(config):
+        raise click.UsageError(
+            f"vault '{name}' is already configured; pick another name or "
+            f"hand-edit the config to change it."
+        )
+
+    parsed = urlparse(target)
+    if parsed.scheme:
+        if (parsed.scheme not in ("http", "https") or not parsed.netloc
+                or parsed.path.strip("/") or parsed.query or parsed.fragment):
+            raise click.UsageError(
+                f"remote vault URL {target!r} is malformed; expected "
+                f"http[s]://host[:port] with no path."
+            )
+        entry = {"url": target.rstrip("/")}
+        if token is not None:
+            entry["token"] = token
+    else:
+        path = Path(target).expanduser().resolve()
+        if not (path / "wiki.yaml").is_file():
+            raise click.UsageError(
+                f"{path} is not a vault: no wiki.yaml found. Initialize one "
+                f"with 'awiki init' or point at an existing vault."
+            )
+        if token is not None:
+            raise click.UsageError("--token applies only to remote (url) vaults.")
+        entry = {"path": str(path)}
+
+    config = migrate_to_vaults_schema(config)
+    config.setdefault("vaults", {})[name] = entry
+    save_user_config(config)
+    click.echo(f"Registered vault '{name}' -> {entry.get('url', entry.get('path'))}")
+
+
 @vault.command("trust")
 @click.argument("directory", type=click.Path(exists=True, file_okay=False))
 def vault_trust(directory):
