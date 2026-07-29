@@ -220,7 +220,7 @@ def ingest_file(
     old_path: Path | None = None
     old_meta: dict = {}
     new_path: Path | None = None
-    eff_topic = topic or vault_config.get("default_topic", "research")
+    eff_topic = topic or vault_config.get("default_topic")
     if update:
         existing = _find_pages_by_source(vault_path, raw_ref, vault_config.get("topics", []))
         if len(existing) > 1:
@@ -265,12 +265,22 @@ def ingest_file(
                         f"page as raw.",
                         diff=diff,
                     )
-            eff_topic = topic or old_meta.get("topic") or vault_config.get("default_topic", "research")
-            new_path = vault_path / eff_topic / f"{slug}.md"
-            if new_path.resolve() != old_path.resolve() and new_path.exists():
-                raise ValueError(
-                    f"cannot update: target page {new_path.relative_to(vault_path)} already exists"
-                )
+            eff_topic = topic or old_meta.get("topic") or vault_config.get("default_topic")
+            if eff_topic:
+                new_path = vault_path / eff_topic / f"{slug}.md"
+                if new_path.resolve() != old_path.resolve() and new_path.exists():
+                    raise ValueError(
+                        f"cannot update: target page {new_path.relative_to(vault_path)} already exists"
+                    )
+
+    # A vault without a default_topic refuses untargeted ingest rather than
+    # silently minting an undeclared topic folder. Pre-flight: raises before
+    # any raw/sidecar/page write.
+    if not eff_topic:
+        raise ValueError(
+            "no topic: pass --topic or set default_topic in wiki.yaml "
+            "(this vault declares no default_topic)"
+        )
 
     # Resolve + canonicalize the effective tags BEFORE any mutation, so a strict
     # rejection of a novel tag aborts with no raw/sidecar/page written (REQ-06).

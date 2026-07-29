@@ -243,15 +243,29 @@ Two global options apply to every command:
 #### `awiki init [path]`
 
 Create a new vault at the given path (defaults to the current directory). Sets up
-the directory structure, default topics, and saves the vault location to
-`~/.config/agent-wiki/config.yaml`.
+the directory structure and saves the vault location to
+`~/.config/agent-wiki/config.yaml`. The first vault gets the standard default
+topics (projects, decisions, research, tools, sessions); pass `--topics` to
+choose your own, with the first listed becoming the vault's `default_topic`.
 
 ```bash
 awiki init ~/vaults/agent-wiki
 awiki init ~/vaults/personal-wiki --name personal               # create AND register under a name
+awiki init ~/vaults/recipes --name recipes --topics "recipes, techniques"
 awiki init --remote https://wiki.example.com --token <secret>   # point at a served vault instead
 awiki init --clear                                              # drop the remote config from this client
 ```
+
+A vault created beside existing ones does not clone the default topics, since
+topics duplicated across vaults make every unqualified `--topic` ambiguous.
+Without `--topics`, such an init prompts for a topic list when run on a
+terminal and otherwise creates the vault with no topics, printing a warning
+that explains how to add them later; ingest into a vault with no
+`default_topic` requires `--topic`.
+
+A registered name whose vault directory has been deleted does not block
+re-initing: `init --name` reclaims the stale name and repoints it at the new
+vault.
 
 Local and remote vaults are mutually exclusive: setting one clears the other. See
 [Network server](#network-server) for the remote side, and
@@ -718,7 +732,8 @@ tags:
 ```
 
 Add new topics by **editing this file and creating the corresponding directory** -
-the `topics` / `default_topic` keys are hand-edited.
+the `topics` / `default_topic` keys are hand-edited (`awiki init --topics` only
+seeds the initial list).
 
 The `tags:` block is different: it has a sanctioned CLI write path. Manage it with
 [`awiki tag add`](#awiki-tag-addsuggestfix) and `awiki tag suggest --write` (both
@@ -737,6 +752,10 @@ awiki vault add work ~/vaults/work-wiki             # register an existing vault
 awiki vault add team https://wiki.example.com:8731 --token <secret>
 awiki vault list                                    # name, kind, target, reachability, default marker
 ```
+
+An `init` beside an existing vault does not clone the default topics - it
+prompts for (or takes `--topics`) a topic list of its own, so `--topic`
+routing stays unambiguous. See [`awiki init`](#awiki-init-path).
 
 With a single configured vault nothing changes - every command behaves and
 prints exactly as before. With more than one:

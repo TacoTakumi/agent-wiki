@@ -26,6 +26,27 @@ def _service():
     return get_backend()
 
 
+def _stdin_isatty() -> bool:
+    """Is stdin an interactive terminal? Module-level so tests can patch it."""
+    try:
+        return sys.stdin.isatty()
+    except Exception:
+        return False
+
+
+def _parse_topics(raw: str) -> list:
+    """Split a comma-separated topic list, trimmed, de-duped, each slug-legal."""
+    from agent_wiki.page import slugify
+    topics = list(dict.fromkeys(t.strip() for t in raw.split(",") if t.strip()))
+    for t in topics:
+        if slugify(t) != t:
+            raise click.UsageError(
+                f"topic {t!r} is not slug-legal; use lowercase letters, "
+                f"digits, and hyphens."
+            )
+    return topics
+
+
 def _dispatch_ref(value, probe):
     """Resolve a possibly vault-qualified reference to (service, ref).
 
@@ -216,7 +237,12 @@ cli.add_command(skills_command_group("agent_wiki", default_scope="user"))
 @click.option("--name", "vault_name", default=None,
               help="Register the new vault under this name in the vaults: "
                    "schema (bare init registers as main).")
-def init(path, url, token, clear, vault_name):
+@click.option("--topics", "topics_opt", default=None,
+              help="Comma-separated topics for the new vault; the first "
+                   "becomes its default_topic. Without this, the first vault "
+                   "gets the standard defaults; a vault added beside existing "
+                   "ones prompts (or gets no topics when non-interactive).")
+def init(path, url, token, clear, vault_name, topics_opt):
     """Initialize a vault: local (a path) or remote (--remote URL --token T).
 
     With no arguments, prompts for local vs remote.
@@ -248,12 +274,25 @@ def init(path, url, token, clear, vault_name):
                 f"vault name {vault_name!r} is not slug-legal; use lowercase "
                 f"letters, digits, and hyphens."
             )
-        if vault_name in parse_registry(load_user_config()):
-            raise click.UsageError(
-                f"vault '{vault_name}' is already configured."
-            )
+        existing = parse_registry(load_user_config()).get(vault_name)
+        if existing is not None:
+            # A local entry whose vault is gone (no wiki.yaml at its path) is
+            # stale registry weight, not a conflict: the name is reclaimable.
+            # Remote entries are never treated as stale — unreachable is not
+            # the same as deleted.
+            stale = (existing.url is None and existing.path is not None
+                     and not (existing.path / "wiki.yaml").is_file())
+            if not stale:
+                raise click.UsageError(
+                    f"vault '{vault_name}' is already configured."
+                )
+            click.echo(
+                f"note: vault '{vault_name}' pointed at a missing vault "
+                f"({existing.path}); reclaiming the name.", err=True)
 
     if url is not None:  # remote
+        if topics_opt is not None:
+            raise click.UsageError("--topics applies to local vaults only.")
         if not token:
             token = click.prompt("Token", hide_input=True)
         config = load_user_config()
@@ -280,11 +319,48 @@ def init(path, url, token, clear, vault_name):
 
     # local
     vault_path = Path(path).resolve()
+    topic_list = _parse_topics(topics_opt) if topics_opt is not None else None
+
+    # A vault that will coexist with other registered vaults must not clone
+    # DEFAULT_TOPICS — duplicated topics make every unqualified --topic
+    # ambiguous across vaults. "Others" excludes the registry name this init
+    # claims, so a legacy bare re-init (which replaces the sole vault) keeps
+    # the out-of-box defaults.
+    from agent_wiki.config import load_registry
+    target_name = vault_name or "main"
+    others = {n: e for n, e in load_registry().items() if n != target_name}
+    if topic_list is None and others:
+        if _stdin_isatty():
+            answer = click.prompt(
+                "Topics for this vault (comma-separated, empty for none)",
+                default="", show_default=False)
+            topic_list = _parse_topics(answer)
+        else:
+            topic_list = []
+
     try:
-        init_vault(vault_path, name=vault_name)   # also registers in user config
+        # also registers in user config
+        init_vault(vault_path, name=vault_name, topics=topic_list)
         click.echo(f"Vault initialized at {vault_path}")
     except FileExistsError as e:
         raise click.ClickException(str(e))
+
+    if topic_list == []:
+        click.echo(
+            f"warning: vault created with no topics. Add topics under the "
+            f"'topics:' list in {vault_path}/wiki.yaml (and create the "
+            f"matching folder); until a default_topic is set there, ingest "
+            f"into this vault needs --topic.", err=True)
+    elif topic_list:
+        for t in topic_list:
+            declaring = sorted(
+                n for n, e in others.items() if t in _vault_topics(e))
+            if declaring:
+                names = ", ".join(declaring)
+                click.echo(
+                    f"warning: topic '{t}' is also declared by vault(s) "
+                    f"{names}; an unqualified --topic {t} will need --vault "
+                    f"NAME or a NAME:{t} prefix.", err=True)
 
 
 @cli.group()
