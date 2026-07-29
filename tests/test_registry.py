@@ -1,11 +1,17 @@
 """Registry read layer: parsing the user config's vaults: map, with legacy
 vault_path/server synthesis as a single vault named main (T-01)."""
 
+from pathlib import Path
+
 import click
 import pytest
 import yaml
 
-from agent_wiki.registry import VaultEntry, parse_registry
+from agent_wiki.registry import (
+    VaultEntry,
+    parse_registry,
+    resolve_default_vault,
+)
 
 
 def test_vaults_map_parses_path_and_url_entries(tmp_path):
@@ -146,6 +152,45 @@ def test_load_registry_leaves_config_bytes_untouched(tmp_config):
     registry = load_registry()
     assert set(registry) == {"main"}
     assert tmp_config.read_bytes() == before
+
+
+def _registry(*names):
+    return {n: VaultEntry(name=n, path=Path(f"/vaults/{n}")) for n in names}
+
+
+def test_default_explicit_key_wins():
+    registry = _registry("work", "main", "personal")
+    entry = resolve_default_vault(registry, default_vault="personal")
+    assert entry.name == "personal"
+
+
+def test_default_falls_back_to_main():
+    registry = _registry("work", "main", "personal")
+    entry = resolve_default_vault(registry, default_vault=None)
+    assert entry.name == "main"
+
+
+def test_default_sole_vault_wins_without_main():
+    registry = _registry("work")
+    entry = resolve_default_vault(registry, default_vault=None)
+    assert entry.name == "work"
+
+
+def test_default_multiple_vaults_without_main_is_hard_error():
+    registry = _registry("work", "personal")
+    with pytest.raises(click.UsageError, match="default_vault"):
+        resolve_default_vault(registry, default_vault=None)
+
+
+def test_default_unknown_name_errors_naming_it():
+    registry = _registry("work", "main")
+    with pytest.raises(click.UsageError, match="nope"):
+        resolve_default_vault(registry, default_vault="nope")
+
+
+def test_default_empty_registry_errors():
+    with pytest.raises(click.UsageError, match="[Nn]o vault"):
+        resolve_default_vault({}, default_vault=None)
 
 
 def test_vault_entry_is_frozen():
