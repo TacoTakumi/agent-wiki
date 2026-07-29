@@ -745,7 +745,10 @@ prints exactly as before. With more than one:
   (`work:research/raft.md`) that pastes straight into `show`, `raw`, or
   `reingest`. Unqualified references resolve across vaults: a unique match
   wins silently, an ambiguous one is a hard error listing the qualified
-  candidates. The auto-context hook spans vaults too, skips unreachable
+  candidates. One limitation: an unqualified `raw` or `reingest` name only
+  probes local vaults - a remote vault's raws live server-side and are never
+  probed by name. To target a remote vault's raw, qualify the name
+  (`work:notes.md`); the qualified form always reaches the named vault. The auto-context hook spans vaults too, skips unreachable
   ones, and a vault with `auto_context: false` in its `wiki.yaml` stays out
   of the hook while remaining fully searchable. The opt-out is local-only:
   the serve wire contract exposes no `auto_context` flag, so a remote
