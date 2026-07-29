@@ -50,7 +50,8 @@ def _repair_stale_config_if_needed(fix, dry_run):
         f"Configured vault is stale: vault_path in {config_file} points at "
         f"{vault_path}, which does not exist."
     )
-    override = resolve_vault_override()
+    entry = resolve_vault_override()
+    override = entry.path if entry is not None else None
     if override is None:
         raise click.ClickException(
             "Re-run with --vault PATH (or set AWIKI_VAULT) pointing at the correct "
@@ -72,9 +73,12 @@ def _repair_stale_config_if_needed(fix, dry_run):
 @click.group()
 @click.version_option(version=__version__, prog_name="awiki")
 @click.option("--vault", default=None, type=click.Path(),
-              metavar="PATH",
+              metavar="NAME|PATH",
               help="Use this vault for this invocation, overriding the configured "
-                   "one (also settable via AWIKI_VAULT). Forces a local vault.")
+                   "default (also settable via AWIKI_VAULT). A configured vault "
+                   "name narrows to that vault (local or remote); any other "
+                   "value is a local vault at that path (./ or an absolute "
+                   "path forces path interpretation).")
 def cli(vault):
     """Agent Wiki - A personal knowledge base for AI agents."""
     # Proactive skill-staleness notice (AgentSquire). Safe by design: swallows

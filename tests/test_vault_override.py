@@ -1,9 +1,11 @@
 """Vault override (--vault / AWIKI_VAULT) and stale-config diagnostics.
 
-The override lets `awiki` target a vault other than the configured one for a
-single invocation — the headless-Hermes escape hatch when ~/.config is stale.
-Precedence: --vault (CLI) > AWIKI_VAULT (env) > configured vault_path.
-An override always forces a *local* vault (a configured remote server is ignored).
+The override lets `awiki` target a vault other than the configured default for
+a single invocation — the headless-Hermes escape hatch when ~/.config is stale.
+Precedence: --vault (CLI) > AWIKI_VAULT (env) > configured vaults.
+A bare value matching a configured vault name narrows to that vault (local or
+remote); any other value forces a config-free *local* vault at that path (./ or
+an absolute path forces path interpretation).
 """
 
 import pytest
@@ -137,6 +139,107 @@ def test_plain_command_on_stale_config_is_friendly(tmp_path, isolated_env):
     assert "vault_path" in result.output
     assert str(cfg) in result.output
     assert "--vault" in result.output
+
+
+# --- name-or-path override (registry-aware) -----------------------------------
+
+def test_vault_name_override_targets_registered_local_vault(tmp_path, isolated_env):
+    work = _make_vault(tmp_path / "work-vault")
+    personal = _make_vault(tmp_path / "personal-vault")
+    config_dir = tmp_path / "config"
+    _write_config(config_dir, {
+        "default_vault": "work",
+        "vaults": {
+            "work": {"path": str(work)},
+            "personal": {"path": str(personal)},
+        },
+    })
+    isolated_env.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    isolated_env.setenv("AWIKI_VAULT", "personal")
+
+    assert get_vault_path() == personal
+
+
+def test_vault_name_override_targets_remote_vault(tmp_path, isolated_env):
+    local = _make_vault(tmp_path / "local-vault")
+    config_dir = tmp_path / "config"
+    _write_config(config_dir, {
+        "default_vault": "main",
+        "vaults": {
+            "main": {"path": str(local)},
+            "team": {"url": "http://example.invalid", "token": "t"},
+        },
+    })
+    isolated_env.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    isolated_env.setenv("AWIKI_VAULT", "team")
+
+    assert isinstance(get_backend(), RemoteVaultService)
+
+
+def test_unregistered_path_override_is_config_free_local(tmp_path, isolated_env):
+    registered = _make_vault(tmp_path / "registered")
+    free = _make_vault(tmp_path / "free")
+    config_dir = tmp_path / "config"
+    _write_config(config_dir, {"vaults": {"main": {"path": str(registered)}}})
+    isolated_env.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    isolated_env.setenv("AWIKI_VAULT", str(free))
+
+    assert get_vault_path() == free
+    backend = get_backend()
+    assert isinstance(backend, LocalVaultService)
+    assert backend.vault_path == free
+
+
+def test_dot_slash_forces_path_interpretation(tmp_path, isolated_env, monkeypatch):
+    """A directory named like a configured vault: ./name targets the directory,
+    the bare name targets the config entry."""
+    registered = _make_vault(tmp_path / "registered")
+    local_dir = _make_vault(tmp_path / "cwd" / "work")
+    config_dir = tmp_path / "config"
+    _write_config(config_dir, {"vaults": {"work": {"path": str(registered)}}})
+    isolated_env.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    monkeypatch.chdir(tmp_path / "cwd")
+
+    isolated_env.setenv("AWIKI_VAULT", "./work")
+    assert get_vault_path().resolve() == local_dir.resolve()
+
+    isolated_env.setenv("AWIKI_VAULT", "work")
+    assert get_vault_path() == registered
+
+
+def test_vault_flag_name_beats_env_name_beats_default(tmp_path, isolated_env):
+    """REQ-06 precedence with names: --vault beats AWIKI_VAULT beats the
+    configured default."""
+    vaults = {n: _make_vault(tmp_path / n) for n in ("alpha", "beta", "gamma")}
+    config_dir = tmp_path / "config"
+    _write_config(config_dir, {
+        "default_vault": "alpha",
+        "vaults": {n: {"path": str(p)} for n, p in vaults.items()},
+    })
+    isolated_env.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    isolated_env.setenv("AWIKI_VAULT", "beta")
+
+    result = CliRunner().invoke(cli, ["--vault", "gamma", "status"])
+    assert result.exit_code == 0, result.output
+    assert str(vaults["gamma"]) in result.output
+
+    result = CliRunner().invoke(cli, ["status"])
+    assert result.exit_code == 0, result.output
+    assert str(vaults["beta"]) in result.output
+
+
+def test_name_override_with_missing_registered_path_is_friendly(tmp_path, isolated_env):
+    config_dir = tmp_path / "config"
+    _write_config(config_dir, {"vaults": {"work": {"path": str(tmp_path / "gone")}}})
+    isolated_env.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+    isolated_env.setenv("AWIKI_VAULT", "work")
+
+    import click
+    with pytest.raises(click.UsageError) as exc:
+        get_vault_path()
+    msg = str(exc.value)
+    assert str(tmp_path / "gone") in msg
+    assert "AWIKI_VAULT" in msg or "--vault" in msg
 
 
 # --- doctor repairs a stale config -------------------------------------------
