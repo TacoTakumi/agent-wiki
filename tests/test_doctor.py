@@ -459,3 +459,38 @@ def test_render_hash_divergent_cli_reports_but_never_stamps(tmp_config, tmp_vaul
     assert page.name in result.output
     assert "render_hash" not in parse_page(page)["meta"]
     assert page.read_bytes() == before
+
+
+# --- multi-vault doctor diagnostics (T-13) -------------------------------------
+
+def test_doctor_multi_vault_diagnostic_sections_exit_zero(two_vault_config):
+    result = CliRunner().invoke(cli, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert "vault: work" in result.output
+    assert "vault: personal" in result.output
+
+
+def test_doctor_multi_vault_skips_unreachable_with_notice(tmp_path, monkeypatch):
+    from conftest import make_vault
+
+    work = make_vault(tmp_path / "work-vault")
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    (config_dir / "config.yaml").write_text(yaml.dump({
+        "vaults": {
+            "work": {"path": str(work)},
+            "team": {"url": "http://127.0.0.1:9", "token": None},
+        }
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
+
+    result = CliRunner().invoke(cli, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert "vault: team" in result.output
+    assert "skipped" in result.output
+
+
+def test_doctor_vault_flag_narrows_to_single_vault_output(two_vault_config):
+    result = CliRunner().invoke(cli, ["--vault", "work", "doctor", "--dry-run"])
+    assert result.exit_code == 0, result.output
+    assert "vault: work" not in result.output  # single-vault output shape
