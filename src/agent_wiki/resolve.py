@@ -50,11 +50,11 @@ def resolve_across_vaults(ref: str, registry: dict, probe):
 def resolve_ref(value: str, registry: dict, probe):
     """Resolve a possibly vault-qualified reference.
 
-    A qualified reference probes only the named vault (returns None on a
-    miss); an unqualified one resolves across all vaults via
-    resolve_across_vaults."""
+    A qualified reference scopes to the named vault and is returned unprobed
+    — the caller's backend surfaces a miss itself (a remote vault's raws,
+    for instance, cannot be probed locally). An unqualified one resolves
+    across all vaults via resolve_across_vaults."""
     entry, ref = split_vault_ref(value, registry)
     if entry is not None:
-        resolved = probe(entry, ref)
-        return (entry, resolved) if resolved is not None else None
+        return entry, ref
     return resolve_across_vaults(ref, registry, probe)

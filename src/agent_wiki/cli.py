@@ -41,11 +41,8 @@ def _dispatch_ref(value, probe):
     registry = load_registry()
     if len(registry) <= 1:
         return _service(), value
-    from agent_wiki.resolve import resolve_across_vaults, split_vault_ref
-    entry, ref = split_vault_ref(value, registry)
-    if entry is not None:
-        return backend_for_entry(entry), ref
-    result = resolve_across_vaults(ref, registry, probe)
+    from agent_wiki.resolve import resolve_ref
+    result = resolve_ref(value, registry, probe)
     if result is None:
         raise click.ClickException(
             f"'{value}' not found in any configured vault")
