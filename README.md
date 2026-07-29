@@ -614,7 +614,9 @@ This adds a `UserPromptSubmit` hook to `~/.claude/settings.json` that runs
 the vault, and silently injects a small block of page pointers (capped at 5) so
 the model knows what is available without you having to ask. Skips slash commands
 and short prompts. Toggle off per-vault with `auto_context: false` in `wiki.yaml`
-or one-shot with `AWIKI_AUTO_CONTEXT=0`.
+(local vaults only - a remote vault's server-side flag does not travel over the
+wire, so the hook always includes a reachable remote vault) or one-shot with
+`AWIKI_AUTO_CONTEXT=0`.
 
 For other agent CLIs (OpenCode, Codex, and so on),
 `awiki hook install --agent manual` prints the wiring contract so you can hook it
@@ -745,7 +747,10 @@ prints exactly as before. With more than one:
   wins silently, an ambiguous one is a hard error listing the qualified
   candidates. The auto-context hook spans vaults too, skips unreachable
   ones, and a vault with `auto_context: false` in its `wiki.yaml` stays out
-  of the hook while remaining fully searchable.
+  of the hook while remaining fully searchable. The opt-out is local-only:
+  the serve wire contract exposes no `auto_context` flag, so a remote
+  vault's server-side `auto_context: false` cannot suppress it in the hook -
+  a reachable remote vault is always included.
 - **Writes stay narrow.** `ingest --topic` routes to the unique vault whose
   `wiki.yaml` declares that topic; a topic declared by two vaults is a hard
   error resolved by `--vault` or a `vault:` prefix on the topic. Everything
