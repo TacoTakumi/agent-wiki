@@ -297,3 +297,40 @@ def test_lint_index_complete_skips_frontmatterless_page(tmp_vault):
     # index-completeness one (else it could never clear, even after a rebuild).
     (tmp_vault / "research" / "bare.md").write_text("# Bare\n\nno frontmatter\n")
     assert "research/bare.md" not in _index_missing(tmp_vault)
+
+
+# --- per-vault wikilink and orphan semantics (T-14, REQ-20) --------------------
+# Regression locks: wikilinks, broken-link lint, and orphan detection consider
+# only pages within the same vault. A title in another configured vault never
+# resolves and never rescues an orphan.
+
+def test_cross_vault_title_is_still_a_broken_wikilink(tmp_path):
+    from conftest import make_vault
+
+    vault_a = make_vault(tmp_path / "vault-a")
+    vault_b = make_vault(tmp_path / "vault-b")
+    _create_page(vault_a, "research", "linker", "Linker",
+                 "# Linker\n\nSee [[Only In B]].\n")
+    _create_page(vault_b, "research", "only-in-b", "Only In B",
+                 "# Only In B\n\ncontent\n")
+
+    issues = lint_vault(vault_a)
+    broken = [i for i in issues if i["type"] == "broken_wikilink"]
+    assert len(broken) == 1
+    assert "Only In B" in broken[0]["detail"]
+
+
+def test_cross_vault_inbound_link_does_not_rescue_orphan(tmp_path):
+    from conftest import make_vault
+
+    vault_a = make_vault(tmp_path / "vault-a")
+    vault_b = make_vault(tmp_path / "vault-b")
+    # 'Lonely' lives in A with no same-vault inbound links; B links its title.
+    _create_page(vault_a, "research", "lonely", "Lonely",
+                 "# Lonely\n\ncontent\n")
+    _create_page(vault_b, "research", "fan", "Fan",
+                 "# Fan\n\nSee [[Lonely]].\n")
+
+    issues = lint_vault(vault_a)
+    orphans = [i for i in issues if i["type"] == "orphan"]
+    assert any("lonely" in i["path"] for i in orphans)
