@@ -135,6 +135,13 @@ def save_user_config(config: dict) -> None:
         yaml.dump(config, f, default_flow_style=False)
 
 
+def load_registry() -> dict:
+    """Load the user config and parse it into the named vault registry
+    ({name: VaultEntry}). Read-only — never writes the config file."""
+    from agent_wiki.registry import parse_registry
+    return parse_registry(load_user_config())
+
+
 def load_vault_config(vault_path: Path) -> dict:
     """Load wiki.yaml from a vault directory."""
     config_file = vault_path / "wiki.yaml"
