@@ -152,6 +152,33 @@ def init(path, url, token, clear):
         raise click.ClickException(str(e))
 
 
+@cli.group()
+def vault():
+    """Manage the named vault registry."""
+
+
+@vault.command("trust")
+@click.argument("directory", type=click.Path(exists=True, file_okay=False))
+def vault_trust(directory):
+    """Trust DIRECTORY's context-local .agent-wiki/config.yaml.
+
+    A local config is honored only when its directory is on the trust
+    allowlist in the global config; this records DIRECTORY there."""
+    from pathlib import Path
+    from agent_wiki.config import load_user_config, save_user_config
+
+    resolved = str(Path(directory).expanduser().resolve())
+    config = load_user_config()
+    trusted = [str(t) for t in (config.get("trusted_dirs") or [])]
+    if resolved in trusted:
+        click.echo(f"{resolved} is already trusted.")
+        return
+    trusted.append(resolved)
+    config["trusted_dirs"] = trusted
+    save_user_config(config)
+    click.echo(f"Trusted {resolved} for local configs.")
+
+
 @cli.command()
 @click.argument("files", nargs=-1, required=True)
 @click.option("--topic", "-t", default=None, help="Target topic folder")
