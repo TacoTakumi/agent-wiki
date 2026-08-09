@@ -149,6 +149,73 @@ def test_show_unqualified_ambiguous_lists_qualified_candidates(two_vault_config,
     assert "personal:research/dup.md" in combined
 
 
+def test_show_extensionless_path_falls_back_to_md_with_warning(tmp_config, tmp_vault):
+    # An extensionless page path resolves to <path>.md; the warning goes to
+    # stderr and stdout stays byte-identical to the file.
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    content = "---\ntitle: Loc\ntopic: research\n---\n\n# Loc\n\nbody here\n"
+    (tmp_vault / "research" / "loc.md").write_text(content)
+
+    result = CliRunner().invoke(cli, ["show", "research/loc"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == content
+    assert "warning:" in result.stderr
+    assert "research/loc.md" in result.stderr
+    assert ".md extension" in result.stderr
+
+
+def test_show_exact_md_path_emits_no_fallback_warning(tmp_config, tmp_vault):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    content = "---\ntitle: Loc\ntopic: research\n---\n\n# Loc\n\nbody here\n"
+    (tmp_vault / "research" / "loc.md").write_text(content)
+
+    result = CliRunner().invoke(cli, ["show", "research/loc.md"])
+    assert result.exit_code == 0, result.output
+    assert "warning:" not in result.stderr
+
+
+def test_show_extensionless_missing_page_errors_with_typed_path(tmp_config, tmp_vault):
+    # When neither <path> nor <path>.md exists the error names what was typed.
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    result = CliRunner().invoke(cli, ["show", "research/nope"])
+    assert result.exit_code != 0
+    combined = result.output + result.stderr
+    assert "research/nope" in combined
+    assert "research/nope.md" not in combined
+
+
+def test_show_extensionless_resolves_across_vaults(two_vault_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    personal = tmp_path / "personal-vault"
+    _seed_page(personal, "research/only-here.md", "# Only\n\nfound it\n")
+
+    result = CliRunner().invoke(cli, ["show", "research/only-here"])
+    assert result.exit_code == 0, result.output
+    assert "found it" in result.stdout
+    assert "warning:" in result.stderr
+    assert "research/only-here.md" in result.stderr
+
+
+def test_show_extensionless_qualified_ref_falls_back(two_vault_config, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+
+    _seed_page(tmp_path / "personal-vault", "research/foo.md", "# Foo\n\npersonal copy\n")
+
+    result = CliRunner().invoke(cli, ["show", "personal:research/foo"])
+    assert result.exit_code == 0, result.output
+    assert "personal copy" in result.stdout
+    assert "warning:" in result.stderr
+
+
 def test_show_non_matching_prefix_is_a_literal_path(two_vault_config, tmp_path):
     from click.testing import CliRunner
     from agent_wiki.cli import cli
