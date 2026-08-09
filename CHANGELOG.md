@@ -9,6 +9,17 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.8.1]
+
+### Added
+- **`awiki show` accepts extensionless page paths.** `awiki show topic/page`
+  now falls back to `topic/page.md` when the literal path does not exist -
+  in single-vault, multi-vault (unqualified and `vault:`-qualified), and
+  remote configurations alike. A warning on stderr names the resolved path
+  and reminds that page paths include the `.md` extension, so both humans
+  and agents learn the canonical form; stdout stays byte-identical to the
+  file. A miss on both forms still errors with the path as typed.
+
 ## [0.8.0]
 
 ### Added

@@ -120,17 +120,38 @@ def _ingest_service(topic):
 
 
 def _show_probe(entry, ref):
-    """Does `ref` exist (as a showable file) in this vault? Unreachable or
-    denying vaults are skipped with a one-line stderr note."""
+    """Does `ref` exist (as a showable file) in this vault? An extensionless
+    page path counts when `ref + '.md'` exists — the ref is returned unchanged
+    so the show command's fallback resolves (and warns about) it in one place.
+    Unreachable or denying vaults are skipped with a one-line stderr note."""
     from agent_wiki.config import backend_for_entry
+    svc = backend_for_entry(entry)
+    candidates = [ref] if ref.endswith(".md") else [ref, ref + ".md"]
+    for candidate in candidates:
+        try:
+            svc.show(candidate)
+            return ref
+        except (FileNotFoundError, ValueError):
+            continue
+        except Exception as e:
+            click.echo(f"skipping vault '{entry.name}': {e}", err=True)
+            return None
+    return None
+
+
+def _show_with_md_fallback(svc, ref):
+    """Read `ref` from the vault, falling back once to `ref + '.md'` for
+    extensionless page paths. Returns (content, ref actually read); when both
+    miss, the original error is re-raised so it names what the user typed."""
     try:
-        backend_for_entry(entry).show(ref)
-        return ref
-    except (FileNotFoundError, ValueError):
-        return None
-    except Exception as e:
-        click.echo(f"skipping vault '{entry.name}': {e}", err=True)
-        return None
+        return svc.show(ref), ref
+    except FileNotFoundError as original:
+        if ref.endswith(".md"):
+            raise
+        try:
+            return svc.show(ref + ".md"), ref + ".md"
+        except (FileNotFoundError, ValueError):
+            raise original
 
 
 def _raw_name_probe(entry, ref):
@@ -700,17 +721,22 @@ def show(path):
 
     With multiple vaults configured the path may carry a vault: prefix; an
     unqualified path resolves across all vaults (unique match wins, ambiguity
-    is a hard error listing the qualified candidates)."""
+    is a hard error listing the qualified candidates). An extensionless page
+    path falls back to <path>.md, with a warning on stderr."""
     svc, ref = _dispatch_ref(path, _show_probe)
     try:
-        content = svc.show(ref)
+        content, shown = _show_with_md_fallback(svc, ref)
     except (ValueError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
+    if shown != ref:
+        click.echo(
+            f"warning: '{ref}' resolved to '{shown}'; wiki page paths "
+            f"include the .md extension.", err=True)
     click.echo(content, nl=False)
     # Surface where the content was read from on stderr (REQ-13): a local absolute
     # path, or for a remote vault the server URL + vault-relative path. stdout stays
     # byte-identical to the file so skills that parse show output verbatim are unaffected.
-    click.echo(svc.describe_location(ref), err=True)
+    click.echo(svc.describe_location(shown), err=True)
 
 
 @cli.command()
