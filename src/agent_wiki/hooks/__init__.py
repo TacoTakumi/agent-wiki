@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_wiki.hooks import claude, manual
+from agent_wiki.hooks import claude, manual, pi
 
 
 BACKENDS: dict[str, dict] = {
@@ -10,6 +10,11 @@ BACKENDS: dict[str, dict] = {
         "install": claude.install,
         "uninstall": claude.uninstall,
         "status": claude.status,
+    },
+    "pi": {
+        "install": pi.install,
+        "uninstall": pi.uninstall,
+        "status": pi.status,
     },
     "manual": {
         "install": manual.install,
