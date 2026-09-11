@@ -2,7 +2,10 @@ import os
 import yaml as _yaml
 import pytest
 from pathlib import Path
-from agent_wiki.config import get_config_dir, load_user_config, save_user_config, load_vault_config, auto_context_enabled
+from agent_wiki.config import (
+    get_config_dir, load_user_config, save_user_config, load_vault_config,
+    auto_context_enabled, parse_page_max_lines,
+)
 from agent_wiki.vault import init_vault
 
 
@@ -90,3 +93,27 @@ def test_init_vault_writes_auto_context_true(tmp_path, monkeypatch):
     init_vault(vault)
     config = _yaml.safe_load((vault / "wiki.yaml").read_text())
     assert config["auto_context"] is True
+
+
+def test_page_max_lines_defaults_to_500():
+    assert parse_page_max_lines({}) == 500
+    assert parse_page_max_lines(None) == 500
+
+
+def test_page_max_lines_with_an_empty_lint_block_uses_the_default():
+    assert parse_page_max_lines({"lint": {}}) == 500
+    assert parse_page_max_lines({"lint": None}) == 500
+
+
+def test_page_max_lines_reads_the_lint_block():
+    assert parse_page_max_lines({"lint": {"page_max_lines": 100}}) == 100
+
+
+def test_page_max_lines_rejects_a_non_integer():
+    with pytest.raises(ValueError, match="page_max_lines"):
+        parse_page_max_lines({"lint": {"page_max_lines": "lots"}})
+
+
+def test_page_max_lines_rejects_a_non_positive_value():
+    with pytest.raises(ValueError, match="page_max_lines"):
+        parse_page_max_lines({"lint": {"page_max_lines": 0}})

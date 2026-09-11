@@ -253,6 +253,29 @@ def load_registry() -> dict:
     return registry
 
 
+PAGE_MAX_LINES_DEFAULT = 500  # a page body longer than this is a split candidate
+
+
+def parse_page_max_lines(config) -> int:
+    """Read the SIZE lint threshold from a vault config dict's 'lint:' block.
+
+    An absent block, an absent key, or a None value yields the built-in
+    default. The value must be a whole number of at least 1; anything else is
+    a configuration error (ValueError). The block is hand-edited, like
+    'topics' and 'default_topic'.
+    """
+    block = (config or {}).get("lint") or {}
+    value = block.get("page_max_lines")
+    if value is None:
+        return PAGE_MAX_LINES_DEFAULT
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(
+            f"invalid lint page_max_lines {value!r} in wiki.yaml; "
+            f"expected a whole number of at least 1"
+        )
+    return value
+
+
 def load_vault_config(vault_path: Path) -> dict:
     """Load wiki.yaml from a vault directory."""
     config_file = vault_path / "wiki.yaml"

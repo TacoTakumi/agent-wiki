@@ -263,17 +263,36 @@ def _body_of_lines(n):
     return "\n".join(f"line {i}" for i in range(n)) + "\n"
 
 
-def test_lint_page_size_flags_over_200(tmp_vault):
-    _create_page(tmp_vault, "research", "big", "Big", _body_of_lines(201))
+def _set_page_max_lines(vault, value):
+    """Hand-edit the vault config's lint block, as a vault owner would."""
+    import yaml
+    config_file = vault / "wiki.yaml"
+    config = yaml.safe_load(config_file.read_text())
+    config["lint"] = {"page_max_lines": value}
+    config_file.write_text(yaml.dump(config))
+
+
+def test_lint_page_size_flags_a_body_over_the_default(tmp_vault):
+    _create_page(tmp_vault, "research", "big", "Big", _body_of_lines(501))
     sized = [i for i in lint_vault(tmp_vault) if i["type"] == "page_size"]
     assert len(sized) == 1
     assert sized[0]["path"] == "research/big.md"
+    assert ">500" in sized[0]["detail"]
 
 
-def test_lint_page_size_200_not_flagged(tmp_vault):
-    _create_page(tmp_vault, "research", "ok", "Ok", _body_of_lines(200))
+def test_lint_page_size_at_the_default_not_flagged(tmp_vault):
+    _create_page(tmp_vault, "research", "ok", "Ok", _body_of_lines(500))
     sized = [i for i in lint_vault(tmp_vault) if i["type"] == "page_size"]
     assert sized == []
+
+
+def test_lint_page_size_uses_the_configured_threshold(tmp_vault):
+    _set_page_max_lines(tmp_vault, 100)
+    _create_page(tmp_vault, "research", "big", "Big", _body_of_lines(101))
+    _create_page(tmp_vault, "research", "ok", "Ok", _body_of_lines(100))
+    sized = [i for i in lint_vault(tmp_vault) if i["type"] == "page_size"]
+    assert [i["path"] for i in sized] == ["research/big.md"]
+    assert ">100" in sized[0]["detail"]
 
 
 # --- index-completeness ------------------------------------------------------
