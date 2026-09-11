@@ -258,6 +258,13 @@ class SourcePathMissing(Check):
         return "no change (informational)"
 
 
+def _is_conversation_page(page: dict) -> bool:
+    """A session page is a pointer to its transcript bundle by design, so its
+    body never matches its raw; the raw-drift and render-hash checks skip it
+    (reconciling would overwrite the transcript with the pointer page)."""
+    return (page.get("meta") or {}).get("type") == "conversation"
+
+
 class RawContentDrift(Check):
     """Rewrite raw/ files that drifted from their (canonical) wiki page."""
 
@@ -273,6 +280,8 @@ class RawContentDrift(Check):
                 continue
             for md_file in topic_dir.rglob("*.md"):
                 page = parse_page(md_file)
+                if _is_conversation_page(page):
+                    continue
                 for src in (page["meta"].get("sources") or []):
                     if not src.startswith("raw/"):
                         continue
@@ -343,6 +352,8 @@ class RenderHashUnstamped(Check):
                 continue
             for md_file in topic_dir.rglob("*.md"):
                 page = parse_page(md_file)
+                if _is_conversation_page(page):
+                    continue
                 if page["meta"].get("render_hash"):
                     continue  # already stamped
                 if _page_raw_status(vault_path, page) == "faithful":
@@ -394,6 +405,8 @@ class RenderHashDivergent(Check):
                 continue
             for md_file in topic_dir.rglob("*.md"):
                 page = parse_page(md_file)
+                if _is_conversation_page(page):
+                    continue
                 if page["meta"].get("render_hash"):
                     continue  # hashed pages are governed by the reingest guard, not migration
                 if _page_raw_status(vault_path, page) == "diverged":

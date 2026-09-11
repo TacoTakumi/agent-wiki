@@ -511,3 +511,68 @@ def test_source_path_missing_covers_pi(tmp_path):
     config["sources"]["pi"]["enabled"] = False
     (vault / "wiki.yaml").write_text(yaml.dump(config))
     assert SourcePathMissing().detect(vault) is None
+
+
+# --- conversation pages are pointers to their transcript, never drift candidates
+
+def _vault_with_conversation_and_ordinary_drift(tmp_vault, tmp_path):
+    """One real conversation page (pointer body != raw bundle), one hand-made
+    faithful un-hashed conversation page, plus ordinary drifted / un-hashed pages."""
+    from agent_wiki.conversation import Conversation, ingest_conversation, write_bundle
+    from agent_wiki.page import render_page
+    from agent_wiki.service import LocalVaultService
+
+    config = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    config["topics"].append("sessions")
+    config["conversations"] = {"topic": "sessions"}
+    config["summarizer"] = {"type": "none"}
+    (tmp_vault / "wiki.yaml").write_text(yaml.dump(config))
+    (tmp_vault / "sessions").mkdir()
+    (tmp_vault / "raw" / "sessions").mkdir(parents=True, exist_ok=True)
+
+    conv = Conversation(agent="pi", session_id="abc", title="Chat", body="## user\n\nhello\n")
+    bundle = write_bundle(conv, tmp_vault)
+    ingest_conversation(bundle, tmp_vault, summarizer=None, redactor=None)
+
+    faithful_raw = tmp_vault / "raw" / "sessions" / "faithful.md"
+    faithful_raw.write_text("same body\n")
+    (tmp_vault / "sessions" / "faithful.md").write_text(render_page(
+        {"title": "faithful", "type": "conversation", "topic": "sessions",
+         "sources": ["raw/sessions/faithful.md"]},
+        "same body\n",
+    ))
+
+    _drift_vault(tmp_vault, tmp_path)                       # raw/d.md, hashed, drifted
+    _unhashed_faithful_page(tmp_vault, tmp_path, "plain")   # un-hashed, faithful
+    _unhashed_divergent_page(tmp_vault, tmp_path, "edited") # un-hashed, diverged
+    return bundle, faithful_raw
+
+
+def test_drift_and_render_hash_checks_skip_conversation_pages(tmp_vault, tmp_path):
+    from agent_wiki.doctor import RawContentDrift, RenderHashDivergent, RenderHashUnstamped
+    bundle, faithful_raw = _vault_with_conversation_and_ordinary_drift(tmp_vault, tmp_path)
+
+    drift = RawContentDrift().detect(tmp_vault)
+    assert drift is not None and "d.md" in drift.detail
+    assert bundle.name not in drift.detail and "faithful.md" not in drift.detail
+
+    unstamped = RenderHashUnstamped().detect(tmp_vault)
+    assert unstamped is not None and "plain.md" in unstamped.detail
+    assert "faithful.md" not in unstamped.detail and bundle.name not in unstamped.detail
+
+    divergent = RenderHashDivergent().detect(tmp_vault)
+    assert divergent is not None and "edited.md" in divergent.detail
+    assert bundle.name not in divergent.detail and "faithful.md" not in divergent.detail
+
+
+def test_reconcile_raw_leaves_conversation_bundles_untouched(tmp_vault, tmp_path):
+    from agent_wiki.service import LocalVaultService
+    bundle, faithful_raw = _vault_with_conversation_and_ordinary_drift(tmp_vault, tmp_path)
+    bundle_before = bundle.read_bytes()
+    faithful_before = faithful_raw.read_bytes()
+
+    LocalVaultService(tmp_vault).doctor(reconcile_raw=True)
+
+    assert bundle.read_bytes() == bundle_before
+    assert faithful_raw.read_bytes() == faithful_before
+    assert "edited by hand" in (tmp_vault / "raw" / "d.md").read_text()
