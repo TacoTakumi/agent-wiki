@@ -1067,7 +1067,7 @@ agent-wiki/
     log.py            # append-only activity log
     redact.py         # secret redaction on ingest
     adapters/         # claude_code, opencode, pi, drop_zone
-    hooks/            # per-agent install backends (claude, manual)
+    hooks/            # per-agent install backends (claude, pi, opencode, manual)
     data/guide.md     # the canonical memory-file block
     skills/           # bundled agent skills (package data)
   tests/              # pytest suite
