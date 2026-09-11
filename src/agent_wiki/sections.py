@@ -84,3 +84,49 @@ def render_outline(text: str) -> str:
     order, with nothing else - no body text, no numbering.
     """
     return "".join(f"{raw}\n" for _, _, _, raw in scan_headings(text))
+
+
+def match_headings(text: str, query: str) -> list[tuple[int, int, str, str]]:
+    """Return the headings of `text` whose text matches `query`, in file order.
+
+    A match is a case-insensitive substring test against the heading text (the
+    line minus its leading '#' marks, whitespace-trimmed); `query` is trimmed
+    the same way.
+    """
+    needle = query.strip().lower()
+    return [h for h in scan_headings(text) if needle in h[2].lower()]
+
+
+def select_section(text: str, query: str) -> str | None:
+    """Return the first section of `text` whose heading matches `query`.
+
+    The section runs from its heading line through the line before the next
+    heading of the same or a higher level, or to the end of the text - so
+    deeper subsections come with it. Returns None when no heading matches.
+
+    Trailing blank lines are dropped and the result ends in exactly one
+    newline, so a section that ends at a heading and one that ends at EOF read
+    the same.
+    """
+    headings = scan_headings(text)
+    lines = text.split("\n")
+    needle = query.strip().lower()
+
+    for position, (index, level, heading_text, _raw) in enumerate(headings):
+        if needle not in heading_text.lower():
+            continue
+        end = len(lines)
+        for later_index, later_level, _, _ in headings[position + 1:]:
+            if later_level <= level:
+                end = later_index
+                break
+        return _as_block(lines[index:end])
+
+    return None
+
+
+def _as_block(lines: list[str]) -> str:
+    """Join `lines` into text ending in exactly one newline, blank tail dropped."""
+    while lines and not lines[-1].strip():
+        lines = lines[:-1]
+    return "".join(f"{line}\n" for line in lines)

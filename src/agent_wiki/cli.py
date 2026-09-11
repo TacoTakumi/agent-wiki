@@ -718,7 +718,9 @@ def search(query, topic, limit):
 @click.argument("path")
 @click.option("--outline", is_flag=True, default=False,
               help="Print only the page's heading lines, in file order.")
-def show(path, outline):
+@click.option("--section", "section", default=None, metavar="TEXT",
+              help="Print only the section whose heading contains TEXT.")
+def show(path, outline, section):
     """Print a wiki page (or any vault file) by its vault-relative path.
 
     With multiple vaults configured the path may carry a vault: prefix; an
@@ -726,9 +728,11 @@ def show(path, outline):
     is a hard error listing the qualified candidates). An extensionless page
     path falls back to <path>.md, with a warning on stderr.
 
-    --outline prints the page's heading lines only. Without it the page is
-    printed verbatim, frontmatter included."""
-    from agent_wiki.sections import render_outline, strip_frontmatter
+    --outline prints the page's heading lines only; --section TEXT prints the
+    first section whose heading contains TEXT, subsections included. Without
+    either the page is printed verbatim, frontmatter included."""
+    from agent_wiki.sections import (
+        match_headings, render_outline, select_section, strip_frontmatter)
 
     svc, ref = _dispatch_ref(path, _show_probe)
     try:
@@ -741,8 +745,20 @@ def show(path, outline):
             f"include the .md extension.", err=True)
     # Any sliced view drops the frontmatter, so what prints is plain markdown;
     # the flagless path stays byte-identical to the file.
+    if outline or section is not None:
+        content = strip_frontmatter(content)
+    if section is not None:
+        matches = match_headings(content, section)
+        if not matches:
+            raise click.ClickException(f"no heading matches: {section}")
+        content = select_section(content, section)
+        if len(matches) > 1:
+            others = "\n".join(raw for _, _, _, raw in matches[1:])
+            click.echo(
+                f"note: other headings also match '{section}':\n{others}",
+                err=True)
     if outline:
-        content = render_outline(strip_frontmatter(content))
+        content = render_outline(content)
     click.echo(content, nl=False)
     # Surface where the content was read from on stderr: a local absolute
     # path, or for a remote vault the server URL + vault-relative path. stdout stays
