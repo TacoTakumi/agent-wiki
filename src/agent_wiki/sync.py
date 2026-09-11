@@ -104,6 +104,24 @@ def sync(
                 results.append(SyncResult(source=name, key=str(ref), action="error", error=str(e)))
                 continue
 
+            # Consult state by the cheap session key first so an unchanged
+            # session costs one stat and no transcript parse. A key that
+            # cannot be derived (e.g. a malformed drop-zone bundle) falls
+            # through to to_bundle, which owns the error/quarantine path.
+            try:
+                key = adapter.session_key(ref)
+            except Exception:
+                key = None
+            prev = state.get(key) if key else None
+            if prev and prev.get("fingerprint") == fp:
+                results.append(SyncResult(source=name, key=key, action="skipped"))
+                continue
+
+            if dry_run:
+                action = "updated" if prev else "new"
+                results.append(SyncResult(source=name, key=key or str(ref), action=action))
+                continue
+
             try:
                 conv = adapter.to_bundle(ref)
             except Exception as e:
@@ -112,14 +130,6 @@ def sync(
 
             key = f"{conv.agent}:{conv.session_id}"
             prev = state.get(key)
-            if prev and prev.get("fingerprint") == fp:
-                results.append(SyncResult(source=name, key=key, action="skipped"))
-                continue
-
-            if dry_run:
-                action = "updated" if prev else "new"
-                results.append(SyncResult(source=name, key=key, action=action))
-                continue
 
             try:
                 # Drop-zone's to_bundle moves the file into raw/sessions/ itself;
