@@ -933,7 +933,11 @@ def sync(source, since, dry_run, include_live, detach, detached_worker):
         return
     kwargs = {}
     if detached_worker:
+        # Try the lock once, and reset this run's log only once we hold it,
+        # so a sweep that skips (or a later parent) never wipes a running
+        # sweep's output. The parent opened our stdout in append mode.
         kwargs["try_once"] = True
+        kwargs["on_locked"] = _reset_detached_log
     try:
         out = _service().sync(
             source=source, since=since, dry_run=dry_run, include_live=include_live,
@@ -961,22 +965,44 @@ def sync(source, since, dry_run, include_live, detach, detached_worker):
     )
 
 
+def _reset_detached_log() -> None:
+    """Truncate this vault's sync log and stamp the run header.
+
+    Called by the detached worker once it holds the vault locks. stdout is the
+    same file opened in append mode, so after truncation the run's output
+    lands right behind the header.
+    """
+    from datetime import datetime
+    from agent_wiki.locking import run_log_path
+
+    vault_path = get_vault_path()
+    log = run_log_path(vault_path, "sync")
+    sys.stdout.flush()
+    with open(log, "w", encoding="utf-8") as fh:
+        fh.write(
+            f"awiki sync started {datetime.now().isoformat(timespec='seconds')} "
+            f"vault={vault_path}\n"
+        )
+
+
 def _detach_sync(source, since, dry_run, include_live) -> None:
     """Spawn ``awiki sync`` as a detached background process and return.
 
     The child runs in its own session with stdin closed and stdout/stderr
-    redirected to a per-vault log file in the awiki state dir (truncated on
-    every run). Nothing here may raise: this is what agent startup hooks
-    call, and a failed spawn must not become a failed agent start, so a
-    spawn error is reported on stderr and the command still exits 0.
+    appended to a per-vault log file in the awiki state dir; the child itself
+    truncates that log once it holds the vault lock, so a run that skips
+    because another sweep is active only appends its one-line notice. This
+    function must not raise: it is what agent startup hooks call, and a
+    failed spawn must not become a failed agent start, so any error is
+    reported on stderr and the command still exits 0.
     """
-    import subprocess
-    from datetime import datetime
-    from agent_wiki.config import _raw_vault_override
-    from agent_wiki.locking import run_log_path
-
     try:
-        from agent_wiki.config import _override_entry_or_raise, _default_entry
+        import subprocess
+        from agent_wiki.config import (
+            _default_entry, _override_entry_or_raise, _raw_vault_override,
+        )
+        from agent_wiki.locking import run_log_path
+
         entry = _override_entry_or_raise() or _default_entry()
         if entry.url:  # url wins over a path, as in config.backend_for_entry
             click.echo(
@@ -1001,12 +1027,7 @@ def _detach_sync(source, since, dry_run, include_live) -> None:
             argv.append("--dry-run")
         if include_live:
             argv.append("--include-live")
-        with open(log, "w", encoding="utf-8") as fh:
-            fh.write(
-                f"awiki sync started {datetime.now().isoformat(timespec='seconds')} "
-                f"vault={vault_path}\n"
-            )
-            fh.flush()
+        with open(log, "a", encoding="utf-8") as fh:
             proc = subprocess.Popen(
                 argv,
                 stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,

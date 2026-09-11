@@ -227,3 +227,27 @@ def test_sync_identical_redrop_is_skipped_but_moved_out(tmp_vault, tmp_path):
     assert [r.action for r in results] == ["skipped"]
     assert not (zone / "one.md").exists()
     assert len(list((tmp_vault / BUNDLE_SUBDIR).glob("*.md"))) == 1
+
+
+def test_sync_dry_run_reports_malformed_bundle_as_error_without_quarantine(tmp_vault, tmp_path):
+    zone = tmp_path / "incoming"
+    zone.mkdir()
+    (zone / "bad.md").write_text(MALFORMED_BUNDLE)
+    _configure_vault(tmp_vault, zone)
+
+    results = sync(tmp_vault, dry_run=True)
+    assert [r.action for r in results] == ["error"]
+    assert "not a conversation bundle" in (results[0].error or "")
+    assert (zone / "bad.md").exists()
+    assert not (zone / "rejected").exists()
+
+
+def test_session_key_gives_up_on_unterminated_frontmatter(tmp_path):
+    zone = tmp_path / "incoming"
+    zone.mkdir()
+    body = "\n".join(f"line {i}" for i in range(5000))
+    (zone / "open.md").write_text("---\ntype: conversation\nagent: a\nsession_id: s\n" + body)
+    adapter = DropZoneAdapter({"path": str(zone)})
+    refs = list(adapter.discover())
+    with pytest.raises(ValueError):
+        adapter.session_key(refs[0])

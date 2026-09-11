@@ -114,8 +114,9 @@ def sync(
             # through to to_bundle, which owns the error/quarantine path.
             try:
                 key = adapter.session_key(ref)
-            except Exception:
-                key = None
+                key_error: str | None = None
+            except Exception as e:
+                key, key_error = None, str(e)
             prev = state.get(key) if key else None
             if prev and prev.get("fingerprint") == fp and not (_is_drop_zone(name) and not dry_run):
                 # Drop-zone's to_bundle is also what moves a dropped file out of
@@ -125,9 +126,13 @@ def sync(
 
             if dry_run and (prev is not None or _is_drop_zone(name)):
                 # Drop-zone's to_bundle moves the file, so a dry run may not
-                # parse it; its header-derived key is the parsed key anyway.
+                # parse it; its header-derived key is the parsed key anyway,
+                # and a header that yields no key is what a real run rejects.
+                if key is None:
+                    results.append(SyncResult(source=name, key=str(ref), action="error", error=key_error))
+                    continue
                 action = "updated" if prev else "new"
-                results.append(SyncResult(source=name, key=key or str(ref), action=action))
+                results.append(SyncResult(source=name, key=key, action=action))
                 continue
 
             # Unknown or changed by the cheap key: parse, then re-check state
