@@ -172,3 +172,47 @@ def test_session_key_from_row_id_without_opening_db(tmp_path, monkeypatch):
 
     assert key == f"{conv.agent}:{conv.session_id}"
     assert key == "opencode:ses_1"
+
+
+# --- DB path resolution: explicit config > `opencode db path` > historical default
+
+import os
+import stat
+
+from agent_wiki.adapters.opencode import DEFAULT_DB
+
+
+def _fake_opencode(tmp_path, monkeypatch, script: str) -> Path:
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    exe = bindir / "opencode"
+    exe.write_text("#!/bin/sh\n" + script + "\n")
+    exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("PATH", str(bindir))
+    return exe
+
+
+def test_db_path_explicit_config_wins(tmp_path, monkeypatch):
+    _fake_opencode(tmp_path, monkeypatch, 'echo /elsewhere/custom.db')
+    adapter = OpencodeAdapter({"db_path": str(tmp_path / "mine.db")})
+    assert adapter.db_path == tmp_path / "mine.db"
+
+
+def test_db_path_from_opencode_db_path_subcommand(tmp_path, monkeypatch):
+    custom = tmp_path / "opencode-prod.db"
+    _fake_opencode(tmp_path, monkeypatch,
+                   f'[ "$1" = "db" ] && [ "$2" = "path" ] && echo "{custom}" && exit 0; exit 2')
+    adapter = OpencodeAdapter({})
+    assert adapter.db_path == custom
+
+
+def test_db_path_default_when_no_binary(tmp_path, monkeypatch):
+    empty = tmp_path / "empty-bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    assert OpencodeAdapter({}).db_path == DEFAULT_DB
+
+
+def test_db_path_default_when_subcommand_fails(tmp_path, monkeypatch):
+    _fake_opencode(tmp_path, monkeypatch, 'echo "unknown command" >&2; exit 1')
+    assert OpencodeAdapter({}).db_path == DEFAULT_DB

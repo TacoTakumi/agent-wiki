@@ -1,8 +1,11 @@
 """Opencode adapter.
 
-Opencode stores sessions in SQLite at ``~/.local/share/opencode/opencode.db``
-(with a JSON file mirror under ``storage/`` that we don't use — the DB is
-authoritative). Relevant schema:
+Opencode stores sessions in SQLite under ``~/.local/share/opencode/`` (with a
+JSON file mirror under ``storage/`` that we don't use — the DB is
+authoritative). The database filename has changed across releases
+(``opencode.db`` -> ``opencode-prod.db``), so the path is resolved in order:
+explicit ``sources.opencode.db_path``, then the output of ``opencode db path``
+when the binary is on PATH, then the historical default. Relevant schema:
 
 - ``session`` — one row per conversation: ``id``, ``title``, ``directory``,
   ``time_created``, ``time_updated``, ``time_archived``.
@@ -18,7 +21,9 @@ to run against a live Opencode session.
 from __future__ import annotations
 
 import json
+import shutil
 import sqlite3
+import subprocess
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -31,6 +36,29 @@ DEFAULT_DB = Path.home() / ".local" / "share" / "opencode" / "opencode.db"
 LIVE_THRESHOLD = timedelta(minutes=60)
 
 TOOL_RESULT_MAX_CHARS = 500
+
+
+def resolve_db_path() -> Path:
+    """Ask the installed ``opencode`` for its live DB path; fall back to the default.
+
+    Any failure (no binary, unknown subcommand, timeout, empty output) falls
+    through silently to ``DEFAULT_DB``.
+    """
+    exe = shutil.which("opencode")
+    if not exe:
+        return DEFAULT_DB
+    try:
+        proc = subprocess.run(
+            [exe, "db", "path"], capture_output=True, text=True, timeout=10, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return DEFAULT_DB
+    if proc.returncode != 0:
+        return DEFAULT_DB
+    line = proc.stdout.strip().splitlines()[-1].strip() if proc.stdout.strip() else ""
+    if not line:
+        return DEFAULT_DB
+    return Path(line).expanduser()
 
 
 @dataclass
@@ -52,7 +80,7 @@ class OpencodeAdapter(ConversationAdapter):
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         super().__init__(config)
         db_path = self.config.get("db_path")
-        self.db_path = Path(db_path).expanduser() if db_path else DEFAULT_DB
+        self.db_path = Path(db_path).expanduser() if db_path else resolve_db_path()
         self.include_live = bool(self.config.get("include_live", False))
         self.since: datetime | None = None
 
