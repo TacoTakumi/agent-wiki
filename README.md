@@ -331,7 +331,7 @@ vault, so a fresh agent can run it in any repo. See
 Install the bundled agent skills into the harnesses on your machine and keep them
 current. See [Agent skills](#agent-skills).
 
-#### `awiki hook install|uninstall|status [--agent claude|pi|opencode|manual] [--only context|sweep] [--config-path PATH]`
+#### `awiki hook install|uninstall|status [--agent claude|pi|opencode|manual] [--config-path PATH]` (`install`/`uninstall` also take `--only context|sweep`)
 
 Wire awiki's two hooks into an agent CLI: the **startup sweep** (`awiki sync
 --detach` on every agent start) and, where the host supports it, the

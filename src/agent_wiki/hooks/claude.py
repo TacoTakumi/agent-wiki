@@ -115,12 +115,14 @@ def _remove_hook(data: dict, event: str, command: str) -> bool:
     groups = hooks.get(event) or []
     removed = False
     for group in groups:
-        before = len(group.get("hooks", []))
-        group["hooks"] = [h for h in group.get("hooks", []) if h.get("command") != command]
+        if "hooks" not in group:
+            continue  # foreign group shape; leave it exactly as found
+        before = len(group["hooks"])
+        group["hooks"] = [h for h in group["hooks"] if h.get("command") != command]
         if len(group["hooks"]) != before:
             removed = True
     if event in hooks:
-        hooks[event] = [g for g in groups if g.get("hooks")]
+        hooks[event] = [g for g in groups if g.get("hooks") or "hooks" not in g]
         if not hooks[event]:
             del hooks[event]
     if "hooks" in data and not data["hooks"]:

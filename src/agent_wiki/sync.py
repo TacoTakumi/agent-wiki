@@ -117,7 +117,9 @@ def sync(
             except Exception:
                 key = None
             prev = state.get(key) if key else None
-            if prev and prev.get("fingerprint") == fp:
+            if prev and prev.get("fingerprint") == fp and not (_is_drop_zone(name) and not dry_run):
+                # Drop-zone's to_bundle is also what moves a dropped file out of
+                # the zone, so a real run must parse it even when unchanged.
                 results.append(SyncResult(source=name, key=key, action="skipped"))
                 continue
 
