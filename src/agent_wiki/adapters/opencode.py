@@ -94,6 +94,9 @@ class OpencodeAdapter(ConversationAdapter):
                 directory=r["directory"] or "",
             )
 
+    def session_key(self, ref: OpencodeSessionRef) -> str:
+        return f"{self.name}:{ref.id}"
+
     def fingerprint(self, ref: OpencodeSessionRef) -> str:
         return f"time_updated:{ref.time_updated}"
 

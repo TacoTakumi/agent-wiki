@@ -168,3 +168,29 @@ def test_fingerprint_changes_on_mtime_change(tmp_path):
     os.utime(jsonl, (t, t))
     fp2 = adapter.fingerprint(jsonl)
     assert fp1 != fp2
+
+
+def test_session_key_from_filename_without_opening_body(tmp_path, monkeypatch):
+    root = tmp_path / "projects"
+    jsonl = root / "-home-user-proj" / "abc-123.jsonl"
+    _write_jsonl(jsonl, [
+        _user("hello", "2026-04-18T10:00:00Z", "abc-123"),
+        _assistant([{"type": "text", "text": "hi"}], "2026-04-18T10:00:05Z", session="abc-123"),
+    ])
+    adapter = ClaudeCodeAdapter({"path": str(root), "include_live": True})
+    conv = adapter.to_bundle(jsonl)
+
+    import builtins
+    real_open = builtins.open
+
+    def _no_open(*args, **kwargs):
+        raise AssertionError("session_key must not open the transcript")
+
+    monkeypatch.setattr(builtins, "open", _no_open)
+    try:
+        key = adapter.session_key(jsonl)
+    finally:
+        monkeypatch.setattr(builtins, "open", real_open)
+
+    assert key == f"{conv.agent}:{conv.session_id}"
+    assert key == "claude-code:abc-123"

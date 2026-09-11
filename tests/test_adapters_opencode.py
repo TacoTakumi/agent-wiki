@@ -156,3 +156,19 @@ def test_render_parts_handles_unknown_type():
 def test_missing_db_is_quiet(tmp_path):
     adapter = OpencodeAdapter({"db_path": str(tmp_path / "does-not-exist.db")})
     assert list(adapter.discover()) == []
+
+
+def test_session_key_from_row_id_without_opening_db(tmp_path, monkeypatch):
+    db = _fixture_session(tmp_path)
+    adapter = OpencodeAdapter({"db_path": str(db), "include_live": True})
+    refs = list(adapter.discover())
+    conv = adapter.to_bundle(refs[0])
+
+    def _no_connect(*args, **kwargs):
+        raise AssertionError("session_key must not open the database")
+
+    monkeypatch.setattr(sqlite3, "connect", _no_connect)
+    key = adapter.session_key(refs[0])
+
+    assert key == f"{conv.agent}:{conv.session_id}"
+    assert key == "opencode:ses_1"
