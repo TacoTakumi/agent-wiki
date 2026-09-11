@@ -53,8 +53,13 @@ below are reconstructed from the commits that bumped `__version__`.
   adapter now asks `opencode db path` (when the binary is on `PATH`) before
   falling back to `~/.local/share/opencode/opencode.db`, so the rename to
   `opencode-prod.db` in newer OpenCode releases no longer yields zero sessions.
+  `awiki init` no longer writes a `db_path` for OpenCode, so fresh vaults get
+  the resolved path; existing vaults keep whatever `db_path` they have.
 
 ### Fixed
+- **`awiki sync --since 2026-04-01` no longer crashes.** A bare date parsed
+  as a naive datetime and raised `TypeError` against the adapters' tz-aware
+  mtimes; it is now read as local time.
 - **`awiki sync --include-live` now reaches the adapters.** It used to
   mutate a config copy the sync loop never read, so the flag was a no-op for
   every source.

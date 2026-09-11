@@ -947,7 +947,8 @@ def sync(source, since, dry_run, include_live, detach, detached_worker):
         raise click.ClickException(str(e))
 
     if out.get("busy"):
-        click.echo("sync already running for this vault (lock held); skipping this run")
+        click.echo("sync already running for this vault, or another awiki process holds "
+                   "its lock; skipping this sweep")
         return
 
     for r in out["results"]:

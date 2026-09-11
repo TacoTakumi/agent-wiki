@@ -39,8 +39,10 @@ class ConversationAdapter(ABC):
     def session_key(self, ref: Any) -> str:
         """Return ``"<agent>:<session_id>"`` without parsing the transcript body.
 
-        Must equal ``f"{conv.agent}:{conv.session_id}"`` of the Conversation
-        that ``to_bundle(ref)`` would produce.
+        Should equal ``f"{conv.agent}:{conv.session_id}"`` of the Conversation
+        that ``to_bundle(ref)`` would produce; sync uses it to skip unchanged
+        sessions cheaply and re-checks state under the parsed key after any
+        parse, so a mismatch costs a parse, never a duplicate.
         """
 
     @abstractmethod

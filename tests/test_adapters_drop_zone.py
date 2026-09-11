@@ -272,3 +272,47 @@ def test_session_key_matches_read_bundle_verdicts(tmp_path):
     )
     assert adapter.session_key(DropZoneRef(path=long_md)) == "a:s"
     assert read_bundle(long_md).session_id == "s"
+
+
+def _verdict(fn):
+    try:
+        out = fn()
+    except Exception as e:
+        return ("error", type(e))
+    return ("key", out)
+
+
+@pytest.mark.parametrize("name, content", [
+    ("valid", "---\ntype: conversation\nagent: a\nsession_id: s\ntitle: t\n---\n\nbody\n"),
+    ("untitled", "---\ntype: conversation\nagent: a\nsession_id: s\n---\n\nbody\n"),
+    ("wrong-type", "---\ntype: document\nagent: a\nsession_id: s\ntitle: t\n---\n\nbody\n"),
+    ("short-unterminated", "---\ntype: conversation\nagent: a\nsession_id: s\ntitle: t\nbody\n"),
+    ("trailing-space-delimiter", "---\ntype: conversation\nagent: a\nsession_id: s\ntitle: t\n--- \n\nbody\n"),
+    ("invalid-yaml", "---\ntype: [conversation\nagent: a\n---\n\nbody\n"),
+    ("non-mapping", "---\n- just\n- a list\n---\n\nbody\n"),
+    ("empty-header", "---\n---\n\nbody\n"),
+    ("no-frontmatter", "# Just a page\n\nbody\n"),
+    ("long-header", "---\ntype: conversation\nagent: a\nsession_id: s\ntitle: t\n"
+                    + "".join(f"k{i}: v{i}\n" for i in range(300)) + "---\n\nbody\n"),
+])
+def test_session_key_verdict_matches_read_bundle(tmp_path, name, content):
+    zone = tmp_path / "incoming"
+    zone.mkdir()
+    md = zone / f"{name}.md"
+    md.write_text(content)
+    adapter = DropZoneAdapter({"path": str(zone)})
+
+    cheap = _verdict(lambda: adapter.session_key(DropZoneRef(path=md)))
+    full = _verdict(lambda: (lambda c: f"{c.agent}:{c.session_id}")(read_bundle(md)))
+    assert cheap == full, (name, cheap, full)
+
+
+def test_session_key_verdict_matches_read_bundle_on_invalid_utf8(tmp_path):
+    zone = tmp_path / "incoming"
+    zone.mkdir()
+    md = zone / "bad-bytes.md"
+    md.write_bytes(b"---\ntype: conversation\nagent: a\nsession_id: s\ntitle: \xff\n---\n\nbody\n")
+    adapter = DropZoneAdapter({"path": str(zone)})
+    cheap = _verdict(lambda: adapter.session_key(DropZoneRef(path=md)))
+    full = _verdict(lambda: read_bundle(md))
+    assert cheap[0] == full[0] == "error"
