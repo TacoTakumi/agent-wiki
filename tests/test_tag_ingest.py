@@ -82,7 +82,7 @@ def test_url_ingest_canonicalizes_identically(tmp_vault):
     assert parse_page(page)["meta"]["tags"] == ["stt"]
 
 
-# --- inert when unconfigured (REQ-07) ----------------------------------------
+# --- inert when unconfigured -------------------------------------------------
 
 
 def test_no_tags_block_is_inert(tmp_vault, tmp_path, capsys):
@@ -114,7 +114,7 @@ def test_cli_ingest_announces_remap(tmp_vault, tmp_config, tmp_path):
     assert page["meta"]["tags"] == ["stt"]
 
 
-# --- strict mode: rejection (T-04) -------------------------------------------
+# --- strict mode: rejection --------------------------------------------------
 
 
 def test_strict_novel_tag_aborts_before_any_mutation(tmp_vault, tmp_path):
@@ -158,7 +158,7 @@ def test_cli_strict_novel_tag_exits_nonzero(tmp_vault, tmp_config, tmp_path):
     assert not (tmp_vault / "research" / "strict-doc.md").exists()
 
 
-# --- per-ingest mode override (T-05) -----------------------------------------
+# --- per-ingest mode override ------------------------------------------------
 
 
 def _configured_mode(vault):

@@ -47,7 +47,7 @@ def test_rebuild_index_shows_tags(tmp_vault):
     assert "containers" in index_content
 
 
-# --- multi-vault index rebuild (T-13) ------------------------------------------
+# --- multi-vault index rebuild -------------------------------------------------
 
 def test_index_multi_vault_sections(two_vault_config, tmp_path):
     from click.testing import CliRunner

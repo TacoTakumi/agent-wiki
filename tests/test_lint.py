@@ -146,7 +146,7 @@ def test_lint_source_drift_distinct_from_raw_page_drift(tmp_vault, tmp_path):
     assert page_drift[0]["path"] != "raw/b.md"
 
 
-# --- opt-in URL re-fetch (REQ-20) -------------------------------------------
+# --- opt-in URL re-fetch ----------------------------------------------------
 
 class _FakeFetcher:
     """Records calls and returns fixed bytes — stands in for the network."""
@@ -209,7 +209,7 @@ def test_lint_without_refetch_makes_no_network(tmp_vault):
     assert [i for i in issues if i["type"] == "upstream_changed"] == []
 
 
-# --- stale-content (REQ-21) --------------------------------------------------
+# --- stale-content -----------------------------------------------------------
 
 def _seed_sourced_page(vault, slug, updated, ingested):
     """A page with sources whose sidecars carry the given ``ingested`` dates.
@@ -257,7 +257,7 @@ def test_lint_stale_content_uses_newest_source(tmp_vault):
     assert stale[0]["path"] == "research/multi.md"
 
 
-# --- page-size (REQ-22) ------------------------------------------------------
+# --- page-size ---------------------------------------------------------------
 
 def _body_of_lines(n):
     return "\n".join(f"line {i}" for i in range(n)) + "\n"
@@ -276,7 +276,7 @@ def test_lint_page_size_200_not_flagged(tmp_vault):
     assert sized == []
 
 
-# --- index-completeness (REQ-23) ---------------------------------------------
+# --- index-completeness ------------------------------------------------------
 
 def _index_missing(vault):
     return {i["path"] for i in lint_vault(vault) if i["type"] == "index_incomplete"}
@@ -299,7 +299,7 @@ def test_lint_index_complete_skips_frontmatterless_page(tmp_vault):
     assert "research/bare.md" not in _index_missing(tmp_vault)
 
 
-# --- per-vault wikilink and orphan semantics (T-14, REQ-20) --------------------
+# --- per-vault wikilink and orphan semantics -----------------------------------
 # Regression locks: wikilinks, broken-link lint, and orphan detection consider
 # only pages within the same vault. A title in another configured vault never
 # resolves and never rescues an orphan.

@@ -1,6 +1,6 @@
 """Context-local .agent-wiki/config.yaml: walk-up discovery bounded by $HOME,
 direnv-style trust gating with a one-line notice, and additive merge over the
-global config with local winning on name collision (T-05)."""
+global config with local winning on name collision."""
 
 import yaml
 import pytest
@@ -192,7 +192,7 @@ def test_no_local_config_is_global_only(tmp_path, monkeypatch, capsys):
 
 
 def test_relative_path_resolves_against_local_config_dir(tmp_path, monkeypatch):
-    """REQ-05 (T-27): a relative path: in a local config resolves against the
+    """A relative path: in a local config resolves against the
     directory containing .agent-wiki, not the process cwd."""
     from agent_wiki.config import load_registry
 
@@ -215,7 +215,7 @@ def test_relative_path_resolves_against_local_config_dir(tmp_path, monkeypatch):
 
 
 def test_name_override_sees_local_vaults(tmp_path, monkeypatch):
-    """REQ-06: --vault/AWIKI_VAULT name lookup consults the merged view."""
+    """--vault/AWIKI_VAULT name lookup consults the merged view."""
     from agent_wiki.config import get_vault_path
 
     g_main = make_vault(tmp_path / "g-main")

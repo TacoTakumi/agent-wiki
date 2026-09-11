@@ -258,7 +258,7 @@ def test_run_context_works_without_ripgrep(tmp_vault, monkeypatch):
     assert "Ingest Pipeline" in result
 
 
-# --- multi-vault hook (T-10) ---------------------------------------------------
+# --- multi-vault hook ----------------------------------------------------------
 
 from agent_wiki.context import run_context_multi
 from agent_wiki.registry import VaultEntry

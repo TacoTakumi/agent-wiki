@@ -1,5 +1,5 @@
 """Registry read layer: parsing the user config's vaults: map, with legacy
-vault_path/server synthesis as a single vault named main (T-01)."""
+vault_path/server synthesis as a single vault named main."""
 
 from pathlib import Path
 
@@ -46,7 +46,7 @@ def test_entry_with_neither_path_nor_url_errors_naming_entry():
 
 
 def test_entry_with_both_path_and_url_keeps_both_url_wins(tmp_path):
-    """An entry may carry both keys — a migrated legacy config does (T-22).
+    """An entry may carry both keys — a migrated legacy config does.
     The pair parses with the legacy-synthesis precedence: url wins at backend
     selection, the path stays for local resolution."""
     config = {

@@ -3,7 +3,7 @@
 ``Fetcher`` is the network boundary: given a URL it returns the raw bytes, the
 content type, and the (possibly redirected) canonical URL. Only the built-in
 ``HttpFetcher`` is provided; the interface is the documented extension point for
-a future agent-supplied fetcher (see REQ-06). Extraction (HTML -> clean
+a future agent-supplied fetcher. Extraction (HTML -> clean
 main-content markdown via trafilatura) runs on already-fetched bytes and makes
 no network call, so the ingest pipeline reaches the network *only* through a
 ``Fetcher``.
@@ -29,12 +29,12 @@ class UnsupportedContentType(ValueError):
     """A fetched content type the built-in fetcher does not extract. Only
     text-bearing types (HTML, and PDF once wired) are supported; image/audio/video
     and the like are unsupported rather than mis-ingested, pending a future
-    agent-supplied fetcher (REQ-25)."""
+    agent-supplied fetcher."""
 
 
 def is_url(arg: str) -> bool:
     """True if ``arg`` is an http(s) URL (routes to the fetch pipeline); anything
-    else is treated as a local filesystem path (REQ-05)."""
+    else is treated as a local filesystem path."""
     return arg.startswith(("http://", "https://"))
 
 

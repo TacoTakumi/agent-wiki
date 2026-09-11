@@ -54,7 +54,7 @@ def test_init_vault_already_exists(tmp_path, monkeypatch):
         init_vault(vault_path)
 
 
-# --- named init and registry-aware registration (T-18) -------------------------
+# --- named init and registry-aware registration --------------------------------
 
 def test_init_vault_named_registers_in_vaults_schema(tmp_path, monkeypatch):
     config_dir = tmp_path / "config"

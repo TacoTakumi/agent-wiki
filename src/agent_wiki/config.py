@@ -136,7 +136,7 @@ def save_user_config(config: dict) -> None:
 
 
 def migrate_to_vaults_schema(config: dict) -> dict:
-    """Return a copy of a user-config dict in the vaults: schema (REQ-24).
+    """Return a copy of a user-config dict in the vaults: schema.
 
     A config already carrying a vaults: block is returned unchanged (copied).
     Legacy keys synthesize the 'main' entry and are dropped: a config holding

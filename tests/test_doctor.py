@@ -271,7 +271,7 @@ def test_reconcile_raw_rewrites_from_page(tmp_vault, tmp_path):
 
 def test_reconcile_sidecar_refresh_keeps_invariant(tmp_vault, tmp_path):
     # reconcile-raw rewrites the raw body, so it must also refresh the sidecar
-    # sha256 (REQ-02 invariant) -- otherwise the sanctioned fix leaves a stale
+    # sha256 -- otherwise the sanctioned fix leaves a stale
     # sidecar and lint's source_drift false-fires on a just-reconciled raw.
     from agent_wiki.service import LocalVaultService
     from agent_wiki.page import load_sidecar, sha256_bytes
@@ -284,7 +284,7 @@ def test_reconcile_sidecar_refresh_keeps_invariant(tmp_vault, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# render_hash migration stamp (T-06 / REQ-07, REQ-09)
+# render_hash migration stamp
 # ---------------------------------------------------------------------------
 
 
@@ -339,7 +339,7 @@ def test_render_hash_stamp_fix_writes_canonical_value(tmp_vault, tmp_path):
 def test_render_hash_stamp_skips_divergent_page(tmp_vault, tmp_path):
     # An un-hashed page whose body diverges from its raw is a pre-existing
     # hand-edit: the stamp check must NOT adopt it as a baseline (that is the
-    # divergent-report check's job, T-07). It stays un-hashed, bytes unchanged.
+    # divergent-report check's job). It stays un-hashed, bytes unchanged.
     from agent_wiki.doctor import RenderHashUnstamped
     from agent_wiki.page import parse_page
     page = _unhashed_faithful_page(tmp_vault, tmp_path, "delta", body="keep me")
@@ -393,7 +393,7 @@ def test_render_hash_stamp_cli_preview_writes_nothing(tmp_config, tmp_vault, tmp
 
 def test_render_hash_stamp_cli_bare_does_not_mutate(tmp_config, tmp_vault, tmp_path):
     # Preview-by-default: even an interactive `doctor` that confirms every schema
-    # prompt must not stamp render_hash — only `doctor --fix` mutates (REQ-09).
+    # prompt must not stamp render_hash — only `doctor --fix` mutates.
     from agent_wiki.page import parse_page
     page = _unhashed_faithful_page(tmp_vault, tmp_path, "theta")
 
@@ -403,7 +403,7 @@ def test_render_hash_stamp_cli_bare_does_not_mutate(tmp_config, tmp_vault, tmp_p
 
 
 # ---------------------------------------------------------------------------
-# render_hash divergent report (T-07 / REQ-08)
+# render_hash divergent report
 # ---------------------------------------------------------------------------
 
 
@@ -446,7 +446,7 @@ def test_render_hash_divergent_fix_is_noop(tmp_vault, tmp_path):
 
 
 def test_render_hash_divergent_cli_reports_but_never_stamps(tmp_config, tmp_vault, tmp_path):
-    # doctor --fix must NOT stamp or adopt a divergent un-hashed page (REQ-08):
+    # doctor --fix must NOT stamp or adopt a divergent un-hashed page:
     # it is reported for review and left byte-identical, still un-hashed.
     from agent_wiki.page import parse_page
     page = _unhashed_divergent_page(tmp_vault, tmp_path, "nu")
@@ -461,7 +461,7 @@ def test_render_hash_divergent_cli_reports_but_never_stamps(tmp_config, tmp_vaul
     assert page.read_bytes() == before
 
 
-# --- multi-vault doctor diagnostics (T-13) -------------------------------------
+# --- multi-vault doctor diagnostics --------------------------------------------
 
 def test_doctor_multi_vault_diagnostic_sections_exit_zero(two_vault_config):
     result = CliRunner().invoke(cli, ["doctor"])

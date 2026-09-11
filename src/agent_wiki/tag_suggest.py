@@ -1,4 +1,4 @@
-"""Draft tag-vocabulary suggestion engine (REQ-10).
+"""Draft tag-vocabulary suggestion engine.
 
 Pure string heuristics — no ML. From a frequency map of in-use tags this groups
 obvious related tags (shared hyphen/underscore token, or one a prefix of another)

@@ -1,4 +1,4 @@
-"""Round-trip-safe writer for a wiki.yaml 'tags:' block (REQ-11).
+"""Round-trip-safe writer for a wiki.yaml 'tags:' block.
 
 A `tag add` / `tag suggest --write` must edit only the 'tags:' block and leave
 the rest of wiki.yaml — every other key, its ordering, and any comment — byte for

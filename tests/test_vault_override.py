@@ -93,7 +93,7 @@ def test_stale_configured_vault_names_config_file_and_key(tmp_path, isolated_env
 def test_stale_vault_error_names_registry_entry_for_vaults_schema(
     tmp_path, isolated_env
 ):
-    """T-28: a vaults:-schema entry pointing nowhere is reported by vault name
+    """A vaults:-schema entry pointing nowhere is reported by vault name
     and its path: key — not the legacy vault_path wording."""
     config_dir = tmp_path / "config"
     cfg = _write_config(config_dir, {
@@ -231,7 +231,7 @@ def test_dot_slash_forces_path_interpretation(tmp_path, isolated_env, monkeypatc
 
 
 def test_vault_flag_name_beats_env_name_beats_default(tmp_path, isolated_env):
-    """REQ-06 precedence with names: --vault beats AWIKI_VAULT beats the
+    """Precedence with names: --vault beats AWIKI_VAULT beats the
     configured default."""
     vaults = {n: _make_vault(tmp_path / n) for n in ("alpha", "beta", "gamma")}
     config_dir = tmp_path / "config"

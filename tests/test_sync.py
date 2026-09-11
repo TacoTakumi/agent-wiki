@@ -220,7 +220,7 @@ def test_sync_cli_source_filter(tmp_path, monkeypatch):
     assert "1 new" in forced.output
 
 
-# --- multi-vault: sync touches exactly one vault (T-15, REQ-19) ----------------
+# --- multi-vault: sync touches exactly one vault -------------------------------
 
 def test_sync_touches_only_default_vault(tmp_path, monkeypatch):
     from conftest import make_vault

@@ -63,7 +63,7 @@ class RemoteVaultService(VaultService):
     def describe_location(self, rel: str) -> str:
         """Where a vault-relative page lives for a remote vault: the server URL plus
         the vault-relative path — never a local filesystem path, since the page is on
-        the server, not this client's disk (REQ-12)."""
+        the server, not this client's disk."""
         return f"{self.base} :: {rel}"
 
     def status(self) -> dict:
@@ -75,7 +75,7 @@ class RemoteVaultService(VaultService):
 
     def lint(self, refetch: bool = False) -> list[dict]:
         # --refetch is client-side only: the awiki server performs no outbound
-        # fetch (D-17/REQ-09), and the remote client has no local copy of the
+        # fetch, and the remote client has no local copy of the
         # raws/sidecars to fetch from, so refetch against a remote vault is
         # unsupported rather than silently delegated to the server.
         if refetch:
@@ -113,7 +113,7 @@ class RemoteVaultService(VaultService):
 
     def ingest_url(self, url, topic=None, tags=None, update=False, force=False,
                    tag_mode=None) -> dict:
-        # Client-side fetch + extract (D-17/REQ-09): we ship the extracted markdown
+        # Client-side fetch + extract: we ship the extracted markdown
         # plus the original asset to the server, which never fetches. Note the fetch
         # is delegated to fetch_and_extract — no Fetcher is referenced inline here.
         from agent_wiki.ingest import UnchangedURLSkip, fetch_and_extract

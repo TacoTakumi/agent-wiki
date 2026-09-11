@@ -9,6 +9,13 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.9.1]
+
+### Fixed
+- Code comments and docstrings in `src/` and `tests/` no longer carry internal
+  planning IDs (requirement, task, and decision references). The 0.9.0 build
+  failed the release leak scan on them. No behaviour change.
+
 ## [0.9.0]
 
 ### Added

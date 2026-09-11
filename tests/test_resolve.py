@@ -1,5 +1,5 @@
 """Cross-vault reference resolver: the vault: prefix parse rule plus
-unique-wins / loud-ambiguity resolution across configured vaults (T-07)."""
+unique-wins / loud-ambiguity resolution across configured vaults."""
 
 from pathlib import Path
 

@@ -321,7 +321,7 @@ def init(path, url, token, clear, vault_name, topics_opt):
                 or config.get("trusted_dirs") or config.get("vault_path")):
             # A named init, or a config holding anything a wipe would lose
             # (a registry, a trust allowlist, a local vault_path): the remote
-            # lands as a vaults: entry via the REQ-24 migration, preserving
+            # lands as a vaults: entry via migrate_to_vaults_schema, preserving
             # every existing entry and trusted_dirs. Merging onto an existing
             # entry keeps its path beside the url (the hybrid form: url wins
             # at backend selection, the path serves local resolution).
@@ -333,7 +333,7 @@ def init(path, url, token, clear, vault_name, topics_opt):
             config.setdefault("vaults", {})[name] = entry
             save_user_config(config)
         else:
-            # Legacy form, byte-equivalent to the current release (REQ-24).
+            # Legacy form, byte-equivalent to the current release.
             save_user_config({"server": {"url": url, "token": token}})
         click.echo(f"Connected to remote vault at {url}")
         return
@@ -611,7 +611,7 @@ def reingest(name, force):
     except (FileNotFoundError, ValueError) as e:
         raise click.ClickException(str(e))
     click.echo(f"Reingested {ref} -> {out['page']}")
-    # Surface where the page landed on stderr (REQ-12): a local absolute path, or
+    # Surface where the page landed on stderr: a local absolute path, or
     # for a remote vault the server URL + vault-relative path. stdout stays clean.
     click.echo(svc.describe_location(out["page"]), err=True)
 
@@ -733,7 +733,7 @@ def show(path):
             f"warning: '{ref}' resolved to '{shown}'; wiki page paths "
             f"include the .md extension.", err=True)
     click.echo(content, nl=False)
-    # Surface where the content was read from on stderr (REQ-13): a local absolute
+    # Surface where the content was read from on stderr: a local absolute
     # path, or for a remote vault the server URL + vault-relative path. stdout stays
     # byte-identical to the file so skills that parse show output verbatim are unaffected.
     click.echo(svc.describe_location(shown), err=True)
@@ -860,7 +860,7 @@ def lint(refetch, strict):
 
         click.echo(f"\n{len(issues)} issue(s) found.")
 
-        # --strict gates the exit code only (REQ-13): tag-audit findings fail CI
+        # --strict gates the exit code only: tag-audit findings fail CI
         # while plain lint stays report-only. The printed findings are unchanged.
         if strict and any(i["type"] == "tag_audit" for i in issues):
             sys.exit(1)
@@ -1122,7 +1122,7 @@ def doctor(fix, dry_run, reconcile_raw):
         click.echo(f"  [{f.check.name}] {f.detail}")
         informational = isinstance(f.check, (SourcePathMissing, RenderHashDivergent))
         is_reconcile = isinstance(f.check, RawContentDrift)
-        # The render_hash migration stamp is preview-by-default (REQ-09): list it
+        # The render_hash migration stamp is preview-by-default: list it
         # but write nothing unless --fix is passed — never via interactive confirm.
         is_stamp = isinstance(f.check, RenderHashUnstamped)
 

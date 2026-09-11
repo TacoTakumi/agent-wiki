@@ -1,4 +1,4 @@
-"""Round-trip-safe wiki.yaml 'tags:' block writer (REQ-11).
+"""Round-trip-safe wiki.yaml 'tags:' block writer.
 
 A tag-command write must edit only the 'tags:' block: every other key, its
 ordering, and any comment must survive byte-for-byte. These tests pin that the

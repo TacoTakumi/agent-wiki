@@ -79,7 +79,7 @@ class VaultService(ABC):
                    tags: list[str] | None = None, update: bool = False,
                    force: bool = False, tag_mode: str | None = None) -> dict:
         # Concrete default so any non-overriding service stays instantiable; both
-        # the local facade and the remote client implement it (REQ-17).
+        # the local facade and the remote client implement it.
         raise NotImplementedError("URL ingest is not available for this service")
 
     @abstractmethod
@@ -135,7 +135,7 @@ class LocalVaultService(VaultService):
     def describe_location(self, rel: str) -> str:
         """Where a vault-relative page/file actually lives on this machine: its
         absolute filesystem path. Surfaced on stderr so an agent can open, diff,
-        or edit the file directly (REQ-12)."""
+        or edit the file directly."""
         return str(self.vault_path / rel)
 
     def status(self) -> dict:
@@ -198,7 +198,7 @@ class LocalVaultService(VaultService):
                          topic: str | None = None, tags: list[str] | None = None,
                          update: bool = False, force: bool = False,
                          tag_mode: str | None = None) -> dict:
-        # Server-side seam (D-17/REQ-09): ingest already-fetched, already-extracted
+        # Server-side seam: ingest already-fetched, already-extracted
         # content. No Fetcher is constructed here, so the server makes no outbound
         # request — the remote client did the fetch+extract.
         with file_lock(self.vault_path, "log"):

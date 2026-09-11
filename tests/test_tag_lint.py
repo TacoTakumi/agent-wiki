@@ -1,4 +1,4 @@
-"""tag-audit lint check (REQ-12, REQ-02).
+"""tag-audit lint check.
 
 A read-only check flagging alias tags (fixable) and novel out-of-vocabulary tags
 per page, plus vocabulary conflicts — inert when no vocabulary is configured."""
@@ -67,7 +67,7 @@ def test_reports_vocabulary_conflict(tmp_vault):
     assert conflict, findings
 
 
-# --- lint --strict CI gate (REQ-13) ------------------------------------------
+# --- lint --strict CI gate ---------------------------------------------------
 
 
 def test_strict_gates_exit_code_only(tmp_config, tmp_vault):

@@ -1,4 +1,4 @@
-"""REQ-11 regression lock: render_hash is additive, optional frontmatter.
+"""Regression lock: render_hash is additive, optional frontmatter.
 
 A shared vault routinely holds a *mix* of pages — some written by current awiki
 (carrying render_hash) and some by older awiki or foreign tools (no render_hash).
@@ -46,7 +46,7 @@ def test_show_unhashed_page_is_verbatim_and_hashless(tmp_config, tmp_vault, tmp_
     result = CliRunner().invoke(cli, ["show", _rel(tmp_vault, page)])
     assert result.exit_code == 0, result.output
     # show is verbatim: its stdout is the on-disk bytes, and an un-hashed page has
-    # no render_hash to leak. (The resolved read location goes to stderr, REQ-13.)
+    # no render_hash to leak. (The resolved read location goes to stderr.)
     assert result.stdout == page.read_text()
     assert "render_hash" not in result.stdout
 
@@ -83,7 +83,7 @@ def test_render_hash_is_inert_to_read_paths(tmp_config, tmp_vault, tmp_path):
 
     # search / lint / status: stdout unchanged by the added frontmatter field.
     # (Compare stdout, not merged output: show now writes a read location to
-    # stderr per REQ-13 — orthogonal to whether render_hash perturbs content.)
+    # stderr — orthogonal to whether render_hash perturbs content.)
     assert after["search"].stdout == before["search"].stdout
     assert after["lint"].stdout == before["lint"].stdout
     assert after["status"].stdout == before["status"].stdout
