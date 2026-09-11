@@ -2,6 +2,7 @@
 
 from agent_wiki.sections import (
     match_headings,
+    slice_children,
     scan_headings,
     select_section,
     strip_frontmatter,
@@ -157,3 +158,92 @@ def test_select_section_returns_none_when_no_heading_matches():
 
 def test_select_section_ends_with_a_newline_when_the_source_does_not():
     assert select_section("## A\nbody", "a") == "## A\nbody\n"
+
+
+CHECK_LOG_SECTION = """## Check log
+
+Preamble.
+
+### One
+
+Body one.
+
+#### One detail
+
+Detail one.
+
+### Two
+
+Body two.
+
+### Three
+
+Body three.
+"""
+
+LEAF_SECTION = "## Notes\n\nJust body text.\n"
+
+
+def test_slice_children_head_keeps_heading_preamble_and_first_children():
+    assert slice_children(CHECK_LOG_SECTION, head=2) == (
+        "## Check log\n"
+        "\n"
+        "Preamble.\n"
+        "\n"
+        "### One\n"
+        "\n"
+        "Body one.\n"
+        "\n"
+        "#### One detail\n"
+        "\n"
+        "Detail one.\n"
+        "\n"
+        "### Two\n"
+        "\n"
+        "Body two.\n"
+    )
+
+
+def test_slice_children_head_of_one_keeps_the_childs_own_subsections():
+    out = slice_children(CHECK_LOG_SECTION, head=1)
+    assert "#### One detail" in out
+    assert "### Two" not in out
+
+
+def test_slice_children_tail_keeps_the_last_children():
+    assert slice_children(CHECK_LOG_SECTION, tail=2) == (
+        "## Check log\n"
+        "\n"
+        "Preamble.\n"
+        "\n"
+        "### Two\n"
+        "\n"
+        "Body two.\n"
+        "\n"
+        "### Three\n"
+        "\n"
+        "Body three.\n"
+    )
+
+
+def test_slice_children_head_beyond_the_child_count_keeps_all():
+    assert slice_children(CHECK_LOG_SECTION, head=9) == CHECK_LOG_SECTION
+
+
+def test_slice_children_tail_beyond_the_child_count_keeps_all():
+    assert slice_children(CHECK_LOG_SECTION, tail=9) == CHECK_LOG_SECTION
+
+
+def test_slice_children_head_on_a_leaf_section_returns_it_unchanged():
+    assert slice_children(LEAF_SECTION, head=1) == LEAF_SECTION
+
+
+def test_slice_children_tail_on_a_leaf_section_returns_it_unchanged():
+    assert slice_children(LEAF_SECTION, tail=1) == LEAF_SECTION
+
+
+def test_slice_children_head_ignores_headings_nested_under_a_child():
+    text = "## Top\n\n### A\n\n#### A one\n\n#### A two\n\n### B\n\nb\n"
+    assert slice_children(text, head=1) == (
+        "## Top\n\n### A\n\n#### A one\n\n#### A two\n"
+    )

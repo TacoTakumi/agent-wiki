@@ -130,3 +130,51 @@ def _as_block(lines: list[str]) -> str:
     while lines and not lines[-1].strip():
         lines = lines[:-1]
     return "".join(f"{line}\n" for line in lines)
+
+
+def slice_children(text: str, head: int | None = None,
+                   tail: int | None = None) -> str:
+    """Return `text` reduced to its first `head` or last `tail` child sections.
+
+    `text` is a section: its first heading is the section's own heading, and a
+    direct child is a heading below it that is not nested under another heading
+    inside the section. The section heading and its preamble (everything before
+    the first child) are always kept, and each kept child brings its own
+    subsections. A count beyond the number of children keeps them all, and a
+    section with no children is returned unchanged.
+    """
+    if head is None and tail is None:
+        return text
+
+    headings = scan_headings(text)
+    children = _direct_children(headings[1:])
+    if not children:
+        return text
+
+    lines = text.split("\n")
+    starts = [child[0] for child in children]
+    bounds = list(zip(starts, starts[1:] + [len(lines)]))
+    kept = bounds[:head] if head is not None else bounds[-tail:]
+
+    sliced = lines[:starts[0]]
+    for start, end in kept:
+        sliced += lines[start:end]
+    return _as_block(sliced)
+
+
+def _direct_children(
+    inner: list[tuple[int, int, str, str]],
+) -> list[tuple[int, int, str, str]]:
+    """Of the headings inside a section, those not nested under another one.
+
+    A heading is a direct child when no earlier heading in the section is
+    shallower than it, so a run of deeper headings attaches to the child above
+    them rather than becoming children in its own right.
+    """
+    children = []
+    shallowest = None
+    for heading in inner:
+        if shallowest is None or heading[1] <= shallowest:
+            children.append(heading)
+        shallowest = heading[1] if shallowest is None else min(shallowest, heading[1])
+    return children
