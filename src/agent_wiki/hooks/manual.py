@@ -27,7 +27,7 @@ def install(config_path: Path | None = None, only: str | None = None) -> str:
     return INSTRUCTIONS
 
 
-def uninstall(config_path: Path | None = None) -> str:
+def uninstall(config_path: Path | None = None, only: str | None = None) -> str:
     return "Manual backend has nothing to remove."
 
 

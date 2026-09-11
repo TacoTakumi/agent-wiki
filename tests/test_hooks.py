@@ -381,3 +381,69 @@ def test_cli_hook_install_rejects_unknown_only(tmp_settings):
         "--config-path", str(tmp_settings),
     ])
     assert result.exit_code != 0
+
+
+def test_claude_uninstall_removes_both_hooks_and_empty_groups(tmp_settings):
+    tmp_settings.write_text(json.dumps({"model": "claude-opus-4-7"}))
+    claude_backend.install(config_path=tmp_settings)
+    claude_backend.uninstall(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    assert data == {"model": "claude-opus-4-7"}
+
+
+def test_claude_uninstall_only_sweep_keeps_context(tmp_settings):
+    claude_backend.install(config_path=tmp_settings)
+    claude_backend.uninstall(config_path=tmp_settings, only="sweep")
+    data = json.loads(tmp_settings.read_text())
+    assert "awiki context" in _commands(data, "UserPromptSubmit")
+    assert "SessionStart" not in data["hooks"]
+
+
+def test_claude_uninstall_only_context_keeps_sweep(tmp_settings):
+    claude_backend.install(config_path=tmp_settings)
+    claude_backend.uninstall(config_path=tmp_settings, only="context")
+    data = json.loads(tmp_settings.read_text())
+    assert "awiki sync --detach" in _commands(data, "SessionStart")
+    assert "UserPromptSubmit" not in data["hooks"]
+
+
+def test_claude_uninstall_keeps_foreign_session_start_hook(tmp_settings):
+    tmp_settings.write_text(json.dumps({
+        "hooks": {"SessionStart": [{"matcher": "startup",
+                                    "hooks": [{"type": "command", "command": "echo hi"}]}]},
+    }))
+    claude_backend.install(config_path=tmp_settings)
+    claude_backend.uninstall(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    assert _commands(data, "SessionStart") == ["echo hi"]
+    assert "UserPromptSubmit" not in data["hooks"]
+
+
+def test_claude_status_names_each_hook(tmp_settings):
+    msg = claude_backend.status(config_path=tmp_settings)
+    lines = [l for l in msg.splitlines() if l.strip()]
+    context = [l for l in lines if "context" in l and "UserPromptSubmit" in l]
+    sweep = [l for l in lines if "sweep" in l and "SessionStart" in l]
+    assert len(context) == 1 and "not installed" in context[0].lower()
+    assert len(sweep) == 1 and "not installed" in sweep[0].lower()
+
+    claude_backend.install(config_path=tmp_settings, only="sweep")
+    msg = claude_backend.status(config_path=tmp_settings)
+    lines = [l for l in msg.splitlines() if l.strip()]
+    context = [l for l in lines if "context" in l and "UserPromptSubmit" in l][0]
+    sweep = [l for l in lines if "sweep" in l and "SessionStart" in l][0]
+    assert "not installed" in context.lower()
+    assert "not installed" not in sweep.lower() and "installed" in sweep.lower()
+
+
+def test_cli_hook_uninstall_only_sweep(tmp_settings):
+    runner = CliRunner()
+    runner.invoke(cli, ["hook", "install", "--agent", "claude", "--config-path", str(tmp_settings)])
+    result = runner.invoke(cli, [
+        "hook", "uninstall", "--agent", "claude", "--only", "sweep",
+        "--config-path", str(tmp_settings),
+    ])
+    assert result.exit_code == 0, result.output
+    data = json.loads(tmp_settings.read_text())
+    assert "awiki context" in _commands(data, "UserPromptSubmit")
+    assert "SessionStart" not in data["hooks"]

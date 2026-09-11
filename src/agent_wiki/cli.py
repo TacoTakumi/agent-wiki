@@ -1255,8 +1255,10 @@ def hook_install(agent, config_path, only):
 @hook_group.command("uninstall")
 @click.option("--agent", default="claude")
 @click.option("--config-path", default=None, type=click.Path())
-def hook_uninstall(agent, config_path):
-    """Remove the auto-context hook from the target agent's settings."""
+@click.option("--only", default=None, type=click.Choice(["context", "sweep"]),
+              help="Remove just one hook: 'context' or 'sweep'. Default: both.")
+def hook_uninstall(agent, config_path, only):
+    """Remove awiki's hooks from the target agent's settings."""
     from agent_wiki.hooks import get_backend
     try:
         backend = get_backend(agent)
@@ -1264,7 +1266,7 @@ def hook_uninstall(agent, config_path):
         raise click.ClickException(str(exc))
     path = Path(config_path) if config_path else None
     try:
-        msg = backend["uninstall"](config_path=path)
+        msg = backend["uninstall"](config_path=path, only=only)
     except ValueError as exc:
         raise click.ClickException(str(exc))
     click.echo(msg)
