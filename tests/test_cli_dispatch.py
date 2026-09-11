@@ -32,9 +32,9 @@ def test_init_remote_writes_server_block(tmp_path, monkeypatch):
 
 
 def test_init_remote_preserves_registry_and_trust(tmp_path, monkeypatch):
-    """T-23: init --remote against a config holding vaults: and trusted_dirs
+    """init --remote against a config holding vaults: and trusted_dirs
     preserves every entry and the allowlist — the remote lands as a vaults:
-    entry via the REQ-24 migration, never a config wipe."""
+    entry via migrate_to_vaults_schema, never a config wipe."""
     cd = tmp_path / "config"
     _write_user_config(cd, {
         "vaults": {"work": {"path": str(tmp_path / "work")}},
@@ -52,7 +52,7 @@ def test_init_remote_preserves_registry_and_trust(tmp_path, monkeypatch):
 
 
 def test_init_remote_with_name_registers_named_entry(tmp_path, monkeypatch):
-    """T-23: a named remote init is a needs-more write (REQ-24) and lands in
+    """A named remote init is a needs-more write and lands in
     the vaults: schema even from an empty config."""
     cd = tmp_path / "config"
     monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cd))
@@ -68,8 +68,8 @@ def test_init_remote_with_name_registers_named_entry(tmp_path, monkeypatch):
 def test_init_remote_on_trusted_legacy_config_keeps_local_main(
     tmp_path, monkeypatch
 ):
-    """T-23: a legacy vault_path config with trusted_dirs migrates on remote
-    init; the url/token merge onto main beside its path (T-22 hybrid form)."""
+    """A legacy vault_path config with trusted_dirs migrates on remote
+    init; the url/token merge onto main beside its path (the hybrid form)."""
     cd = tmp_path / "config"
     _write_user_config(cd, {
         "vault_path": str(tmp_path / "v"),
@@ -93,7 +93,7 @@ def test_init_remote_on_trusted_legacy_config_keeps_local_main(
 def test_init_remote_on_vault_path_only_config_keeps_local_path(
     tmp_path, monkeypatch
 ):
-    """T-30: init --remote against a config holding only vault_path must not
+    """init --remote against a config holding only vault_path must not
     drop the local vault — it migrates to a hybrid main entry carrying the
     path beside the new url/token (the last destructive init path)."""
     cd = tmp_path / "config"
@@ -148,7 +148,7 @@ def test_init_remote_prompt_shows_url_example(tmp_path, monkeypatch):
     assert "Server URL (e.g. http://host:8731)" in res.output
 
 
-# --- no default-vault mutator exists (T-20, REQ-04) ----------------------------
+# --- no default-vault mutator exists -------------------------------------------
 
 def test_awiki_use_is_an_unknown_command():
     from click.testing import CliRunner

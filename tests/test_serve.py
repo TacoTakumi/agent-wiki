@@ -8,7 +8,7 @@ def test_serve_builds_app(tmp_config):
     assert c.get("/v1/status").status_code == 401
 
 
-# --- one vault per serve instance (T-19, REQ-26) -------------------------------
+# --- one vault per serve instance ----------------------------------------------
 
 def test_serve_instances_from_one_config_serve_different_vaults(
         tmp_path, monkeypatch, server_tokens):

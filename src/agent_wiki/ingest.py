@@ -47,7 +47,7 @@ def _resolve_tags(tags: list[str], vocab) -> list[str]:
     """Canonicalize a page's tags pre-flight and return the canonical list.
 
     In strict mode a novel tag raises StrictTagError BEFORE the caller mutates the
-    vault, so the ingest aborts cleanly (REQ-06). Otherwise each alias remap is
+    vault, so the ingest aborts cleanly. Otherwise each alias remap is
     announced and each novel tag warned (warn mode). With an off/empty vocabulary
     this is inert: canonicalize_tags returns the tags untouched with no remaps or
     novel tags, so nothing prints and a no-`tags:`-block vault is unaffected."""
@@ -96,7 +96,7 @@ def _first_h1(markdown: str) -> str | None:
 
 
 def _resolve_title(extractor_title: str | None, markdown: str, slug: str) -> str:
-    """Fetched-page title precedence (REQ-15): extractor title metadata, then the
+    """Fetched-page title precedence: extractor title metadata, then the
     first markdown H1, then the URL-derived slug."""
     if extractor_title and extractor_title.strip():
         return extractor_title.strip()
@@ -188,7 +188,7 @@ def ingest_file(
     ``title_override`` forces the page title (URL ingest resolves it by precedence
     before calling); otherwise the title comes from the first heading or filename.
     ``tag_mode`` forces the vocabulary mode (off|warn|strict) for this one ingest,
-    overriding the vault's configured mode without mutating it (REQ-14).
+    overriding the vault's configured mode without mutating it.
     Returns the path to the created/updated wiki page.
     """
     if not source.exists():
@@ -238,8 +238,8 @@ def ingest_file(
             # the stamp, not the raw: the guard fires iff the current page body no
             # longer hashes to its stored render_hash. Editing only the raw leaves
             # the page body — and its hash — untouched, so a reingest rebuilds
-            # cleanly (REQ-03). Pages without a stamp (legacy/foreign) fall back to
-            # the page-vs-raw comparison; T-04 refines that to lazy TOFU.
+            # cleanly. Pages without a stamp (legacy/foreign) fall back to
+            # the page-vs-raw comparison.
             if not force and raw_dest.is_file():
                 try:
                     existing_raw = raw_dest.read_text()
@@ -283,7 +283,7 @@ def ingest_file(
         )
 
     # Resolve + canonicalize the effective tags BEFORE any mutation, so a strict
-    # rejection of a novel tag aborts with no raw/sidecar/page written (REQ-06).
+    # rejection of a novel tag aborts with no raw/sidecar/page written.
     if update and old_path is not None:
         eff_tags = tags if tags is not None else (old_meta.get("tags") or [])
     else:
@@ -345,7 +345,7 @@ def ingest_file(
 
 
 # Content-type -> archived-asset extension. Unmapped text types get a sane
-# default (REQ-10 / asset-extension open question); PDF arrives with T-10.
+# default.
 _ASSET_EXT = {"text/html": ".html", "application/pdf": ".pdf"}
 
 
@@ -371,7 +371,7 @@ def _archive_asset(vault_path: Path, name: str, body: bytes,
 
 
 def normalize_url(url: str) -> str:
-    """Canonicalize a URL for naming + dedup (REQ-14): lowercase scheme and host,
+    """Canonicalize a URL for naming + dedup: lowercase scheme and host,
     strip the default port, drop the fragment, and trim a single trailing slash.
     The query string is kept verbatim for v1."""
     parsed = urlparse(url)
@@ -398,7 +398,7 @@ def url_to_name(url: str) -> str:
 
 
 def fetch_and_extract(url: str, fetcher=None, pdf_extractor: str = "pymupdf4llm"):
-    """Client-side half of URL ingest (D-17/REQ-09): reach the network through a
+    """Client-side half of URL ingest: reach the network through a
     ``Fetcher`` and extract clean main-content markdown from the fetched bytes.
 
     Touches no vault — its outputs (the canonical/redirected URL, content type,
@@ -433,7 +433,7 @@ def ingest_extracted(
     content into ``raw/<name>.md`` with an http-provenance sidecar.
 
     Makes NO network call and constructs no ``Fetcher`` — this is the seam the
-    awiki server runs so it performs no outbound fetch (D-17/REQ-09). ``markdown``
+    awiki server runs so it performs no outbound fetch. ``markdown``
     is the extracted body; ``asset``/``content_type`` are the original fetched
     artifact, archived byte-identically under ``raw/assets/``. Dedup keys on the
     normalized ``source_url``; an unchanged body (matching the stored sidecar
@@ -496,7 +496,7 @@ def ingest_url(
     The whole-pipeline convenience used for a local vault (fetch + extract +
     ingest in one process). Remote clients instead call ``fetch_and_extract``
     client-side and ship the result to the server's ``ingest_extracted`` so the
-    server never fetches (D-17/REQ-09). Returns the created/updated wiki page.
+    server never fetches. Returns the created/updated wiki page.
     """
     pdf_extractor = load_vault_config(vault_path).get("pdf_extractor", "pymupdf4llm")
     result, extracted = fetch_and_extract(url, fetcher=fetcher, pdf_extractor=pdf_extractor)

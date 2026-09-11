@@ -125,7 +125,7 @@ def test_reingest_writer_only(client, reader_h, writer_h, tmp_vault):
     client.post("/v1/ingest", json={"filename": "r.md", "content": "# R\n\nv1\n"},
                 headers=writer_h)
     # Hand-edit the PAGE body (not the raw) so it genuinely drifts from its stamp;
-    # a raw-only edit would now reingest cleanly (REQ-03).
+    # a raw-only edit would now reingest cleanly.
     page = tmp_vault / "research" / "r.md"                     # default_topic research
     page.write_text(page.read_text().replace("v1", "v1\n\nhand edit"))
     assert client.post("/v1/reingest", json={"name": "r"},

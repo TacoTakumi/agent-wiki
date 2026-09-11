@@ -66,7 +66,7 @@ def resolve_default_vault(registry: dict, default_vault=None) -> VaultEntry:
     else the sole configured vault. Multiple vaults with neither 'main' nor a
     default_vault key is a hard error, as is a default_vault naming an
     unconfigured vault. The default_vault key is read-only to the CLI: it is
-    repointed by hand-editing the config only (REQ-04)."""
+    repointed by hand-editing the config only."""
     if default_vault is not None:
         entry = registry.get(str(default_vault))
         if entry is None:

@@ -307,8 +307,8 @@ class RawContentDrift(Check):
         drifted = self._drifted(vault_path)
         for raw_path, canonical in drifted:
             raw_path.write_text(canonical)
-            # Keep the sidecar sha256 in lock-step with the rewritten body
-            # (REQ-02): a stale hash would otherwise make lint's source_drift
+            # Keep the sidecar sha256 in lock-step with the rewritten body:
+            # a stale hash would otherwise make lint's source_drift
             # check false-fire on a raw this very fix just reconciled.
             meta = load_sidecar(raw_path)
             if meta:
@@ -320,7 +320,7 @@ class RawContentDrift(Check):
 class RenderHashUnstamped(Check):
     """Stamp render_hash on un-hashed pages whose body still matches their raw.
 
-    Migration for vaults written before render_hash existed (REQ-07): a page that
+    Migration for vaults written before render_hash existed: a page that
     lacks the fingerprint but is still faithful to its raw (``page_raw_diverged``
     is False) gets stamped, giving the reingest drift guard a baseline. The value
     written is exactly what the ingest/reingest write path stamps — ``render_hash``
@@ -331,12 +331,12 @@ class RenderHashUnstamped(Check):
     - **Divergent pages are skipped.** An un-hashed page whose body has drifted
       from its raw is a pre-existing hand-edit; stamping it would silently adopt
       that edit as the baseline. It is left for the separate divergent-report
-      check (REQ-08) to surface for review.
+      check to surface for review.
     - **Pages with no readable raw source are skipped** — there is nothing to
       prove faithfulness against, and such a page cannot be reingested anyway, so
       it needs no baseline.
 
-    Preview-by-default and applied only under ``--fix`` (REQ-09); the CLI/service
+    Preview-by-default and applied only under ``--fix``; the CLI/service
     gate it behind the fix flag, never an interactive confirm.
     """
 
@@ -386,7 +386,7 @@ class RenderHashDivergent(Check):
     whose body diverges from its raw is a pre-existing out-of-band hand-edit.
     Migration must surface it for review, not stamp it — stamping would silently
     adopt the edit as the drift-guard baseline, hiding the very divergence the
-    reviewer should reconcile (REQ-08).
+    reviewer should reconcile.
 
     Informational only: ``fix`` is a no-op, so neither a blanket ``--fix`` nor an
     interactive confirm ever mutates such a page. Once the reviewer reconciles the

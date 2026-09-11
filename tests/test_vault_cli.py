@@ -75,7 +75,7 @@ def test_vault_trust_missing_dir_errors(tmp_path, monkeypatch):
 
 
 def test_bare_init_after_vault_trust_preserves_config_keys(tmp_path, monkeypatch):
-    """T-24: a bare init's legacy vault_path write merges over the existing
+    """A bare init's legacy vault_path write merges over the existing
     config — trusted_dirs (from vault trust) and any server key survive; only
     vault_path changes."""
     config_dir = tmp_path / "global-config"
@@ -98,10 +98,10 @@ def test_bare_init_after_vault_trust_preserves_config_keys(tmp_path, monkeypatch
     assert persisted["vault_path"] == str(tmp_path / "new-vault")
     assert persisted["trusted_dirs"] == [str(proj.resolve())]
     assert persisted["server"] == {"url": "http://x:8731", "token": "tok"}
-    assert "vaults" not in persisted  # the write stays in legacy form (REQ-24)
+    assert "vaults" not in persisted  # the write stays in legacy form
 
 
-# --- vault add + lazy schema migration (T-17, REQ-22, REQ-24) ------------------
+# --- vault add + lazy schema migration -----------------------------------------
 
 def _legacy_config(tmp_path, monkeypatch):
     """A legacy vault_path config; returns (config_file, legacy_vault)."""
@@ -133,7 +133,7 @@ def test_vault_add_migrates_legacy_config_to_vaults_schema(tmp_path, monkeypatch
 
 
 def test_migration_keeps_both_vault_path_and_server_on_main(tmp_path):
-    """T-22 (REQ-24/REQ-02): a legacy config holding vault_path AND server
+    """A legacy config holding vault_path AND server
     migrates to a main entry preserving both keys, and that entry parses to
     the same VaultEntry the legacy synthesis produces — url wins at backend
     selection, the path stays for local resolution (serve/tag/doctor)."""
@@ -217,7 +217,7 @@ def test_vault_add_rejects_duplicate_name(tmp_path, monkeypatch):
     assert config_file.read_bytes() == before
 
 
-# --- vault list: read-only registry view (T-16, REQ-21) ------------------------
+# --- vault list: read-only registry view ---------------------------------------
 
 def test_vault_list_shows_both_rows_and_writes_nothing(tmp_path, monkeypatch):
     work = make_vault(tmp_path / "work-vault")
@@ -305,7 +305,7 @@ def test_vault_trust_keeps_legacy_config_keys(tmp_path, monkeypatch):
     assert str(proj.resolve()) in persisted["trusted_dirs"]
 
 
-# --- absence guard: unconfigured vaults are invisible (T-20, REQ-27) -----------
+# --- absence guard: unconfigured vaults are invisible --------------------------
 
 def test_unconfigured_vault_is_invisible_everywhere(tmp_path, monkeypatch):
     """A vault directory absent from the merged config view is unreachable:

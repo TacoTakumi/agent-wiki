@@ -93,11 +93,11 @@ def test_stale_install_emits_exactly_one_stderr_notice(harness_home, tmp_config,
 
     result = CliRunner().invoke(cli, ["search", NO_MATCH_QUERY])
 
-    # REQ-07: exit code and stdout are the command's own, untouched by the hook.
+    # Exit code and stdout are the command's own, untouched by the hook.
     # (result.stdout is stdout only; the hook writes solely to result.stderr.)
     assert result.exit_code == 0, result.output
     assert result.stdout == NO_RESULTS_STDOUT
-    # REQ-08: exactly one notice line, and it names the CLI (awiki, not the
+    # Exactly one notice line, and it names the CLI (awiki, not the
     # package), the stale skill, and the exact skills-update command to run.
     notices = _notice_lines(result.stderr)
     assert len(notices) == 1, result.stderr

@@ -330,7 +330,7 @@ def test_update_clean_page_not_blocked(tmp_vault, tmp_path):
 
 
 def test_reingest_after_raw_edit_succeeds_without_force(tmp_vault, tmp_path):
-    # Reversed contract (REQ-03): editing only the in-vault raw leaves the page
+    # Reversed contract: editing only the in-vault raw leaves the page
     # body unchanged since its render, so its render_hash still matches and
     # reingest rebuilds from raw with NO --force. --force still rebuilds too.
     from agent_wiki.ingest import ingest_file
@@ -385,7 +385,7 @@ def test_service_reingest_rebuilds_from_edited_raw_with_force(tmp_vault):
 
 def test_service_reingest_after_raw_edit_succeeds_without_force(tmp_vault):
     # The service reingest path inherits the reversed contract: a raw-only edit
-    # rebuilds cleanly without --force (REQ-03).
+    # rebuilds cleanly without --force.
     from agent_wiki.service import LocalVaultService
     svc = LocalVaultService(tmp_vault)
     src = tmp_vault / "n.md"
@@ -436,7 +436,7 @@ def test_reingest_recomputes_render_hash_on_changed_body(tmp_vault, tmp_path):
 def test_guard_raw_only_edit_reingests_without_force(tmp_vault, tmp_path):
     # The core fix: editing ONLY the raw leaves the page body unchanged since its
     # last render, so the page's render_hash still matches and the guard stays
-    # silent — reingest rebuilds from raw with no --force needed (REQ-03).
+    # silent — reingest rebuilds from raw with no --force needed.
     from agent_wiki.ingest import ingest_file
     src = tmp_path / "notes.md"
     src.write_text("# Notes\n\nv1\n")
@@ -469,7 +469,7 @@ def test_guard_page_handedit_refuses_with_diff_and_leaves_bytes(tmp_vault, tmp_p
 def test_guard_clean_reingest_no_false_positive(tmp_vault, tmp_path):
     # Reingest with NO edit at all: stamp-time and guard-time hashes are equal, so
     # render_page's leading-blank / trailing-newline normalization can't produce a
-    # false-positive drift (REQ-05).
+    # false-positive drift.
     from agent_wiki.ingest import ingest_file
     src = tmp_path / "notes.md"
     src.write_text("# Notes\n\nbody\n")
@@ -491,7 +491,7 @@ def _strip_render_hash(page_path):
 def test_tofu_unhashed_matching_page_reingests_and_stamps(tmp_vault, tmp_path):
     # Lazy TOFU: an un-hashed page that still matches its raw reingests via the
     # legacy page-vs-raw fallback (never crashes, never unconditionally refuses)
-    # and is stamped with a render_hash on the successful write (REQ-10).
+    # and is stamped with a render_hash on the successful write.
     from agent_wiki.ingest import ingest_file
     src = tmp_path / "notes.md"
     src.write_text("# Notes\n\nbody\n")
@@ -507,7 +507,7 @@ def test_tofu_unhashed_matching_page_reingests_and_stamps(tmp_vault, tmp_path):
 def test_tofu_unhashed_diverged_page_refuses_then_force_stamps(tmp_vault, tmp_path):
     # An un-hashed page that diverges from its raw still refuses (with a diff)
     # without --force — no regression from pre-render_hash behavior — and with
-    # --force rebuilds from raw and gets stamped (REQ-10).
+    # --force rebuilds from raw and gets stamped.
     from agent_wiki.ingest import ingest_file, PageDriftError
     src = tmp_path / "notes.md"
     src.write_text("# Notes\n\nv1\n")

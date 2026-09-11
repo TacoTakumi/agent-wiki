@@ -67,7 +67,7 @@ def test_url_ingest_parity(remote_service, tmp_vault, monkeypatch, url_fetcher_c
 
 def test_url_ingest_server_makes_no_outbound_fetch(remote_service, tmp_vault,
                                                    monkeypatch, url_fetcher_cls):
-    # Behavioral proof of REQ-09: the client uses the canned fetcher; a real httpx
+    # Behavioral proof: the client uses the canned fetcher; a real httpx
     # GET anywhere (client OR server) trips the guard. A clean ingest means the
     # server reached the network not at all.
     import httpx
@@ -83,7 +83,7 @@ def test_url_ingest_server_makes_no_outbound_fetch(remote_service, tmp_vault,
 
 
 def test_url_ingest_handlers_invoke_no_fetcher():
-    # Structural proof of REQ-09: neither the server route nor the server-side
+    # Structural proof: neither the server route nor the server-side
     # ingest seam constructs a Fetcher; the remote client delegates fetching to the
     # client-side fetch_and_extract seam rather than touching a Fetcher inline.
     from agent_wiki import remote

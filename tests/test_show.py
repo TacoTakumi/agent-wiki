@@ -64,11 +64,11 @@ def test_read_vault_file_binary_raises(tmp_vault):
         read_vault_file(tmp_vault, "raw/blob.bin")
 
 
-# --- show surfaces the read location on stderr (T-10 / REQ-13) ---------------
+# --- show surfaces the read location on stderr -------------------------------
 
 
 def test_show_prints_read_location_to_stderr(tmp_config, tmp_vault):
-    # REQ-13: show surfaces where it read from on stderr (local absolute path)
+    # show surfaces where it read from on stderr (local absolute path)
     # while stdout stays byte-identical to the underlying file — skills parse it.
     from click.testing import CliRunner
     from agent_wiki.cli import cli

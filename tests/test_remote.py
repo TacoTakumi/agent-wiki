@@ -73,7 +73,7 @@ def test_http_doctor_fix_does_not_rewrite_raw(client, tmp_vault, tmp_path, admin
 
 
 def test_reingest_remote_location_is_server_ref(remote_service, tmp_vault, tmp_path, monkeypatch):
-    # REQ-12: against a remote vault, reingest's stderr location is the server URL
+    # Against a remote vault, reingest's stderr location is the server URL
     # plus the vault-relative page path — NEVER a local absolute filesystem path
     # (the page lives on the server, not this client's disk). stdout keeps the
     # existing Reingested line.

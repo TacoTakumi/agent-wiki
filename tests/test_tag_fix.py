@@ -1,4 +1,4 @@
-"""CLI tests for `awiki tag fix` (REQ-15, REQ-16).
+"""CLI tests for `awiki tag fix`.
 
 `tag fix` canonicalizes frontmatter tags across the topic folders against the
 wiki.yaml vocabulary: preview by default (reports, writes nothing); `--write`
@@ -64,7 +64,7 @@ def test_write_canonicalizes_alias_empty_body_diff_raw_unchanged(
 
 def test_render_hash_survives_tag_fix_and_guard_stays_silent(
         tmp_config, tmp_vault, tmp_path):
-    # render_hash covers the body only (REQ-06): a frontmatter-only tag rewrite
+    # render_hash covers the body only: a frontmatter-only tag rewrite
     # (via update_frontmatter) canonicalizes the tag, leaves the body byte-
     # identical, and keeps the stamp valid — so a later reingest does not fire.
     # Ingest while inert (no vocab) so the page has a raw source and a stamp.
@@ -138,7 +138,7 @@ def test_raw_and_root_artifacts_are_not_rewritten(tmp_config, tmp_vault):
     assert raw_doc.read_text() == raw_before
 
 
-# --- scope narrowing: --topic / path argument (REQ-17) -----------------------
+# --- scope narrowing: --topic / path argument --------------------------------
 
 
 def test_fix_topic_narrows_to_that_topic(tmp_config, tmp_vault):
@@ -186,7 +186,7 @@ def test_fix_rejects_both_topic_and_path(tmp_config, tmp_vault):
     assert result.exit_code != 0
 
 
-# --- multi-vault: tag fix mutates the default vault only (T-15, REQ-19) --------
+# --- multi-vault: tag fix mutates the default vault only -----------------------
 
 def test_write_touches_only_default_vault_in_multi_vault_config(
         two_vault_config, tmp_path):

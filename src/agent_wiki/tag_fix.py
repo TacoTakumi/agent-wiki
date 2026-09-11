@@ -1,6 +1,6 @@
-"""'awiki tag fix' engine (REQ-15, REQ-16).
+"""'awiki tag fix' engine.
 
-Whole-vault bulk cleanup of existing pages (D-08): traverse every topic-folder
+Whole-vault bulk cleanup of existing pages: traverse every topic-folder
 page (raw/, index.md, log.md are excluded by construction — only topic dirs are
 scanned), run each page's frontmatter tags through canonicalize_tags, and collect
 the pages that would change or carry a novel tag. The collection is read-only so

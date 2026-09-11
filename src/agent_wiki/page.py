@@ -123,9 +123,9 @@ def stamp_render_hash(path: Path) -> None:
 
     The single stamp boundary: both the ingest/reingest page-write path and the
     doctor migration go through here, so the value written is always the hash of
-    exactly the body on disk — recomputed, never carried stale from a prior render
-    (REQ-01) — and hashed from the *parsed* body so it equals the value the drift
-    guard recomputes on a clean page (REQ-05)."""
+    exactly the body on disk — recomputed, never carried stale from a prior
+    render — and hashed from the *parsed* body so it equals the value the drift
+    guard recomputes on a clean page."""
     parsed = parse_page(path)
     meta = parsed["meta"]
     meta["render_hash"] = render_hash(parsed["body"])

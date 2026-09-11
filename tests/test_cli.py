@@ -149,7 +149,7 @@ def test_show_command_prints_page_verbatim(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["show", "research/raft.md"])
     assert result.exit_code == 0
     # Verbatim: stdout is byte-for-byte the file (frontmatter + body). The resolved
-    # read location goes to stderr (REQ-13), so stdout stays clean for parsers.
+    # read location goes to stderr, so stdout stays clean for parsers.
     assert result.stdout == page
     assert str(vault / "research" / "raft.md") in result.stderr
 
@@ -309,7 +309,7 @@ def test_reingest_command_raw_edit_succeeds_page_edit_refuses(tmp_path, monkeypa
     src.write_text("# Doc\n\nv1\n")
     runner.invoke(cli, ["ingest", str(src), "--topic", "research"])
 
-    # Raw-only edit: reingest rebuilds from raw with no --force (REQ-03).
+    # Raw-only edit: reingest rebuilds from raw with no --force.
     (vault / "raw" / "doc.md").write_text("# Doc\n\nv2 in raw\n")
     ok = runner.invoke(cli, ["reingest", "doc"])
     assert ok.exit_code == 0
@@ -329,7 +329,7 @@ def test_reingest_command_raw_edit_succeeds_page_edit_refuses(tmp_path, monkeypa
 
 
 def test_reingest_prints_page_location_to_stderr(tmp_path, monkeypatch):
-    # REQ-12: reingest surfaces where the page it wrote landed — on stderr for a
+    # reingest surfaces where the page it wrote landed — on stderr for a
     # local vault, the absolute filesystem path — while stdout keeps its existing
     # byte-clean "Reingested" line (skills parse stdout verbatim).
     vault = _setup_vault(tmp_path, monkeypatch)
@@ -349,11 +349,11 @@ def test_reingest_prints_page_location_to_stderr(tmp_path, monkeypatch):
     assert page_abs not in result.stdout      # stdout stays clean of the abs path
 
 
-# --- awiki raw <name> resolver (T-11 / REQ-14) -------------------------------
+# --- awiki raw <name> resolver -----------------------------------------------
 
 
 def test_raw_resolver_local_prints_absolute_path(tmp_path, monkeypatch):
-    # REQ-14: on a local vault, `awiki raw <name>` prints the raw file's absolute
+    # On a local vault, `awiki raw <name>` prints the raw file's absolute
     # path to stdout (usable in $(...) command substitution) and exits 0.
     vault = _setup_vault(tmp_path, monkeypatch)
     (vault / "raw" / "loc.md").write_text("# Loc\n\nbody\n")
@@ -397,7 +397,7 @@ def test_raw_resolver_remote_prints_ref_and_note(remote_service, tmp_vault, monk
     assert "not" in result.stderr.lower() and "editable" in result.stderr.lower()
 
 
-# --- lint type/label mapping (REQ-24) ----------------------------------------
+# --- lint type/label mapping -------------------------------------------------
 
 def test_lint_labels_are_distinct():
     # Each lint type maps to its own CLI label -- no two share one, so output
@@ -428,7 +428,7 @@ def test_lint_label_renders_in_output(tmp_path, monkeypatch):
     assert "[SIZE]" in result.output
 
 
-# --- multi-vault dispatch for raw and reingest (T-08) -------------------------
+# --- multi-vault dispatch for raw and reingest --------------------------------
 
 def _seed_ingested(vault, name, body):
     """Ingest a real page (raw + rendered) into a vault; returns the raw path."""
@@ -522,7 +522,7 @@ def test_search_no_results_across_vaults(two_vault_config):
     assert "No results found." in result.output
 
 
-# --- multi-vault lint (T-12) ---------------------------------------------------
+# --- multi-vault lint ----------------------------------------------------------
 
 def _seed_broken_link(vault, slug="linker"):
     meta = {"title": slug.title(), "topic": "research", "tags": [],
@@ -594,7 +594,7 @@ def test_lint_unsupported_vault_skips_with_notice_and_exit_zero(
     assert "vault: work" in result.output
 
 
-# --- topic-driven ingest routing (T-11) ---------------------------------------
+# --- topic-driven ingest routing ----------------------------------------------
 
 def _routing_config(two_vault_config, tmp_path):
     """Make 'work' the default vault and declare topic 'journal' only in
@@ -687,7 +687,7 @@ def test_reingest_unqualified_ambiguous_is_loud(two_vault_config, tmp_path):
     assert "personal:both" in combined
 
 
-# --- init --name (T-18) --------------------------------------------------------
+# --- init --name ---------------------------------------------------------------
 
 def test_init_name_flag_creates_and_registers_named_vault(tmp_path, monkeypatch):
     config_dir = tmp_path / "config"

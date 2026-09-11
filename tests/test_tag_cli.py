@@ -1,7 +1,7 @@
 """CLI tests for the `awiki tag` command group.
 
-These cover `tag add` (REQ-09 idempotent persistence, REQ-02 conflict refusal)
-and `tag suggest` (REQ-10 draft block + --write merge), driving the real CLI
+These cover `tag add` (idempotent persistence, conflict refusal)
+and `tag suggest` (draft block + --write merge), driving the real CLI
 through CliRunner against the tmp_config vault."""
 
 import yaml

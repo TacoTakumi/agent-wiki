@@ -53,8 +53,8 @@ def build_router(svc, require) -> APIRouter:
 
     @r.get("/lint")
     def lint(_: str = Depends(require("reader"))):
-        # No refetch param by design: the server never performs an outbound fetch
-        # (D-17/REQ-09), so lint here always runs in the network-free mode.
+        # No refetch param by design: the server never performs an outbound
+        # fetch, so lint here always runs in the network-free mode.
         return {"issues": svc.lint()}
 
     @r.post("/context")
@@ -98,7 +98,7 @@ def build_router(svc, require) -> APIRouter:
             return svc.ingest(tmp, topic=topic, tags=tag_list, update=update,
                               force=force, tag_mode=tag_mode)
 
-    # Client-side fetch + extract (D-17/REQ-09): the client sends already-extracted
+    # Client-side fetch + extract: the client sends already-extracted
     # markdown plus the original asset; this handler ingests them and NEVER fetches.
     @r.post("/ingest_url", status_code=201)
     async def ingest_url(

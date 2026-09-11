@@ -54,7 +54,7 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
 
     ``refetch`` is opt-in and the *only* path on which lint touches the network:
     it re-fetches each URL-sourced raw and flags one whose upstream bytes no
-    longer match the asset sha256 recorded at ingest (REQ-20). With ``refetch``
+    longer match the asset sha256 recorded at ingest. With ``refetch``
     off (the default), lint makes zero network calls. ``fetcher`` is injectable
     for tests; in normal use a real ``HttpFetcher`` is built only when needed."""
     if refetch and fetcher is None:
@@ -64,7 +64,7 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
     issues = []
     listed_in_index = indexed_paths(vault_path)
 
-    # tag-audit (REQ-12): read-only canonicalization preview. Inert unless a tag
+    # tag-audit: read-only canonicalization preview. Inert unless a tag
     # vocabulary is configured. Vocabulary conflicts are reported once, against
     # wiki.yaml; per-page alias/novel findings are emitted inside the page loop.
     tag_vocab = parse_tag_vocabulary(vault_config)
