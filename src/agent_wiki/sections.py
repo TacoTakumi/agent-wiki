@@ -151,8 +151,42 @@ def slice_children(text: str, head: int | None = None,
     if not children:
         return text
 
-    lines = text.split("\n")
-    starts = [child[0] for child in children]
+    return _keep(text.split("\n"), children, head, tail)
+
+
+def slice_top_level(text: str, head: int | None = None,
+                    tail: int | None = None) -> str:
+    """Return `text` reduced to its first `head` or last `tail` top-level sections.
+
+    The top-level sections are the H1's direct children when the first heading
+    is the page's only H1; otherwise they are the sections at the shallowest
+    heading level present. Everything before the first of them - the H1 line
+    and any preamble - is kept, and a page with no headings is returned
+    unchanged.
+    """
+    if head is None and tail is None:
+        return text
+
+    headings = scan_headings(text)
+    if not headings:
+        return text
+
+    if headings[0][1] == 1 and sum(1 for h in headings if h[1] == 1) == 1:
+        return slice_children(text, head=head, tail=tail)
+
+    shallowest = min(h[1] for h in headings)
+    tops = [h for h in headings if h[1] == shallowest]
+    return _keep(text.split("\n"), tops, head, tail)
+
+
+def _keep(lines: list[str], sections: list[tuple[int, int, str, str]],
+          head: int | None, tail: int | None) -> str:
+    """Keep the lines before `sections` plus the first/last N of them.
+
+    Each section runs to the start of the next one, so its own subsections
+    come with it; the last runs to the end of `lines`.
+    """
+    starts = [section[0] for section in sections]
     bounds = list(zip(starts, starts[1:] + [len(lines)]))
     kept = bounds[:head] if head is not None else bounds[-tail:]
 

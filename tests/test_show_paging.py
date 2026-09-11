@@ -267,3 +267,73 @@ def test_show_help_lists_the_head_and_tail_flags(tmp_config, tmp_vault):
     assert result.exit_code == 0
     assert "--head" in result.stdout
     assert "--tail" in result.stdout
+
+
+TOPLEVEL_BODY = """# Ops
+
+Page preamble.
+
+## First
+
+First body.
+
+## Second
+
+Second body.
+
+## Third
+
+Third body.
+
+## Fourth
+
+Fourth body.
+"""
+
+TOPLEVEL_NO_H1_BODY = """Page preamble.
+
+## Alpha
+
+Alpha body.
+
+## Beta
+
+Beta body.
+
+## Gamma
+
+Gamma body.
+"""
+
+
+def test_toplevel_head_keeps_the_h1_preamble_and_first_section(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=TOPLEVEL_BODY)
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--head", "1"])
+    assert result.exit_code == 0
+    assert result.stdout == "# Ops\n\nPage preamble.\n\n## First\n\nFirst body.\n"
+
+
+def test_toplevel_tail_keeps_the_h1_preamble_and_last_section(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=TOPLEVEL_BODY)
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--tail", "1"])
+    assert result.exit_code == 0
+    assert result.stdout == "# Ops\n\nPage preamble.\n\n## Fourth\n\nFourth body.\n"
+
+
+def test_toplevel_head_on_a_page_without_an_h1(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=TOPLEVEL_NO_H1_BODY)
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--head", "1"])
+    assert result.exit_code == 0
+    assert result.stdout == "Page preamble.\n\n## Alpha\n\nAlpha body.\n"
+
+
+def test_toplevel_head_drops_the_frontmatter(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=TOPLEVEL_BODY)
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--head", "9"])
+    assert result.exit_code == 0
+    assert not result.stdout.startswith("---")
+    assert result.stdout == TOPLEVEL_BODY

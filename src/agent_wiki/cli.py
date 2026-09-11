@@ -738,7 +738,7 @@ def show(path, outline, section, head, tail):
     any of them the page is printed verbatim, frontmatter included."""
     from agent_wiki.sections import (
         match_headings, render_outline, select_section, slice_children,
-        strip_frontmatter)
+        slice_top_level, strip_frontmatter)
 
     svc, ref = _dispatch_ref(path, _show_probe)
     try:
@@ -751,7 +751,7 @@ def show(path, outline, section, head, tail):
             f"include the .md extension.", err=True)
     # Any sliced view drops the frontmatter, so what prints is plain markdown;
     # the flagless path stays byte-identical to the file.
-    if outline or section is not None:
+    if outline or section is not None or head is not None or tail is not None:
         content = strip_frontmatter(content)
     if section is not None:
         matches = match_headings(content, section)
@@ -765,6 +765,8 @@ def show(path, outline, section, head, tail):
                 err=True)
         if head is not None or tail is not None:
             content = slice_children(content, head=head, tail=tail)
+    elif head is not None or tail is not None:
+        content = slice_top_level(content, head=head, tail=tail)
     if outline:
         content = render_outline(content)
     click.echo(content, nl=False)

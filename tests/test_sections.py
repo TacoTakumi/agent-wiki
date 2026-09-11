@@ -3,6 +3,7 @@
 from agent_wiki.sections import (
     match_headings,
     slice_children,
+    slice_top_level,
     scan_headings,
     select_section,
     strip_frontmatter,
@@ -247,3 +248,74 @@ def test_slice_children_head_ignores_headings_nested_under_a_child():
     assert slice_children(text, head=1) == (
         "## Top\n\n### A\n\n#### A one\n\n#### A two\n"
     )
+
+
+H1_PAGE = """# Ops
+
+Page preamble.
+
+## First
+
+First body.
+
+## Second
+
+Second body.
+
+## Third
+
+Third body.
+
+## Fourth
+
+Fourth body.
+"""
+
+NO_H1_PAGE = """Page preamble.
+
+## Alpha
+
+Alpha body.
+
+## Beta
+
+Beta body.
+
+## Gamma
+
+Gamma body.
+"""
+
+
+def test_slice_toplevel_head_keeps_the_h1_preamble_and_first_section():
+    assert slice_top_level(H1_PAGE, head=1) == (
+        "# Ops\n\nPage preamble.\n\n## First\n\nFirst body.\n"
+    )
+
+
+def test_slice_toplevel_tail_keeps_the_h1_preamble_and_last_section():
+    assert slice_top_level(H1_PAGE, tail=1) == (
+        "# Ops\n\nPage preamble.\n\n## Fourth\n\nFourth body.\n"
+    )
+
+
+def test_slice_toplevel_without_an_h1_uses_the_shallowest_level():
+    assert slice_top_level(NO_H1_PAGE, head=1) == (
+        "Page preamble.\n\n## Alpha\n\nAlpha body.\n"
+    )
+    assert slice_top_level(NO_H1_PAGE, tail=1) == (
+        "Page preamble.\n\n## Gamma\n\nGamma body.\n"
+    )
+
+
+def test_slice_toplevel_head_beyond_the_section_count_keeps_all():
+    assert slice_top_level(H1_PAGE, head=9) == H1_PAGE
+
+
+def test_slice_toplevel_on_a_page_with_no_headings_returns_it_unchanged():
+    assert slice_top_level("Just prose.\n", head=1) == "Just prose.\n"
+
+
+def test_slice_toplevel_with_repeated_h1s_treats_them_as_the_top_level():
+    text = "# One\n\none\n\n# Two\n\ntwo\n"
+    assert slice_top_level(text, head=1) == "# One\n\none\n"
