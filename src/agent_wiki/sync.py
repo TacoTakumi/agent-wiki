@@ -84,8 +84,12 @@ def sync(
     since: datetime | None = None,
     summarizer: Any | None = None,
     redactor: Any | None = None,
+    include_live: bool = False,
 ) -> list[SyncResult]:
-    """Run adapters and ingest new/changed sessions. Returns per-session results."""
+    """Run adapters and ingest new/changed sessions. Returns per-session results.
+
+    ``include_live`` lifts every adapter's live-session guard for this run.
+    """
     state = load_state(vault_path)
     results: list[SyncResult] = []
 
@@ -98,6 +102,8 @@ def sync(
 
         if since is not None and hasattr(adapter, "since"):
             adapter.since = since
+        if include_live and hasattr(adapter, "include_live"):
+            adapter.include_live = True
         if hasattr(adapter, "set_vault"):
             adapter.set_vault(vault_path)
 

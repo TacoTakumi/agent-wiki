@@ -8,9 +8,10 @@ directly into a configured directory. This adapter validates them against
 
 Unlike the other adapters, this one mutates the filesystem inside
 ``to_bundle``: moving the file out of the drop zone is what makes a given
-bundle "ingested" from the producer's perspective. The fingerprint is the
-drop-zone filename itself so sync won't re-process a file once it has been
-moved.
+bundle "ingested" from the producer's perspective, so sync always calls it
+on a real run, even for an unchanged re-drop. The fingerprint is a content
+hash (a re-drop with different content is an update) and the session key
+comes from the frontmatter header alone.
 """
 from __future__ import annotations
 
@@ -77,6 +78,10 @@ class DropZoneAdapter(ConversationAdapter):
 
     def session_key(self, ref: DropZoneRef) -> str:
         meta = _read_frontmatter_header(ref.path)
+        if meta is None:
+            raise ValueError(
+                f"{ref.path}: frontmatter not terminated within {_MAX_HEADER_LINES} lines"
+            )
         if meta.get("type") != "conversation":
             raise ValueError(
                 f"{ref.path}: not a conversation bundle (type={meta.get('type')!r})"
@@ -113,10 +118,11 @@ class DropZoneAdapter(ConversationAdapter):
 _MAX_HEADER_LINES = 200
 
 
-def _read_frontmatter_header(path: Path) -> dict:
+def _read_frontmatter_header(path: Path) -> dict | None:
     """Parse only the leading ``---`` frontmatter block, stopping at its close.
 
     The body is never read, so the cost is independent of transcript size.
+    Returns ``None`` when the block is not closed within the line cap.
     """
     lines: list[str] = []
     with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -128,7 +134,7 @@ def _read_frontmatter_header(path: Path) -> dict:
                 break
             lines.append(line)
             if len(lines) > _MAX_HEADER_LINES:
-                return {}  # unterminated frontmatter; do not scan the body
+                return None  # unterminated frontmatter; do not scan the body
     try:
         meta = yaml.safe_load("".join(lines))
     except yaml.YAMLError:

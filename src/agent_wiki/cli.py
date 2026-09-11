@@ -975,33 +975,42 @@ def _reset_detached_log() -> None:
     from datetime import datetime
     from agent_wiki.locking import run_log_path
 
-    vault_path = get_vault_path()
-    log = run_log_path(vault_path, "sync")
-    sys.stdout.flush()
-    with open(log, "w", encoding="utf-8") as fh:
-        fh.write(
-            f"awiki sync started {datetime.now().isoformat(timespec='seconds')} "
-            f"vault={vault_path}\n"
-        )
+    try:
+        vault_path = get_vault_path()
+        log = run_log_path(vault_path, "sync")
+        sys.stdout.flush()
+        with open(log, "w", encoding="utf-8") as fh:
+            fh.write(
+                f"awiki sync started {datetime.now().isoformat(timespec='seconds')} "
+                f"vault={vault_path}\n"
+            )
+    except Exception:
+        pass  # log housekeeping must never abort the sync itself
 
 
 def _detach_sync(source, since, dry_run, include_live) -> None:
     """Spawn ``awiki sync`` as a detached background process and return.
 
     The child runs in its own session with stdin closed and stdout/stderr
-    appended to a per-vault log file in the awiki state dir; the child itself
-    truncates that log once it holds the vault lock, so a run that skips
-    because another sweep is active only appends its one-line notice. This
-    function must not raise: it is what agent startup hooks call, and a
-    failed spawn must not become a failed agent start, so any error is
-    reported on stderr and the command still exits 0.
+    appended to a per-vault log file in the awiki state dir. The log is reset
+    only by whoever can prove no sweep is writing it: the parent truncates it
+    if it can take the vault lock for an instant (so runs that never reach the
+    lock, such as dry runs or config errors, still replace rather than grow
+    it), and the worker truncates it again once it holds the lock for real.
+    A worker that finds the lock held only appends its one-line notice.
+
+    Everything this prints goes to stderr: agent startup hooks call this, and
+    Claude Code feeds a SessionStart hook's stdout into the model's context.
+    This function must not raise either, since a failed spawn must not become
+    a failed agent start: any error is reported on stderr and the command
+    still exits 0.
     """
     try:
         import subprocess
         from agent_wiki.config import (
             _default_entry, _override_entry_or_raise, _raw_vault_override,
         )
-        from agent_wiki.locking import run_log_path
+        from agent_wiki.locking import file_lock, run_log_path
 
         entry = _override_entry_or_raise() or _default_entry()
         if entry.url:  # url wins over a path, as in config.backend_for_entry
@@ -1027,13 +1036,18 @@ def _detach_sync(source, since, dry_run, include_live) -> None:
             argv.append("--dry-run")
         if include_live:
             argv.append("--include-live")
+        try:
+            with file_lock(vault_path, "log", timeout=0):
+                open(log, "w", encoding="utf-8").close()
+        except TimeoutError:
+            pass  # a sweep is writing it; leave its output alone
         with open(log, "a", encoding="utf-8") as fh:
             proc = subprocess.Popen(
                 argv,
                 stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
                 start_new_session=True, close_fds=True,
             )
-        click.echo(f"sync detached (pid {proc.pid}); log: {log}")
+        click.echo(f"sync detached (pid {proc.pid}); log: {log}", err=True)
     except Exception as e:
         click.echo(f"sync --detach could not start a background sync: {e}", err=True)
 
@@ -1257,7 +1271,7 @@ def context_cmd(output_format, debug):
 
 @cli.group("hook")
 def hook_group():
-    """Install / uninstall / inspect the auto-context hook for an agent CLI."""
+    """Install / uninstall / inspect awiki's hooks (startup sweep, auto-context) for an agent CLI."""
     pass
 
 

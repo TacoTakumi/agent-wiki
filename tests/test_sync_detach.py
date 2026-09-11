@@ -233,3 +233,21 @@ def test_detach_on_a_legacy_url_plus_path_config_treats_it_as_remote(tmp_path, m
     assert result.exit_code == 0, result.output
     assert "remote" in result.output
     assert not (tmp_path / "state").exists()
+
+
+def test_detach_notice_goes_to_stderr_only(detach_env):
+    result = CliRunner().invoke(cli, ["sync", "--detach"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == ""
+    assert "sync detached" in result.stderr
+
+
+def test_detach_runs_that_never_take_the_lock_still_replace_the_log(detach_env):
+    vault = detach_env
+    log = run_log_path(vault, "sync")
+    for _ in range(3):
+        result = CliRunner().invoke(cli, ["sync", "--detach", "--dry-run"])
+        assert result.exit_code == 0, result.output
+        assert _wait_for(lambda: log.exists() and "3 new" in log.read_text())
+        time.sleep(0.2)
+    assert log.read_text().count("3 new") == 1
