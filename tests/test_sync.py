@@ -268,3 +268,93 @@ def test_sync_touches_only_default_vault(tmp_path, monkeypatch):
     # The sync landed in the default vault; the other vault is untouched.
     assert list((work / "sessions").glob("*.md"))
     assert sorted(str(p) for p in personal.rglob("*")) == personal_before
+
+
+class _CountingAdapter:
+    """Test double: file-backed sessions with a to_bundle call counter."""
+
+    name = "claude-code"
+
+    def __init__(self, config=None):
+        self.config = config or {}
+        self.root = Path(self.config["path"])
+        self.since = None
+        self.to_bundle_calls = 0
+        _COUNTING_INSTANCES.append(self)
+
+    def discover(self):
+        return sorted(self.root.rglob("*.jsonl"))
+
+    def session_key(self, ref):
+        return f"{self.name}:{ref.stem}"
+
+    def fingerprint(self, ref):
+        st = ref.stat()
+        return f"mtime:{int(st.st_mtime)}:size:{st.st_size}"
+
+    def to_bundle(self, ref):
+        from agent_wiki.adapters.claude_code import convert_jsonl
+        self.to_bundle_calls += 1
+        return convert_jsonl(ref)
+
+
+_COUNTING_INSTANCES: list = []
+
+
+@pytest.fixture
+def counting_adapter(monkeypatch):
+    _COUNTING_INSTANCES.clear()
+    import agent_wiki.sync as sync_mod
+    monkeypatch.setattr(sync_mod, "build_adapter", lambda name, cfg: _CountingAdapter(cfg))
+    return _COUNTING_INSTANCES
+
+
+def test_sync_rerun_skips_without_parsing(tmp_vault, tmp_path, counting_adapter):
+    cc_root = tmp_path / "claude-projects"
+    _write_cc_session(cc_root, "s1")
+    _write_cc_session(cc_root, "s2")
+    _configure_vault_with_cc(tmp_vault, cc_root)
+
+    first = sync(tmp_vault)
+    assert [r.action for r in first] == ["new", "new"]
+    assert counting_adapter[-1].to_bundle_calls == 2
+
+    second = sync(tmp_vault)
+    assert [r.action for r in second] == ["skipped", "skipped"]
+    assert [r.key for r in second] == ["claude-code:s1", "claude-code:s2"]
+    assert counting_adapter[-1].to_bundle_calls == 0
+
+
+def test_sync_honours_preexisting_state_without_parsing(tmp_vault, tmp_path, counting_adapter):
+    cc_root = tmp_path / "claude-projects"
+    jsonl = _write_cc_session(cc_root, "s1")
+    _configure_vault_with_cc(tmp_vault, cc_root)
+
+    st = jsonl.stat()
+    (tmp_vault / STATE_FILE).write_text(json.dumps({
+        "claude-code:s1": {
+            "fingerprint": f"mtime:{int(st.st_mtime)}:size:{st.st_size}",
+            "bundle": "raw/sessions/claude-code-s1.md",
+            "page": "sessions/claude-code-s1.md",
+            "last_sync": "2026-04-18T12:00:00",
+        }
+    }))
+
+    results = sync(tmp_vault)
+    assert [r.action for r in results] == ["skipped"]
+    assert counting_adapter[-1].to_bundle_calls == 0
+    assert load_state(tmp_vault)["claude-code:s1"]["last_sync"] == "2026-04-18T12:00:00"
+
+
+def test_sync_changed_fingerprint_reingests_as_updated(tmp_vault, tmp_path, counting_adapter):
+    cc_root = tmp_path / "claude-projects"
+    jsonl = _write_cc_session(cc_root, "s1")
+    _configure_vault_with_cc(tmp_vault, cc_root)
+
+    sync(tmp_vault)
+    t = time.time() + 5
+    os.utime(jsonl, (t, t))
+
+    results = sync(tmp_vault)
+    assert [r.action for r in results] == ["updated"]
+    assert counting_adapter[-1].to_bundle_calls == 1
