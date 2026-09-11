@@ -978,7 +978,7 @@ def _detach_sync(source, since, dry_run, include_live) -> None:
     try:
         from agent_wiki.config import _override_entry_or_raise, _default_entry
         entry = _override_entry_or_raise() or _default_entry()
-        if entry.url and not entry.path:
+        if entry.url:  # url wins over a path, as in config.backend_for_entry
             click.echo(
                 f"sync --detach: vault '{entry.name}' is remote ({entry.url}); the "
                 "server owns its session sources, so there is nothing to sweep from "

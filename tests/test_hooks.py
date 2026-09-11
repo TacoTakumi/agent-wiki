@@ -455,3 +455,13 @@ def test_manual_instructions_cover_both_hooks_on_all_hosts():
     for needle in ("awiki context", "awiki sync --detach",
                    "SessionStart", "session_start", "session.created"):
         assert needle in result.output, needle
+
+
+def test_claude_uninstall_keeps_foreign_group_without_hooks_key(tmp_settings):
+    tmp_settings.write_text(json.dumps({
+        "hooks": {"SessionStart": [{"matcher": "startup"}]},
+    }))
+    claude_backend.install(config_path=tmp_settings)
+    claude_backend.uninstall(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    assert data["hooks"]["SessionStart"] == [{"matcher": "startup"}]

@@ -104,3 +104,11 @@ def test_init_writes_pi_source(tmp_path):
     pi = config["sources"]["pi"]
     assert pi["enabled"] is True
     assert pi["path"] == "~/.pi/agent/sessions"
+
+
+def test_init_leaves_opencode_db_path_to_the_adapter(tmp_path):
+    vault = tmp_path / "vault"
+    init_vault(vault)
+    config = yaml.safe_load((vault / "wiki.yaml").read_text())
+    assert config["sources"]["opencode"]["enabled"] is True
+    assert "db_path" not in config["sources"]["opencode"]

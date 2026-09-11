@@ -203,3 +203,22 @@ def test_detach_on_a_remote_default_vault_is_a_clear_noop(tmp_path, monkeypatch)
     assert result.exit_code == 0, result.output
     assert "remote" in result.output
     assert not (tmp_path / "state").exists()
+
+
+def test_detach_on_a_legacy_url_plus_path_config_treats_it_as_remote(tmp_path, monkeypatch):
+    vault = tmp_path / "vault"
+    _make_vault(vault, tmp_path / "cc")
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yaml").write_text(yaml.dump({
+        "vault_path": str(vault),
+        "server": {"url": "http://127.0.0.1:9", "token": "tok"},
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.setenv("AGENT_WIKI_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("AWIKI_VAULT", raising=False)
+
+    result = CliRunner().invoke(cli, ["sync", "--detach"])
+    assert result.exit_code == 0, result.output
+    assert "remote" in result.output
+    assert not (tmp_path / "state").exists()

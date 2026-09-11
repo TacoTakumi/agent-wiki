@@ -212,3 +212,18 @@ def test_sync_dry_run_leaves_drop_zone_file_in_place(tmp_vault, tmp_path):
     assert results[0].key == "my-assistant:2026-04-18-1030"
     assert (zone / "one.md").exists()
     assert not list((tmp_vault / BUNDLE_SUBDIR).glob("*.md"))
+
+
+def test_sync_identical_redrop_is_skipped_but_moved_out(tmp_vault, tmp_path):
+    zone = tmp_path / "incoming"
+    zone.mkdir()
+    (zone / "one.md").write_text(VALID_BUNDLE)
+    _configure_vault(tmp_vault, zone)
+    sync(tmp_vault)
+    assert not (zone / "one.md").exists()
+
+    (zone / "one.md").write_text(VALID_BUNDLE)
+    results = sync(tmp_vault)
+    assert [r.action for r in results] == ["skipped"]
+    assert not (zone / "one.md").exists()
+    assert len(list((tmp_vault / BUNDLE_SUBDIR).glob("*.md"))) == 1

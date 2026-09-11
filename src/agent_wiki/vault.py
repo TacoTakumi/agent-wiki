@@ -8,10 +8,9 @@ DEFAULT_TOPICS = ["projects", "decisions", "research", "tools", "sessions"]
 def _default_sources_config() -> dict:
     return {
         "claude_code": {"enabled": True, "path": "~/.claude/projects"},
-        "opencode": {
-            "enabled": True,
-            "db_path": "~/.local/share/opencode/opencode.db",
-        },
+        # No db_path: the adapter asks `opencode db path`, then falls back to
+        # ~/.local/share/opencode/opencode.db. Set db_path to pin a file.
+        "opencode": {"enabled": True},
         "pi": {"enabled": True, "path": "~/.pi/agent/sessions"},
         "drop_zone": {"enabled": True, "path": "incoming"},
     }
