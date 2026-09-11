@@ -25,6 +25,7 @@ from typing import Any, Iterable
 
 from agent_wiki.adapters import ConversationAdapter
 from agent_wiki.conversation import BUNDLE_SUBDIR, Conversation, read_bundle
+from agent_wiki.page import parse_page
 
 
 @dataclass
@@ -77,16 +78,18 @@ class DropZoneAdapter(ConversationAdapter):
             yield DropZoneRef(path=p)
 
     def session_key(self, ref: DropZoneRef) -> str:
+        # Same validation as read_bundle, so a dry run's verdict matches the
+        # real run's; only the read is cheaper (header only, body untouched).
         meta = _read_frontmatter_header(ref.path)
         if meta is None:
-            raise ValueError(
-                f"{ref.path}: frontmatter not terminated within {_MAX_HEADER_LINES} lines"
-            )
+            # Frontmatter longer than the cap: fall back to the full parser
+            # rather than guess; this is the rare path, not the normal one.
+            meta = parse_page(ref.path)["meta"] or {}
         if meta.get("type") != "conversation":
             raise ValueError(
                 f"{ref.path}: not a conversation bundle (type={meta.get('type')!r})"
             )
-        missing = [k for k in ("agent", "session_id") if not meta.get(k)]
+        missing = [k for k in ("agent", "session_id", "title") if not meta.get(k)]
         if missing:
             raise ValueError(
                 f"{ref.path}: bundle missing required frontmatter: {', '.join(missing)}"

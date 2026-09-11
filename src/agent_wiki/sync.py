@@ -132,8 +132,8 @@ def sync(
 
             if dry_run and (prev is not None or _is_drop_zone(name)):
                 # Drop-zone's to_bundle moves the file, so a dry run may not
-                # parse it; its header-derived key is the parsed key anyway,
-                # and a header that yields no key is what a real run rejects.
+                # call it; session_key applies read_bundle's validation to the
+                # header, so its verdict (key or error) is the real run's.
                 if key is None:
                     results.append(SyncResult(source=name, key=str(ref), action="error", error=key_error))
                     continue

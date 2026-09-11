@@ -1042,10 +1042,13 @@ def _detach_sync(source, since, dry_run, include_live) -> None:
         except TimeoutError:
             pass  # a sweep is writing it; leave its output alone
         with open(log, "a", encoding="utf-8") as fh:
+            # PYTHONSAFEPATH keeps the agent's cwd off the child's sys.path,
+            # so a project's own yaml.py/json.py cannot shadow a dependency.
+            env = {**os.environ, "PYTHONSAFEPATH": "1"}
             proc = subprocess.Popen(
                 argv,
                 stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
-                start_new_session=True, close_fds=True,
+                start_new_session=True, close_fds=True, env=env,
             )
         click.echo(f"sync detached (pid {proc.pid}); log: {log}", err=True)
     except Exception as e:

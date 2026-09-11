@@ -3,8 +3,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agent_wiki.adapters.drop_zone import DropZoneAdapter
-from agent_wiki.conversation import BUNDLE_SUBDIR
+from agent_wiki.adapters.drop_zone import DropZoneAdapter, DropZoneRef
+from agent_wiki.conversation import BUNDLE_SUBDIR, read_bundle
 from agent_wiki.sync import sync
 
 
@@ -242,12 +242,33 @@ def test_sync_dry_run_reports_malformed_bundle_as_error_without_quarantine(tmp_v
     assert not (zone / "rejected").exists()
 
 
-def test_session_key_gives_up_on_unterminated_frontmatter(tmp_path):
+def test_session_key_matches_read_bundle_verdicts(tmp_path):
     zone = tmp_path / "incoming"
     zone.mkdir()
-    body = "\n".join(f"line {i}" for i in range(5000))
-    (zone / "open.md").write_text("---\ntype: conversation\nagent: a\nsession_id: s\n" + body)
     adapter = DropZoneAdapter({"path": str(zone)})
-    refs = list(adapter.discover())
+
+    # Unterminated frontmatter: both reject it as not a bundle.
+    body = "\n".join(f"line {i}" for i in range(5000))
+    open_md = zone / "open.md"
+    open_md.write_text("---\ntype: conversation\nagent: a\nsession_id: s\n" + body)
     with pytest.raises(ValueError):
-        adapter.session_key(refs[0])
+        adapter.session_key(DropZoneRef(path=open_md))
+    with pytest.raises(ValueError):
+        read_bundle(open_md)
+
+    # Missing title: read_bundle requires it, so the cheap key must too.
+    untitled = zone / "untitled.md"
+    untitled.write_text("---\ntype: conversation\nagent: a\nsession_id: s\n---\n\nbody\n")
+    with pytest.raises(ValueError, match="title"):
+        adapter.session_key(DropZoneRef(path=untitled))
+    with pytest.raises(ValueError, match="title"):
+        read_bundle(untitled)
+
+    # A very long but well-formed header is still accepted by both.
+    extra = "\n".join(f"k{i}: v{i}" for i in range(300))
+    long_md = zone / "long.md"
+    long_md.write_text(
+        f"---\ntype: conversation\nagent: a\nsession_id: s\ntitle: t\n{extra}\n---\n\nbody\n"
+    )
+    assert adapter.session_key(DropZoneRef(path=long_md)) == "a:s"
+    assert read_bundle(long_md).session_id == "s"
