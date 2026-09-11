@@ -187,3 +187,19 @@ def test_detach_with_vault_flag_syncs_only_that_vault(two_vault_env):
     time.sleep(0.5)
     assert not (work / STATE_FILE).exists()
     assert not run_log_path(work, "sync").exists()
+
+
+def test_detach_on_a_remote_default_vault_is_a_clear_noop(tmp_path, monkeypatch):
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yaml").write_text(yaml.dump({
+        "vaults": {"main": {"url": "http://127.0.0.1:9", "token": "tok"}},
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.setenv("AGENT_WIKI_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("AWIKI_VAULT", raising=False)
+
+    result = CliRunner().invoke(cli, ["sync", "--detach"])
+    assert result.exit_code == 0, result.output
+    assert "remote" in result.output
+    assert not (tmp_path / "state").exists()

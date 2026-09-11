@@ -133,8 +133,10 @@ def convert_jsonl(path: Path) -> Conversation:
 
             ts = _parse_ts(rec.get("timestamp"))
             if ts:
-                started = started if started and started < ts else (started or ts)
-                ended = ts
+                if started is None or ts < started:
+                    started = ts
+                if ended is None or ts > ended:
+                    ended = ts
 
             if role == "assistant":
                 fallback_model = fallback_model or msg.get("model")

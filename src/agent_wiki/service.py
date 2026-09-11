@@ -90,7 +90,8 @@ class VaultService(ABC):
 
     @abstractmethod
     def sync(self, source: str | None = None, since: str | None = None,
-             dry_run: bool = False, include_live: bool = False) -> dict: ...
+             dry_run: bool = False, include_live: bool = False,
+             try_once: bool = False) -> dict: ...
 
     @abstractmethod
     def adapt(self, source: str, ref: str, output: str | None = None) -> dict: ...
@@ -269,6 +270,9 @@ class LocalVaultService(VaultService):
                 since_dt = datetime.fromisoformat(since)
             except ValueError:
                 raise ValueError(f"since must be an ISO 8601 date (YYYY-MM-DD): {since}")
+            if since_dt.tzinfo is None:
+                # Adapters compare against tz-aware mtimes; a bare date is local time.
+                since_dt = since_dt.astimezone()
         if include_live:
             sources_cfg = config.setdefault("sources", {})
             for name in ("claude_code", "opencode", "pi", "drop_zone"):

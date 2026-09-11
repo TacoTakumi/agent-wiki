@@ -324,7 +324,7 @@ def test_claude_install_writes_both_hooks(tmp_settings):
     sweep_groups = [g for g in data["hooks"]["SessionStart"]
                     if any(h.get("command") == "awiki sync --detach" for h in g["hooks"])]
     assert len(sweep_groups) == 1
-    assert sweep_groups[0].get("matcher", "") in ("", "*")
+    assert "matcher" not in sweep_groups[0]
 
 
 def test_claude_install_both_hooks_is_idempotent(tmp_settings):

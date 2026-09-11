@@ -73,6 +73,10 @@ def enabled_sources(vault_path: Path, filter_name: str | None = None) -> list[tu
     return out
 
 
+def _is_drop_zone(name: str) -> bool:
+    return name in ("drop-zone", "drop_zone", "dropzone")
+
+
 def sync(
     vault_path: Path,
     source: str | None = None,
@@ -117,11 +121,16 @@ def sync(
                 results.append(SyncResult(source=name, key=key, action="skipped"))
                 continue
 
-            if dry_run:
+            if dry_run and (prev is not None or _is_drop_zone(name)):
+                # Drop-zone's to_bundle moves the file, so a dry run may not
+                # parse it; its header-derived key is the parsed key anyway.
                 action = "updated" if prev else "new"
                 results.append(SyncResult(source=name, key=key or str(ref), action=action))
                 continue
 
+            # Unknown or changed by the cheap key: parse, then re-check state
+            # under the parsed key, since the cheap key can disagree with the
+            # transcript's own session id (state is keyed by the latter).
             try:
                 conv = adapter.to_bundle(ref)
             except Exception as e:
@@ -130,11 +139,18 @@ def sync(
 
             key = f"{conv.agent}:{conv.session_id}"
             prev = state.get(key)
+            if prev and prev.get("fingerprint") == fp:
+                results.append(SyncResult(source=name, key=key, action="skipped"))
+                continue
+
+            if dry_run:
+                results.append(SyncResult(source=name, key=key, action="updated" if prev else "new"))
+                continue
 
             try:
                 # Drop-zone's to_bundle moves the file into raw/sessions/ itself;
                 # for everything else we write the bundle now.
-                if name in ("drop-zone", "drop_zone", "dropzone"):
+                if _is_drop_zone(name):
                     bundle_path = vault_path / "raw" / "sessions" / f"{conv.bundle_id()}.md"
                     if not bundle_path.exists():
                         bundle_path = write_bundle(conv, vault_path)

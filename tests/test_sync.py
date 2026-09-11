@@ -427,3 +427,51 @@ def test_adapt_pi_accepts_a_session_file(tmp_config, tmp_vault, tmp_path):
     text = out.read_text()
     assert "agent: pi" in text
     assert f"session_id: {_PI_SESSION_ID}" in text
+
+
+class _MismatchedKeyAdapter(_CountingAdapter):
+    """Cheap key disagrees with the parsed session id (e.g. a transcript whose
+    filename is not its session id): sync must still skip unchanged sessions."""
+
+    def session_key(self, ref):
+        return f"{self.name}:file-{ref.stem}"
+
+
+@pytest.fixture
+def mismatched_adapter(monkeypatch):
+    _COUNTING_INSTANCES.clear()
+    import agent_wiki.sync as sync_mod
+    monkeypatch.setattr(sync_mod, "build_adapter", lambda name, cfg: _MismatchedKeyAdapter(cfg))
+    return _COUNTING_INSTANCES
+
+
+def test_sync_rerun_skips_when_cheap_key_disagrees_with_parsed_id(tmp_vault, tmp_path, mismatched_adapter):
+    cc_root = tmp_path / "claude-projects"
+    _write_cc_session(cc_root, "s1")
+    _configure_vault_with_cc(tmp_vault, cc_root)
+
+    first = sync(tmp_vault)
+    assert [r.action for r in first] == ["new"]
+    assert list(load_state(tmp_vault)) == ["claude-code:s1"]
+
+    second = sync(tmp_vault)
+    assert [r.action for r in second] == ["skipped"]
+    assert mismatched_adapter[-1].to_bundle_calls == 1
+    assert list(load_state(tmp_vault)) == ["claude-code:s1"]
+
+    dry = sync(tmp_vault, dry_run=True)
+    assert [r.action for r in dry] == ["skipped"]
+
+
+def test_sync_since_accepts_a_bare_date(tmp_config, tmp_vault, tmp_path):
+    pi_root = tmp_path / "pi-sessions"
+    _write_pi_session(pi_root)
+    _configure_vault_with_pi(tmp_vault, pi_root)
+
+    result = CliRunner().invoke(cli, ["sync", "--source", "pi", "--dry-run", "--since", "2026-01-01"])
+    assert result.exit_code == 0, result.output
+    assert "1 new" in result.output
+
+    result = CliRunner().invoke(cli, ["sync", "--source", "pi", "--dry-run", "--since", "2999-01-01"])
+    assert result.exit_code == 0, result.output
+    assert "0 new" in result.output

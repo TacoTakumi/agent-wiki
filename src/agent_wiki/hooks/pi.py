@@ -16,6 +16,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from agent_wiki.hooks.managed_file import ManagedFileHook
+
 MARKER = "awiki-managed extension"
 EXTENSION_NAME = "awiki-sync.ts"
 SWEEP_COMMAND = "awiki sync --detach"
@@ -46,62 +48,11 @@ def _default_extension_path() -> Path:
     return agent_dir / "extensions" / EXTENSION_NAME
 
 
-def _is_managed(path: Path) -> bool:
-    try:
-        return MARKER in path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return False
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
-
-
-_CONTEXT_NOOP = (
-    "pi has no auto-context hook (no prompt-submit event to attach `awiki context` to); "
-    "nothing to do for --only context. The startup sweep is the pi hook: omit --only "
-    "or pass --only sweep."
+_HOOK = ManagedFileHook(
+    host="pi", event="session_start", command=SWEEP_COMMAND, marker=MARKER,
+    source=EXTENSION_SOURCE, default_path=_default_extension_path,
 )
 
-
-def install(config_path: Path | None = None, only: str | None = None) -> str:
-    """Write the sweep extension. Idempotent; a foreign file at the path is refused."""
-    if only == "context":
-        return _CONTEXT_NOOP
-    path = config_path or _default_extension_path()
-    if path.exists():
-        if not _is_managed(path):
-            raise ValueError(
-                f"Refusing to overwrite {path}: it is not awiki-managed (no marker). "
-                "Move it aside or pass --config-path."
-            )
-        if path.read_text(encoding="utf-8") == EXTENSION_SOURCE:
-            return f"Hook already installed at {path}."
-    _atomic_write(path, EXTENSION_SOURCE)
-    return f"Installed `{SWEEP_COMMAND}` on session_start into {path}."
-
-
-def uninstall(config_path: Path | None = None, only: str | None = None) -> str:
-    """Delete the sweep extension, but only if it carries the awiki marker."""
-    if only == "context":
-        return "pi has no auto-context hook; nothing to remove for --only context."
-    path = config_path or _default_extension_path()
-    if not path.exists():
-        return f"Nothing to uninstall: {path} does not exist."
-    if not _is_managed(path):
-        return f"Left {path} in place: it is not awiki-managed (no marker)."
-    path.unlink()
-    return f"Uninstalled {path}."
-
-
-def status(config_path: Path | None = None) -> str:
-    path = config_path or _default_extension_path()
-    if path.exists() and _is_managed(path):
-        return f"pi hooks ({path}):\n  sweep    session_start `{SWEEP_COMMAND}`: installed"
-    if path.exists():
-        return (f"pi hooks ({path}):\n  sweep    session_start `{SWEEP_COMMAND}`: "
-                "not installed (a file exists there but is not awiki-managed)")
-    return f"pi hooks ({path}):\n  sweep    session_start `{SWEEP_COMMAND}`: not installed"
+install = _HOOK.install
+uninstall = _HOOK.uninstall
+status = _HOOK.status
