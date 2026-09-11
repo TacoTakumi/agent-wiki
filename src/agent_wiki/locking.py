@@ -41,6 +41,13 @@ def lock_path(vault_path: Path, name: str) -> Path:
     return d / f"{name}.lock"
 
 
+def run_log_path(vault_path: Path, name: str) -> Path:
+    """Per-vault log file for a detached run, beside the vault's lock files."""
+    d = _vault_lock_dir(vault_path)
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{name}.log"
+
+
 @contextmanager
 def file_lock(vault_path: Path, name: str, timeout: float = DEFAULT_TIMEOUT):
     """Hold an exclusive advisory lock named ``name`` for ``vault_path``.
