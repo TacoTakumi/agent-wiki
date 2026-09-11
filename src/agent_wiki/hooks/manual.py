@@ -22,7 +22,7 @@ Agent-specific wiring:
 """
 
 
-def install(config_path: Path | None = None) -> str:
+def install(config_path: Path | None = None, only: str | None = None) -> str:
     """Return the instructions string for the caller to print."""
     return INSTRUCTIONS
 
