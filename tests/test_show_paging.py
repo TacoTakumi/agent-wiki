@@ -337,3 +337,84 @@ def test_toplevel_head_drops_the_frontmatter(tmp_config, tmp_vault):
     assert result.exit_code == 0
     assert not result.stdout.startswith("---")
     assert result.stdout == TOPLEVEL_BODY
+
+
+def test_head_and_tail_together_is_a_usage_error(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--head", "1", "--tail", "1"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Usage:" in result.stderr
+
+
+def test_head_of_zero_is_a_usage_error(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    result = CliRunner().invoke(cli, ["show", "research/log.md", "--head", "0"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Usage:" in result.stderr
+
+
+def test_negative_tail_is_a_usage_error(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    result = CliRunner().invoke(cli, ["show", "research/log.md", "--tail", "-1"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+
+
+def test_non_integer_head_is_a_usage_error(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    result = CliRunner().invoke(cli, ["show", "research/log.md", "--head", "x"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Usage:" in result.stderr
+
+
+def test_outline_with_head_is_a_usage_error(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--outline", "--head", "1"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Usage:" in result.stderr
+
+
+def test_outline_with_tail_is_a_usage_error(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--outline", "--tail", "1"])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+
+
+def test_a_usage_error_is_raised_before_the_page_is_read(tmp_config, tmp_vault):
+    result = CliRunner().invoke(
+        cli, ["show", "research/missing.md", "--head", "1", "--tail", "1"])
+    assert result.exit_code == 2
+    assert "no such page" not in result.stderr
+
+
+def test_outline_section_lists_only_that_sections_headings(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body(entries=3))
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--section", "check log", "--outline"])
+    assert result.exit_code == 0
+    assert result.stdout == (
+        "## Check log\n"
+        "### Entry 1\n"
+        "#### Detail 1\n"
+        "### Entry 2\n"
+        "#### Detail 2\n"
+        "### Entry 3\n"
+        "#### Detail 3\n"
+    )
+
+
+def test_outline_section_on_a_leaf_section_prints_its_heading_only(
+        tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body(entries=1))
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--section", "notes", "--outline"])
+    assert result.exit_code == 0
+    assert result.stdout == "## Notes\n"
