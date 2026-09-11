@@ -109,48 +109,70 @@ def install(config_path: Path | None = None, only: str | None = None) -> str:
     return "Installed " + ", ".join(f"`{c}`" for c in added) + f" into {path}."
 
 
-def uninstall(config_path: Path | None = None) -> str:
-    """Remove the `awiki context` hook entry. Idempotent."""
+def _remove_hook(data: dict, event: str, command: str) -> bool:
+    """Drop every ``command`` entry under ``event``; prune emptied groups/keys."""
+    hooks = data.get("hooks") or {}
+    groups = hooks.get(event) or []
+    removed = False
+    for group in groups:
+        before = len(group.get("hooks", []))
+        group["hooks"] = [h for h in group.get("hooks", []) if h.get("command") != command]
+        if len(group["hooks"]) != before:
+            removed = True
+    if event in hooks:
+        hooks[event] = [g for g in groups if g.get("hooks")]
+        if not hooks[event]:
+            del hooks[event]
+    if "hooks" in data and not data["hooks"]:
+        del data["hooks"]
+    return removed
+
+
+def uninstall(config_path: Path | None = None, only: str | None = None) -> str:
+    """Remove awiki's hook entries (both, or the one named by ``only``).
+
+    Idempotent; foreign hooks in the same events are left untouched, and
+    emptied groups/event keys are pruned.
+    """
+    names = select_hooks(only)
     path = config_path or _default_settings_path()
     if not path.exists():
         return f"Nothing to uninstall: {path} does not exist."
     data = _read_settings(path)
 
-    events = data.get("hooks", {}).get(CLAUDE_EVENT, [])
-    removed = False
-    for group in events:
-        before = len(group.get("hooks", []))
-        group["hooks"] = [
-            h for h in group.get("hooks", [])
-            if h.get("command") != AWIKI_COMMAND
-        ]
-        if len(group["hooks"]) != before:
-            removed = True
+    removed: list[str] = []
+    for name in names:
+        spec = HOOKS[name]
+        if _remove_hook(data, spec["event"], spec["command"]):
+            removed.append(spec["command"])
 
-    # Drop empty groups, then drop the event key entirely if no groups left.
-    if events:
-        data["hooks"][CLAUDE_EVENT] = [g for g in events if g.get("hooks")]
-        if not data["hooks"][CLAUDE_EVENT]:
-            del data["hooks"][CLAUDE_EVENT]
-        if not data["hooks"]:
-            del data["hooks"]
-
+    if not removed:
+        return "Nothing to uninstall."
     _atomic_write_json(path, data)
-    return "Uninstalled." if removed else "Nothing to uninstall."
+    return "Uninstalled " + ", ".join(f"`{c}`" for c in removed) + "."
+
+
+def _is_installed(data: dict, event: str, command: str) -> bool:
+    for group in (data.get("hooks") or {}).get(event, []):
+        if any(h.get("command") == command for h in group.get("hooks", [])):
+            return True
+    return False
 
 
 def status(config_path: Path | None = None) -> str:
-    """Report whether `awiki context` is wired into the target settings."""
+    """Report, per hook, whether it is wired into the target settings."""
     path = config_path or _default_settings_path()
     if not path.exists():
-        return f"Not installed ({path} does not exist)."
-    try:
-        data = _read_settings(path)
-    except ValueError:
-        return f"Cannot read {path}: malformed JSON."
-    events = data.get("hooks", {}).get(CLAUDE_EVENT, [])
-    for group in events:
-        for h in group.get("hooks", []):
-            if h.get("command") == AWIKI_COMMAND:
-                return f"Installed at {path}."
-    return f"Not installed in {path}."
+        data: dict = {}
+        where = f"{path} does not exist"
+    else:
+        try:
+            data = _read_settings(path)
+        except ValueError:
+            return f"Cannot read {path}: malformed JSON."
+        where = str(path)
+    lines = [f"Claude Code hooks ({where}):"]
+    for name, spec in HOOKS.items():
+        state = "installed" if _is_installed(data, spec["event"], spec["command"]) else "not installed"
+        lines.append(f"  {name:<8} {spec['event']} `{spec['command']}`: {state}")
+    return "\n".join(lines)
