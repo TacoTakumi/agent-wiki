@@ -308,3 +308,76 @@ def test_end_to_end_install_then_fire_hook(tmp_config, tmp_vault, tmp_settings):
     ])
     data = json.loads(tmp_settings.read_text())
     assert not data.get("hooks", {}).get("UserPromptSubmit")
+
+
+# --- two hooks per agent: auto-context (UserPromptSubmit) + startup sweep (SessionStart)
+
+def _commands(data: dict, event: str) -> list[str]:
+    return [h.get("command") for g in data.get("hooks", {}).get(event, []) for h in g.get("hooks", [])]
+
+
+def test_claude_install_writes_both_hooks(tmp_settings):
+    claude_backend.install(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    assert _commands(data, "UserPromptSubmit").count("awiki context") == 1
+    assert _commands(data, "SessionStart").count("awiki sync --detach") == 1
+    sweep_groups = [g for g in data["hooks"]["SessionStart"]
+                    if any(h.get("command") == "awiki sync --detach" for h in g["hooks"])]
+    assert len(sweep_groups) == 1
+    assert sweep_groups[0].get("matcher", "") in ("", "*")
+
+
+def test_claude_install_both_hooks_is_idempotent(tmp_settings):
+    claude_backend.install(config_path=tmp_settings)
+    first = tmp_settings.read_text()
+    claude_backend.install(config_path=tmp_settings)
+    assert tmp_settings.read_text() == first
+    data = json.loads(first)
+    assert _commands(data, "UserPromptSubmit").count("awiki context") == 1
+    assert _commands(data, "SessionStart").count("awiki sync --detach") == 1
+
+
+def test_claude_install_keeps_foreign_session_start_hook(tmp_settings):
+    tmp_settings.write_text(json.dumps({
+        "model": "claude-opus-4-7",
+        "hooks": {"SessionStart": [{"matcher": "startup",
+                                    "hooks": [{"type": "command", "command": "echo hi"}]}]},
+    }))
+    claude_backend.install(config_path=tmp_settings)
+    data = json.loads(tmp_settings.read_text())
+    assert data["model"] == "claude-opus-4-7"
+    assert "echo hi" in _commands(data, "SessionStart")
+    assert "awiki sync --detach" in _commands(data, "SessionStart")
+
+
+def test_claude_install_only_context(tmp_settings):
+    claude_backend.install(config_path=tmp_settings, only="context")
+    data = json.loads(tmp_settings.read_text())
+    assert "awiki context" in _commands(data, "UserPromptSubmit")
+    assert "SessionStart" not in data.get("hooks", {})
+
+
+def test_claude_install_only_sweep(tmp_settings):
+    claude_backend.install(config_path=tmp_settings, only="sweep")
+    data = json.loads(tmp_settings.read_text())
+    assert "awiki sync --detach" in _commands(data, "SessionStart")
+    assert "UserPromptSubmit" not in data.get("hooks", {})
+
+
+def test_cli_hook_install_only_sweep(tmp_settings):
+    result = CliRunner().invoke(cli, [
+        "hook", "install", "--agent", "claude", "--only", "sweep",
+        "--config-path", str(tmp_settings),
+    ])
+    assert result.exit_code == 0, result.output
+    data = json.loads(tmp_settings.read_text())
+    assert "awiki sync --detach" in _commands(data, "SessionStart")
+    assert "UserPromptSubmit" not in data.get("hooks", {})
+
+
+def test_cli_hook_install_rejects_unknown_only(tmp_settings):
+    result = CliRunner().invoke(cli, [
+        "hook", "install", "--agent", "claude", "--only", "bogus",
+        "--config-path", str(tmp_settings),
+    ])
+    assert result.exit_code != 0

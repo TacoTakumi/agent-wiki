@@ -10,6 +10,27 @@ from pathlib import Path
 AWIKI_COMMAND = "awiki context"
 CLAUDE_EVENT = "UserPromptSubmit"
 
+SWEEP_COMMAND = "awiki sync --detach"
+SWEEP_EVENT = "SessionStart"
+
+# The two hooks awiki wires into an agent: ``context`` injects wiki hits into
+# each prompt; ``sweep`` kicks off a detached session sync whenever an agent
+# starts. Keyed by the --only name.
+HOOKS: dict[str, dict[str, str]] = {
+    "context": {"event": CLAUDE_EVENT, "command": AWIKI_COMMAND},
+    "sweep": {"event": SWEEP_EVENT, "command": SWEEP_COMMAND},
+}
+HOOK_NAMES = tuple(HOOKS)
+
+
+def select_hooks(only: str | None) -> list[str]:
+    """Resolve ``--only`` into the hook names to act on (all when unset)."""
+    if only is None:
+        return list(HOOK_NAMES)
+    if only not in HOOKS:
+        raise ValueError(f"Unknown --only {only!r}. Supported: {', '.join(HOOK_NAMES)}.")
+    return [only]
+
 
 def _default_settings_path() -> Path:
     env = os.environ.get("CLAUDE_SETTINGS_PATH")
@@ -40,32 +61,52 @@ def _atomic_write_json(path: Path, data: dict) -> None:
     os.replace(tmp, path)
 
 
-def install(config_path: Path | None = None) -> str:
-    """Add a UserPromptSubmit hook entry for `awiki context`.
+def _add_hook(data: dict, event: str, command: str, matcher: str | None) -> bool:
+    """Ensure one ``command`` entry exists under ``event``. Returns True if added."""
+    hooks = data.setdefault("hooks", {})
+    groups = hooks.setdefault(event, [])
+    for group in groups:
+        if any(h.get("command") == command for h in group.get("hooks", [])):
+            return False
+    # Reuse the first group for the context hook (Claude uses one matcher
+    # bucket per event and the existing installs live there); the sweep gets
+    # its own matcher-less group so it fires for every SessionStart source
+    # regardless of what other groups restrict themselves to.
+    if matcher is not None and groups:
+        group = groups[0]
+        group.setdefault("hooks", [])
+    else:
+        group = {"hooks": []}
+        if matcher is not None:
+            group["matcher"] = matcher
+        groups.append(group)
+    group["hooks"].append({"type": "command", "command": command})
+    return True
 
+
+def install(config_path: Path | None = None, only: str | None = None) -> str:
+    """Wire awiki's hooks into Claude Code's settings.
+
+    Installs the ``UserPromptSubmit`` auto-context hook and the ``SessionStart``
+    sweep (``awiki sync --detach``); ``only`` narrows to one of them.
     Idempotent: re-running does not duplicate. Preserves all other keys.
     Raises ValueError if the target file is malformed JSON.
     """
+    names = select_hooks(only)
     path = config_path or _default_settings_path()
     data = _read_settings(path)
 
-    hooks = data.setdefault("hooks", {})
-    events = hooks.setdefault(CLAUDE_EVENT, [])
+    added: list[str] = []
+    for name in names:
+        spec = HOOKS[name]
+        matcher = "*" if name == "context" else None
+        if _add_hook(data, spec["event"], spec["command"], matcher):
+            added.append(spec["command"])
 
-    # Find (or create) a matcher group; Claude uses one matcher bucket per event.
-    if not events:
-        events.append({"matcher": "*", "hooks": []})
-    group = events[0]
-    group.setdefault("hooks", [])
-
-    # De-duplicate by command string.
-    if any(h.get("command") == AWIKI_COMMAND for h in group["hooks"]):
-        _atomic_write_json(path, data)
+    if not added:
         return f"Hook already installed at {path}."
-
-    group["hooks"].append({"type": "command", "command": AWIKI_COMMAND})
     _atomic_write_json(path, data)
-    return f"Installed `{AWIKI_COMMAND}` into {path}."
+    return "Installed " + ", ".join(f"`{c}`" for c in added) + f" into {path}."
 
 
 def uninstall(config_path: Path | None = None) -> str:

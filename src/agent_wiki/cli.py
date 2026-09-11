@@ -1234,8 +1234,11 @@ def hook_group():
 @click.option("--agent", default="claude", help="Target agent CLI (claude, manual).")
 @click.option("--config-path", default=None, type=click.Path(),
               help="Override the agent's settings file path (for tests or non-default installs).")
-def hook_install(agent, config_path):
-    """Wire `awiki context` into the target agent's hook system."""
+@click.option("--only", default=None, type=click.Choice(["context", "sweep"]),
+              help="Install just one hook: 'context' (auto-context on each prompt) "
+                   "or 'sweep' (detached session sync on agent start). Default: both.")
+def hook_install(agent, config_path, only):
+    """Wire awiki's auto-context hook and startup session sweep into an agent."""
     from agent_wiki.hooks import get_backend
     try:
         backend = get_backend(agent)
@@ -1243,7 +1246,7 @@ def hook_install(agent, config_path):
         raise click.ClickException(str(exc))
     path = Path(config_path) if config_path else None
     try:
-        msg = backend["install"](config_path=path)
+        msg = backend["install"](config_path=path, only=only)
     except ValueError as exc:
         raise click.ClickException(str(exc))
     click.echo(msg)
