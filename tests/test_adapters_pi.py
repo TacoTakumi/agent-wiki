@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -113,3 +113,77 @@ def test_adapter_to_bundle_uses_convert(tmp_path):
     conv = adapter.to_bundle(jsonl)
     assert conv.agent == "pi"
     assert conv.session_id == SESSION_ID
+
+
+def test_discover_skips_live_sessions_unless_include_live(tmp_path):
+    import os
+    import time
+
+    root = tmp_path / "sessions"
+    jsonl = root / "p" / f"2026-08-05T16-02-31-060Z_{SESSION_ID}.jsonl"
+    _write_jsonl(jsonl, _fixture_records())
+
+    assert list(PiAdapter({"path": str(root)}).discover()) == []
+    assert list(PiAdapter({"path": str(root), "include_live": True}).discover()) == [jsonl]
+
+    old = time.time() - 3600 * 2
+    os.utime(jsonl, (old, old))
+    assert list(PiAdapter({"path": str(root)}).discover()) == [jsonl]
+
+
+def test_discover_respects_since(tmp_path):
+    import os
+    import time
+
+    root = tmp_path / "sessions"
+    jsonl = root / "p" / f"2026-08-05T16-02-31-060Z_{SESSION_ID}.jsonl"
+    _write_jsonl(jsonl, _fixture_records())
+    old = time.time() - 3600 * 48
+    os.utime(jsonl, (old, old))
+
+    adapter = PiAdapter({"path": str(root)})
+    adapter.since = datetime.now(timezone.utc) - timedelta(hours=24)
+    assert list(adapter.discover()) == []
+
+    adapter.since = datetime.now(timezone.utc) - timedelta(hours=72)
+    assert list(adapter.discover()) == [jsonl]
+
+
+def test_missing_root_is_quiet(tmp_path):
+    assert list(PiAdapter({"path": str(tmp_path / "nope")}).discover()) == []
+
+
+def test_fingerprint_changes_on_mtime_change(tmp_path):
+    import os
+    import time
+
+    jsonl = tmp_path / "p" / f"2026-08-05T16-02-31-060Z_{SESSION_ID}.jsonl"
+    _write_jsonl(jsonl, _fixture_records())
+    adapter = PiAdapter({"path": str(tmp_path)})
+    fp1 = adapter.fingerprint(jsonl)
+    t = time.time() - 10
+    os.utime(jsonl, (t, t))
+    assert adapter.fingerprint(jsonl) != fp1
+
+
+def test_session_key_from_filename_without_opening_body(tmp_path, monkeypatch):
+    import builtins
+
+    jsonl = tmp_path / "p" / f"2026-08-05T16-02-31-060Z_{SESSION_ID}.jsonl"
+    _write_jsonl(jsonl, _fixture_records())
+    adapter = PiAdapter({"path": str(tmp_path), "include_live": True})
+    conv = adapter.to_bundle(jsonl)
+
+    real_open = builtins.open
+
+    def _no_open(*args, **kwargs):
+        raise AssertionError("session_key must not open the transcript")
+
+    monkeypatch.setattr(builtins, "open", _no_open)
+    try:
+        key = adapter.session_key(jsonl)
+    finally:
+        monkeypatch.setattr(builtins, "open", real_open)
+
+    assert key == f"{conv.agent}:{conv.session_id}"
+    assert key == f"pi:{SESSION_ID}"
