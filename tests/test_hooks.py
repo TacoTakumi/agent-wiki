@@ -447,3 +447,11 @@ def test_cli_hook_uninstall_only_sweep(tmp_settings):
     data = json.loads(tmp_settings.read_text())
     assert "awiki context" in _commands(data, "UserPromptSubmit")
     assert "SessionStart" not in data["hooks"]
+
+
+def test_manual_instructions_cover_both_hooks_on_all_hosts():
+    result = CliRunner().invoke(cli, ["hook", "install", "--agent", "manual"])
+    assert result.exit_code == 0
+    for needle in ("awiki context", "awiki sync --detach",
+                   "SessionStart", "session_start", "session.created"):
+        assert needle in result.output, needle
