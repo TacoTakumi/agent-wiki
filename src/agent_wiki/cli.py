@@ -724,7 +724,8 @@ def search(query, topic, limit):
               help="Keep only the first N child sections of the selection.")
 @click.option("--tail", "tail", type=int, default=None, metavar="N",
               help="Keep only the last N child sections of the selection.")
-def show(path, outline, section, head, tail):
+@click.pass_context
+def show(ctx, path, outline, section, head, tail):
     """Print a wiki page (or any vault file) by its vault-relative path.
 
     With multiple vaults configured the path may carry a vault: prefix; an
@@ -739,6 +740,16 @@ def show(path, outline, section, head, tail):
     from agent_wiki.sections import (
         match_headings, render_outline, select_section, slice_children,
         slice_top_level, strip_frontmatter)
+
+    # Validate the flag combination before anything is read or printed, so a
+    # misuse never half-prints a page.
+    if head is not None and tail is not None:
+        ctx.fail("--head and --tail cannot be combined.")
+    for name, value in (("--head", head), ("--tail", tail)):
+        if value is not None and value < 1:
+            ctx.fail(f"{name} needs a count of at least 1.")
+        if value is not None and outline:
+            ctx.fail(f"--outline cannot be combined with {name}.")
 
     svc, ref = _dispatch_ref(path, _show_probe)
     try:
