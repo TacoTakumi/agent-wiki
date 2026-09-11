@@ -141,3 +141,49 @@ def test_blocking_sync_still_times_out_when_lock_is_held(detach_env, monkeypatch
     assert result.exit_code != 0
     assert isinstance(result.exception, TimeoutError)
     assert not (vault / STATE_FILE).exists()
+
+
+@pytest.fixture
+def two_vault_env(tmp_path, monkeypatch):
+    """Two configured vaults, each with its own pending session; 'work' is default."""
+    cc_work = tmp_path / "cc-work"
+    _write_cc_session(cc_work, "w1")
+    cc_other = tmp_path / "cc-other"
+    _write_cc_session(cc_other, "o1")
+    work = tmp_path / "work-vault"
+    other = tmp_path / "other-vault"
+    _make_vault(work, cc_work)
+    _make_vault(other, cc_other)
+
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yaml").write_text(yaml.dump({
+        "default_vault": "work",
+        "vaults": {"work": {"path": str(work)}, "other": {"path": str(other)}},
+    }))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.setenv("AGENT_WIKI_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.delenv("AWIKI_VAULT", raising=False)
+    return work, other
+
+
+def test_detach_syncs_default_vault_only(two_vault_env):
+    work, other = two_vault_env
+    result = CliRunner().invoke(cli, ["sync", "--detach"])
+    assert result.exit_code == 0, result.output
+    assert _wait_for(lambda: "claude-code:w1" in load_state(work))
+    assert _wait_for(lambda: "1 new" in run_log_path(work, "sync").read_text())
+    time.sleep(0.5)
+    assert not (other / STATE_FILE).exists()
+    assert not run_log_path(other, "sync").exists()
+
+
+def test_detach_with_vault_flag_syncs_only_that_vault(two_vault_env):
+    work, other = two_vault_env
+    result = CliRunner().invoke(cli, ["--vault", "other", "sync", "--detach"])
+    assert result.exit_code == 0, result.output
+    assert _wait_for(lambda: "claude-code:o1" in load_state(other))
+    assert _wait_for(lambda: "1 new" in run_log_path(other, "sync").read_text())
+    time.sleep(0.5)
+    assert not (work / STATE_FILE).exists()
+    assert not run_log_path(work, "sync").exists()
