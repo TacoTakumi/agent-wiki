@@ -353,3 +353,29 @@ def test_cross_vault_inbound_link_does_not_rescue_orphan(tmp_path):
     issues = lint_vault(vault_a)
     orphans = [i for i in issues if i["type"] == "orphan"]
     assert any("lonely" in i["path"] for i in orphans)
+
+
+# --- page_max_lines validation -----------------------------------------------
+
+def _lint_with_page_max_lines(vault, value):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    _set_page_max_lines(vault, value)
+    return CliRunner().invoke(cli, ["lint"])
+
+
+def test_lint_rejects_a_non_integer_page_max_lines(tmp_config, tmp_vault):
+    result = _lint_with_page_max_lines(tmp_vault, "abc")
+    assert result.exit_code != 0
+    assert "page_max_lines" in result.stderr
+
+
+def test_lint_rejects_a_zero_page_max_lines(tmp_config, tmp_vault):
+    result = _lint_with_page_max_lines(tmp_vault, 0)
+    assert result.exit_code != 0
+    assert "page_max_lines" in result.stderr
+
+
+def test_lint_accepts_a_valid_page_max_lines(tmp_config, tmp_vault):
+    result = _lint_with_page_max_lines(tmp_vault, 120)
+    assert result.exit_code == 0

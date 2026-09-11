@@ -896,7 +896,12 @@ def lint(refetch, strict):
 
     registry = load_registry() if resolve_vault_override() is None else {}
     if len(registry) <= 1:
-        issues = _service().lint(refetch=refetch)
+        try:
+            issues = _service().lint(refetch=refetch)
+        except ValueError as e:
+            # A malformed wiki.yaml setting (e.g. the lint threshold) is the
+            # user's to fix: name it plainly instead of raising a traceback.
+            raise click.ClickException(str(e))
 
         if not issues:
             click.echo("No issues found.")
