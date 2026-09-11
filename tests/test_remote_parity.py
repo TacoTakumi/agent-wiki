@@ -114,3 +114,80 @@ def test_url_ingest_unchanged_skip_round_trips(remote_service, tmp_vault,
     remote_service.ingest_url(url, topic="research")
     with pytest.raises(UnchangedURLSkip):
         remote_service.ingest_url(url, topic="research")
+
+
+SLICING_PAGE = """---
+title: Ops
+topic: research
+tags: []
+---
+
+# Ops
+
+Page preamble.
+
+## Check log
+
+Log preamble.
+
+### Entry 1
+
+Body 1.
+
+### Entry 2
+
+Body 2.
+
+## Notes
+
+Notes body.
+"""
+
+SLICING_FLAGS = [
+    ["--outline"],
+    ["--section", "check log"],
+    ["--section", "check log", "--outline"],
+    ["--head", "1"],
+    ["--tail", "1"],
+    ["--section", "check log", "--head", "1"],
+    ["--section", "check log", "--tail", "1"],
+]
+
+
+def _show_stdout(service, monkeypatch, args):
+    from click.testing import CliRunner
+    from agent_wiki import cli as cli_mod
+    monkeypatch.setattr(cli_mod, "_service", lambda: service)
+    result = CliRunner().invoke(cli_mod.cli, ["show", *args])
+    assert result.exit_code == 0, result.output
+    return result.stdout
+
+
+@pytest.mark.parametrize("flags", SLICING_FLAGS)
+def test_show_slicing_parity(remote_service, tmp_vault, monkeypatch, flags):
+    # Slicing runs client-side on the page text a vault service returns, so a
+    # remote vault prints byte-identically to a local one for the same flags.
+    (tmp_vault / "research" / "log.md").write_text(SLICING_PAGE)
+    args = ["research/log.md", *flags]
+    local = _show_stdout(LocalVaultService(tmp_vault), monkeypatch, args)
+    remote = _show_stdout(remote_service, monkeypatch, args)
+    assert remote == local
+    assert local != ""
+
+
+def test_show_slicing_issues_one_page_get_only(remote_service, tmp_vault,
+                                               monkeypatch):
+    # The slicing flags add no HTTP surface: the remote show path still makes
+    # exactly the one page request it always made.
+    (tmp_vault / "research" / "log.md").write_text(SLICING_PAGE)
+    calls = []
+    original = remote_service._c.request
+
+    def _record(method, url, *args, **kwargs):
+        calls.append((method, str(url)))
+        return original(method, url, *args, **kwargs)
+
+    monkeypatch.setattr(remote_service._c, "request", _record)
+    _show_stdout(remote_service, monkeypatch,
+                 ["research/log.md", "--section", "check log", "--head", "1"])
+    assert calls == [("GET", "/v1/pages/research/log.md")]

@@ -418,3 +418,24 @@ def test_outline_section_on_a_leaf_section_prints_its_heading_only(
         cli, ["show", "research/log.md", "--section", "notes", "--outline"])
     assert result.exit_code == 0
     assert result.stdout == "## Notes\n"
+
+
+def test_extensionless_path_with_section_still_warns_and_locates(
+        tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=WATERMARK_BODY)
+    result = CliRunner().invoke(
+        cli, ["show", "research/log", "--section", "sources"])
+    assert result.exit_code == 0
+    assert result.stdout == "## Sources\n\nSource list.\n"
+    assert "research/log.md" in result.stderr
+    assert ".md extension" in result.stderr
+    assert str(tmp_vault / "research" / "log.md") in result.stderr
+
+
+def test_head_beyond_the_count_equals_the_file_without_its_frontmatter(
+        tmp_config, tmp_vault):
+    page = _make_page(tmp_vault, body=TOPLEVEL_BODY)
+    result = CliRunner().invoke(cli, ["show", "research/log.md", "--head", "99"])
+    assert result.exit_code == 0
+    assert page.endswith(TOPLEVEL_BODY)
+    assert result.stdout == TOPLEVEL_BODY
