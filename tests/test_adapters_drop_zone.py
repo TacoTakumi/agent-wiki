@@ -140,3 +140,62 @@ def test_sync_drop_zone_rerun_after_update(tmp_vault, tmp_path):
 
     results = sync(tmp_vault)
     assert [r.action for r in results] == ["updated"]
+
+
+def test_session_key_reads_only_frontmatter_header(tmp_path, monkeypatch):
+    zone = tmp_path / "incoming"
+    zone.mkdir()
+    big_body = "\n".join(f"filler line {i}" for i in range(20000))
+    (zone / "one.md").write_text(VALID_BUNDLE + big_body + "\n")
+
+    adapter = DropZoneAdapter({"path": str(zone)})
+    refs = list(adapter.discover())
+
+    import builtins
+    real_open = builtins.open
+    consumed: list[int] = []
+
+    class _Counting:
+        def __init__(self, fh):
+            self._fh = fh
+
+        def __iter__(self):
+            for line in self._fh:
+                consumed.append(len(line))
+                yield line
+
+        def readline(self, *a):
+            line = self._fh.readline(*a)
+            consumed.append(len(line))
+            return line
+
+        def read(self, *a):
+            data = self._fh.read(*a)
+            consumed.append(len(data))
+            return data
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._fh.close()
+
+        def __getattr__(self, name):
+            return getattr(self._fh, name)
+
+    def _counting_open(*args, **kwargs):
+        return _Counting(real_open(*args, **kwargs))
+
+    monkeypatch.setattr(builtins, "open", _counting_open)
+    try:
+        key = adapter.session_key(refs[0])
+    finally:
+        monkeypatch.setattr(builtins, "open", real_open)
+
+    assert key == "my-assistant:2026-04-18-1030"
+    assert sum(consumed) < len(VALID_BUNDLE) + 64
+
+    adapter.set_vault(tmp_path / "vault")
+    (tmp_path / "vault" / "raw" / "sessions").mkdir(parents=True)
+    conv = adapter.to_bundle(refs[0])
+    assert key == f"{conv.agent}:{conv.session_id}"

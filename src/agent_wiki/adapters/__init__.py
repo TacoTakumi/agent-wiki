@@ -5,6 +5,9 @@ and exposes:
 
 - ``discover()`` → iterable of opaque ``SessionRef`` values (anything the
   adapter understands internally — usually a ``Path`` or string session id).
+- ``session_key(ref)`` → ``"<agent>:<session_id>"``, the sync state key,
+  computed cheaply (filename, row id, or frontmatter header only) so the
+  sync loop can consult state without parsing the transcript.
 - ``fingerprint(ref)`` → string used for idempotent sync state tracking.
   Typically ``"<mtime>"`` or ``"<hash>"``.
 - ``to_bundle(ref)`` → ``Conversation``.
@@ -31,6 +34,14 @@ class ConversationAdapter(ABC):
     @abstractmethod
     def discover(self) -> Iterable[Any]:
         """Yield session references (adapter-internal type)."""
+
+    @abstractmethod
+    def session_key(self, ref: Any) -> str:
+        """Return ``"<agent>:<session_id>"`` without parsing the transcript body.
+
+        Must equal ``f"{conv.agent}:{conv.session_id}"`` of the Conversation
+        that ``to_bundle(ref)`` would produce.
+        """
 
     @abstractmethod
     def fingerprint(self, ref: Any) -> str:

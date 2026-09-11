@@ -69,6 +69,12 @@ class ClaudeCodeAdapter(ConversationAdapter):
                 continue
             yield jsonl
 
+    def session_key(self, ref: Path) -> str:
+        # Claude Code names each transcript <session_id>.jsonl, and
+        # convert_jsonl falls back to the stem when no record carries a
+        # sessionId, so the filename is the key without reading the body.
+        return f"{self.name}:{ref.stem}"
+
     def fingerprint(self, ref: Path) -> str:
         return f"mtime:{int(ref.stat().st_mtime)}:size:{ref.stat().st_size}"
 

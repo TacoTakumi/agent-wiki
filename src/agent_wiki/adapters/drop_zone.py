@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import hashlib
 import shutil
+
+import yaml
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -73,6 +75,16 @@ class DropZoneAdapter(ConversationAdapter):
                 continue
             yield DropZoneRef(path=p)
 
+    def session_key(self, ref: DropZoneRef) -> str:
+        meta = _read_frontmatter_header(ref.path)
+        agent = meta.get("agent")
+        session_id = meta.get("session_id")
+        if not agent or not session_id:
+            raise ValueError(
+                f"{ref.path}: bundle missing required frontmatter: agent, session_id"
+            )
+        return f"{agent}:{session_id}"
+
     def fingerprint(self, ref: DropZoneRef) -> str:
         # Content hash so re-dropping a file with the same name but different
         # content is treated as an update.
@@ -93,6 +105,27 @@ class DropZoneAdapter(ConversationAdapter):
             shutil.move(str(ref.path), str(dest))
 
         return conv
+
+
+def _read_frontmatter_header(path: Path) -> dict:
+    """Parse only the leading ``---`` frontmatter block, stopping at its close.
+
+    The body is never read, so the cost is independent of transcript size.
+    """
+    lines: list[str] = []
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        first = f.readline()
+        if first.strip() != "---":
+            return {}
+        for line in f:
+            if line.strip() == "---":
+                break
+            lines.append(line)
+    try:
+        meta = yaml.safe_load("".join(lines))
+    except yaml.YAMLError:
+        return {}
+    return meta if isinstance(meta, dict) else {}
 
 
 def _sha1(path: Path) -> str:
