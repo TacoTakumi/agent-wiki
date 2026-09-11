@@ -716,13 +716,20 @@ def search(query, topic, limit):
 
 @cli.command()
 @click.argument("path")
-def show(path):
+@click.option("--outline", is_flag=True, default=False,
+              help="Print only the page's heading lines, in file order.")
+def show(path, outline):
     """Print a wiki page (or any vault file) by its vault-relative path.
 
     With multiple vaults configured the path may carry a vault: prefix; an
     unqualified path resolves across all vaults (unique match wins, ambiguity
     is a hard error listing the qualified candidates). An extensionless page
-    path falls back to <path>.md, with a warning on stderr."""
+    path falls back to <path>.md, with a warning on stderr.
+
+    --outline prints the page's heading lines only. Without it the page is
+    printed verbatim, frontmatter included."""
+    from agent_wiki.sections import render_outline, strip_frontmatter
+
     svc, ref = _dispatch_ref(path, _show_probe)
     try:
         content, shown = _show_with_md_fallback(svc, ref)
@@ -732,6 +739,10 @@ def show(path):
         click.echo(
             f"warning: '{ref}' resolved to '{shown}'; wiki page paths "
             f"include the .md extension.", err=True)
+    # Any sliced view drops the frontmatter, so what prints is plain markdown;
+    # the flagless path stays byte-identical to the file.
+    if outline:
+        content = render_outline(strip_frontmatter(content))
     click.echo(content, nl=False)
     # Surface where the content was read from on stderr: a local absolute
     # path, or for a remote vault the server URL + vault-relative path. stdout stays
