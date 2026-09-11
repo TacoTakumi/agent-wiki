@@ -1,7 +1,8 @@
 from datetime import date, datetime
 from pathlib import Path
 from agent_wiki.config import (
-    detect_vocabulary_conflicts, load_vault_config, parse_tag_vocabulary,
+    detect_vocabulary_conflicts, load_vault_config, parse_page_max_lines,
+    parse_tag_vocabulary,
 )
 from agent_wiki.fetch import Fetcher, FetchError, HttpFetcher, is_url
 from agent_wiki.index import indexed_paths
@@ -12,7 +13,6 @@ from agent_wiki.page import (
 from agent_wiki.tags import canonicalize_tags
 
 STALE_DAYS = 90  # a page more than this many days behind its newest source is stale
-PAGE_MAX_LINES = 200  # a page body longer than this is a split candidate
 
 # Every issue "type" lint_vault can emit. The canonical manifest: each entry must
 # have a distinct CLI label in cli.LINT_LABELS (enforced by tests). Add a new
@@ -60,6 +60,7 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
     if refetch and fetcher is None:
         fetcher = HttpFetcher()
     vault_config = load_vault_config(vault_path)
+    page_max_lines = parse_page_max_lines(vault_config)
     topics = vault_config.get("topics", [])
     issues = []
     listed_in_index = indexed_paths(vault_path)
@@ -157,13 +158,13 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
 
             # page-size: an over-long page body is a split candidate. Counts
             # content lines only (frontmatter excluded) via the canonical
-            # raw-body normalizer.
+            # raw-body normalizer. The threshold comes from the vault config.
             n_lines = len(page_body_for_raw(page["body"]).splitlines())
-            if n_lines > PAGE_MAX_LINES:
+            if n_lines > page_max_lines:
                 issues.append({
                     "type": "page_size",
                     "path": str(rel),
-                    "detail": f"{rel} is {n_lines} lines (>{PAGE_MAX_LINES}); consider splitting",
+                    "detail": f"{rel} is {n_lines} lines (>{page_max_lines}); consider splitting",
                 })
 
             if tag_audit_on:

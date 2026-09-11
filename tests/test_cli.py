@@ -419,7 +419,7 @@ def test_lint_labels_cover_every_lint_type():
 def test_lint_label_renders_in_output(tmp_path, monkeypatch):
     # The mapping is actually used: an over-long page surfaces under [SIZE].
     vault = _setup_vault(tmp_path, monkeypatch)
-    body = "\n".join(f"line {i}" for i in range(201)) + "\n"
+    body = "\n".join(f"line {i}" for i in range(501)) + "\n"
     meta = {"title": "Big", "topic": "research", "tags": [],
             "created": "2026-04-14", "updated": "2026-04-14", "sources": []}
     (vault / "research" / "big.md").write_text(render_page(meta, body))
