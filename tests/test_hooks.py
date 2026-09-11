@@ -92,7 +92,7 @@ def test_backends_dict_contains_claude_and_manual():
 def test_get_backend_raises_on_unknown_agent():
     import pytest
     with pytest.raises(KeyError):
-        get_backend("opencode")
+        get_backend("no-such-agent")
 
 
 def test_manual_backend_has_install_function():
@@ -220,7 +220,7 @@ def test_cli_hook_install_manual_prints_instructions():
 
 def test_cli_hook_install_unknown_agent_errors():
     runner = CliRunner()
-    result = runner.invoke(cli, ["hook", "install", "--agent", "opencode"])
+    result = runner.invoke(cli, ["hook", "install", "--agent", "no-such-agent"])
     assert result.exit_code != 0
     assert "manual" in result.output.lower()
 
