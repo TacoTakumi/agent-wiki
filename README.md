@@ -90,7 +90,7 @@ Each hook runs `awiki sync --detach` when the agent starts. That command returns
 in well under a second: the sync itself runs in a detached background process,
 consults its state file before parsing anything (an unchanged session costs one
 `stat`), and writes its log to the awiki state dir
-(`~/.local/state/agent-wiki/locks/<vault>/sync.log`). If another sweep already
+(`~/.local/state/agent-wiki/locks/<vault-digest>/sync.log`; `awiki sync --detach` prints the exact path on stderr). If another sweep already
 holds the vault lock, the new one exits at once instead of queueing, so several
 agents starting together are safe. The sweep targets the default vault; narrow it
 with `--vault`.

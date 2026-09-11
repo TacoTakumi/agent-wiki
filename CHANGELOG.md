@@ -55,6 +55,9 @@ below are reconstructed from the commits that bumped `__version__`.
   `opencode-prod.db` in newer OpenCode releases no longer yields zero sessions.
 
 ### Fixed
+- **`awiki sync --include-live` now reaches the adapters.** It used to
+  mutate a config copy the sync loop never read, so the flag was a no-op for
+  every source.
 - **Doctor no longer flags or clobbers session pages.** The
   `raw-content-drift`, `render-hash-unstamped`, and `render-hash-divergent`
   checks skip pages whose frontmatter `type` is `conversation` (a session page

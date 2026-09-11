@@ -276,17 +276,12 @@ class LocalVaultService(VaultService):
             if since_dt.tzinfo is None:
                 # Adapters compare against tz-aware mtimes; a bare date is local time.
                 since_dt = since_dt.astimezone()
-        if include_live:
-            sources_cfg = config.setdefault("sources", {})
-            for name in ("claude_code", "opencode", "pi", "drop_zone"):
-                if name in sources_cfg:
-                    sources_cfg[name] = dict(sources_cfg[name])
-                    sources_cfg[name]["include_live"] = True
         summarizer = _build_summarizer(config) if not dry_run else None
         redactor = _build_redactor(config) if not dry_run else None
         counts = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
         if dry_run:
-            results = _sync(self.vault_path, source=source, dry_run=True, since=since_dt)
+            results = _sync(self.vault_path, source=source, dry_run=True, since=since_dt,
+                            include_live=include_live)
         else:
             timeout = 0.0 if try_once else DEFAULT_LOCK_TIMEOUT
             try:
@@ -295,7 +290,8 @@ class LocalVaultService(VaultService):
                     if on_locked is not None:
                         on_locked()
                     results = _sync(self.vault_path, source=source, dry_run=False,
-                                    since=since_dt, summarizer=summarizer, redactor=redactor)
+                                    since=since_dt, summarizer=summarizer, redactor=redactor,
+                                    include_live=include_live)
             except TimeoutError:
                 if not try_once:
                     raise

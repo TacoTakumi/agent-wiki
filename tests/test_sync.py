@@ -475,3 +475,20 @@ def test_sync_since_accepts_a_bare_date(tmp_config, tmp_vault, tmp_path):
     result = CliRunner().invoke(cli, ["sync", "--source", "pi", "--dry-run", "--since", "2999-01-01"])
     assert result.exit_code == 0, result.output
     assert "0 new" in result.output
+
+
+def test_sync_include_live_reaches_the_adapters(tmp_config, tmp_vault, tmp_path):
+    pi_root = tmp_path / "pi-sessions"
+    _write_pi_session(pi_root)
+    _configure_vault_with_pi(tmp_vault, pi_root)
+    config = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    config["sources"]["pi"]["include_live"] = False
+    (tmp_vault / "wiki.yaml").write_text(yaml.dump(config))
+
+    quiet = CliRunner().invoke(cli, ["sync", "--source", "pi", "--dry-run"])
+    assert quiet.exit_code == 0, quiet.output
+    assert "0 new" in quiet.output
+
+    live = CliRunner().invoke(cli, ["sync", "--source", "pi", "--dry-run", "--include-live"])
+    assert live.exit_code == 0, live.output
+    assert "1 new" in live.output
