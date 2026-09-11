@@ -11,7 +11,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 
-from agent_wiki.adapters import build_adapter
+from agent_wiki.adapters import PATH_REF_ADAPTERS, build_adapter
 from agent_wiki.config import load_vault_config
 from agent_wiki.context import run_context
 from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
@@ -271,7 +271,7 @@ class LocalVaultService(VaultService):
                 raise ValueError(f"since must be an ISO 8601 date (YYYY-MM-DD): {since}")
         if include_live:
             sources_cfg = config.setdefault("sources", {})
-            for name in ("claude_code", "opencode", "drop_zone"):
+            for name in ("claude_code", "opencode", "pi", "drop_zone"):
                 if name in sources_cfg:
                     sources_cfg[name] = dict(sources_cfg[name])
                     sources_cfg[name]["include_live"] = True
@@ -307,7 +307,7 @@ class LocalVaultService(VaultService):
         config = load_vault_config(self.vault_path)
         cfg = (config.get("sources") or {}).get(source.replace("-", "_"), {})
         adapter = build_adapter(source, cfg)
-        ref_value = Path(ref) if source == "claude-code" else ref
+        ref_value = Path(ref) if source in PATH_REF_ADAPTERS else ref
         conv = adapter.to_bundle(ref_value)
         if output:
             out_path = Path(output)

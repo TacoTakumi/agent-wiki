@@ -494,3 +494,20 @@ def test_doctor_vault_flag_narrows_to_single_vault_output(two_vault_config):
     result = CliRunner().invoke(cli, ["--vault", "work", "doctor", "--dry-run"])
     assert result.exit_code == 0, result.output
     assert "vault: work" not in result.output  # single-vault output shape
+
+
+def test_source_path_missing_covers_pi(tmp_path):
+    vault = _legacy_vault(tmp_path)
+    config = yaml.safe_load((vault / "wiki.yaml").read_text())
+    config["sources"] = {
+        "pi": {"enabled": True, "path": "/nonexistent/pi-sessions"},
+    }
+    (vault / "wiki.yaml").write_text(yaml.dump(config))
+
+    f = SourcePathMissing().detect(vault)
+    assert f is not None
+    assert "pi.path=/nonexistent/pi-sessions" in f.detail
+
+    config["sources"]["pi"]["enabled"] = False
+    (vault / "wiki.yaml").write_text(yaml.dump(config))
+    assert SourcePathMissing().detect(vault) is None

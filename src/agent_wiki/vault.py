@@ -12,6 +12,7 @@ def _default_sources_config() -> dict:
             "enabled": True,
             "db_path": "~/.local/share/opencode/opencode.db",
         },
+        "pi": {"enabled": True, "path": "~/.pi/agent/sessions"},
         "drop_zone": {"enabled": True, "path": "incoming"},
     }
 
