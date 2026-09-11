@@ -64,10 +64,17 @@ def build_adapter(name: str, config: dict[str, Any] | None = None) -> Conversati
     if name == "opencode":
         from agent_wiki.adapters.opencode import OpencodeAdapter
         return OpencodeAdapter(config)
+    if name == "pi":
+        from agent_wiki.adapters.pi import PiAdapter
+        return PiAdapter(config)
     if name in ("drop-zone", "drop_zone", "dropzone"):
         from agent_wiki.adapters.drop_zone import DropZoneAdapter
         return DropZoneAdapter(config)
     raise KeyError(f"unknown adapter: {name!r}")
 
 
-ADAPTER_NAMES = ("claude-code", "opencode", "drop-zone")
+ADAPTER_NAMES = ("claude-code", "opencode", "pi", "drop-zone")
+
+# Adapters whose session references are filesystem paths (the CLI's ``adapt``
+# command turns the ref argument into a Path for these).
+PATH_REF_ADAPTERS = ("claude-code", "pi")

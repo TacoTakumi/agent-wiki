@@ -95,3 +95,12 @@ def test_init_vault_bare_on_vaults_config_registers_main(tmp_path, monkeypatch):
     assert "vault_path" not in persisted
     assert persisted["vaults"]["work"] == {"path": str(other)}
     assert persisted["vaults"]["main"] == {"path": str(vault_path.resolve())}
+
+
+def test_init_writes_pi_source(tmp_path):
+    vault = tmp_path / "vault"
+    init_vault(vault)
+    config = yaml.safe_load((vault / "wiki.yaml").read_text())
+    pi = config["sources"]["pi"]
+    assert pi["enabled"] is True
+    assert pi["path"] == "~/.pi/agent/sessions"

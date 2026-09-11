@@ -358,3 +358,72 @@ def test_sync_changed_fingerprint_reingests_as_updated(tmp_vault, tmp_path, coun
     results = sync(tmp_vault)
     assert [r.action for r in results] == ["updated"]
     assert counting_adapter[-1].to_bundle_calls == 1
+
+
+# --- pi as a first-class source ------------------------------------------------
+
+_PI_SESSION_ID = "019fd2a9-7e14-787f-a8e2-178a5399e40e"
+
+
+def _write_pi_session(root: Path, session_id: str = _PI_SESSION_ID) -> Path:
+    path = root / "--home-user-AI-Projects-herdr--" / f"2026-08-05T16-02-31-060Z_{session_id}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    records = [
+        {"type": "session", "version": 3, "id": session_id,
+         "timestamp": "2026-08-05T16:02:31.060Z", "cwd": "/home/user/AI/Projects/herdr"},
+        {"type": "message", "id": "e1", "parentId": None, "timestamp": "2026-08-05T16:04:46.957Z",
+         "message": {"role": "user", "content": "Hello pi", "timestamp": 1}},
+        {"type": "message", "id": "e2", "parentId": "e1", "timestamp": "2026-08-05T16:05:04.352Z",
+         "message": {"role": "assistant", "content": [{"type": "text", "text": "Hi"}],
+                     "model": "m", "usage": {"input": 1, "output": 1}, "stopReason": "stop",
+                     "timestamp": 1}},
+    ]
+    with open(path, "w") as f:
+        for r in records:
+            f.write(json.dumps(r) + "\n")
+    return path
+
+
+def _configure_vault_with_pi(tmp_vault, pi_root: Path) -> None:
+    config = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    if "sessions" not in config["topics"]:
+        config["topics"].append("sessions")
+    config["conversations"] = {"topic": "sessions"}
+    config["sources"] = {
+        "claude_code": {"enabled": False},
+        "opencode": {"enabled": False},
+        "pi": {"enabled": True, "path": str(pi_root), "include_live": True},
+        "drop_zone": {"enabled": False},
+    }
+    config["summarizer"] = {"type": "none"}
+    (tmp_vault / "wiki.yaml").write_text(yaml.dump(config))
+    (tmp_vault / "sessions").mkdir(exist_ok=True)
+
+
+def test_sync_source_pi_ingests_fixture_dir(tmp_config, tmp_vault, tmp_path):
+    pi_root = tmp_path / "pi-sessions"
+    _write_pi_session(pi_root)
+    _configure_vault_with_pi(tmp_vault, pi_root)
+
+    dry = CliRunner().invoke(cli, ["sync", "--source", "pi", "--dry-run"])
+    assert dry.exit_code == 0, dry.output
+    assert f"pi:{_PI_SESSION_ID}" in dry.output
+
+    result = CliRunner().invoke(cli, ["sync", "--source", "pi"])
+    assert result.exit_code == 0, result.output
+    assert (tmp_vault / "raw" / "sessions" / f"pi-{_PI_SESSION_ID}.md").exists()
+    assert (tmp_vault / "sessions" / f"pi-{_PI_SESSION_ID}.md").exists()
+    assert f"pi:{_PI_SESSION_ID}" in load_state(tmp_vault)
+
+
+def test_adapt_pi_accepts_a_session_file(tmp_config, tmp_vault, tmp_path):
+    pi_root = tmp_path / "pi-sessions"
+    jsonl = _write_pi_session(pi_root)
+    _configure_vault_with_pi(tmp_vault, pi_root)
+    out = tmp_path / "bundle.md"
+
+    result = CliRunner().invoke(cli, ["adapt", "pi", str(jsonl), "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    text = out.read_text()
+    assert "agent: pi" in text
+    assert f"session_id: {_PI_SESSION_ID}" in text

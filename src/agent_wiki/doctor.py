@@ -161,7 +161,7 @@ class MissingSourcesBlock(Check):
         config = _read_config(vault_path)
         config["sources"] = _default_sources_config()
         _write_config(vault_path, config)
-        return "added sources block (claude-code, opencode, drop-zone)"
+        return "added sources block (claude-code, opencode, pi, drop-zone)"
 
 
 class MissingTopicDirs(Check):
@@ -238,7 +238,7 @@ class SourcePathMissing(Check):
         config = _read_config(vault_path)
         sources = config.get("sources") or {}
         problems: list[str] = []
-        for key in ("claude_code", "opencode"):
+        for key in ("claude_code", "opencode", "pi"):
             s = sources.get(key) or {}
             if not s.get("enabled"):
                 continue
