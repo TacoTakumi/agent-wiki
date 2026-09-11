@@ -918,8 +918,15 @@ def status():
 @click.option("--dry-run", is_flag=True, default=False, help="Report without writing")
 @click.option("--include-live", is_flag=True, default=False,
               help="Include sessions modified in the last 60 minutes")
-def sync(source, since, dry_run, include_live):
+@click.option("--detach", is_flag=True, default=False,
+              help="Run the sync in a background process and return at once; "
+                   "its output goes to a per-vault log in the awiki state dir")
+def sync(source, since, dry_run, include_live, detach):
     """Discover new conversations from configured sources and ingest them."""
+    if detach:
+        _detach_sync(source=source, since=since, dry_run=dry_run,
+                     include_live=include_live)
+        return
     try:
         out = _service().sync(
             source=source, since=since, dry_run=dry_run, include_live=include_live,
@@ -940,6 +947,52 @@ def sync(source, since, dry_run, include_live):
         f"\n{counts['new']} new, {counts['updated']} updated, "
         f"{counts['skipped']} unchanged, {counts['error']} errors"
     )
+
+
+def _detach_sync(source, since, dry_run, include_live) -> None:
+    """Spawn ``awiki sync`` as a detached background process and return.
+
+    The child runs in its own session with stdin closed and stdout/stderr
+    redirected to a per-vault log file in the awiki state dir (truncated on
+    every run). Nothing here may raise: this is what agent startup hooks
+    call, and a failed spawn must not become a failed agent start, so a
+    spawn error is reported on stderr and the command still exits 0.
+    """
+    import subprocess
+    from datetime import datetime
+    from agent_wiki.config import _raw_vault_override
+    from agent_wiki.locking import run_log_path
+
+    try:
+        vault_path = get_vault_path()
+        log = run_log_path(vault_path, "sync")
+        argv = [sys.executable, "-c", "from agent_wiki.cli import cli; cli()"]
+        override = _raw_vault_override()
+        if override:
+            argv += ["--vault", override]
+        argv.append("sync")
+        if source:
+            argv += ["--source", source]
+        if since:
+            argv += ["--since", since]
+        if dry_run:
+            argv.append("--dry-run")
+        if include_live:
+            argv.append("--include-live")
+        with open(log, "w", encoding="utf-8") as fh:
+            fh.write(
+                f"awiki sync started {datetime.now().isoformat(timespec='seconds')} "
+                f"vault={vault_path}\n"
+            )
+            fh.flush()
+            proc = subprocess.Popen(
+                argv,
+                stdin=subprocess.DEVNULL, stdout=fh, stderr=subprocess.STDOUT,
+                start_new_session=True, close_fds=True,
+            )
+        click.echo(f"sync detached (pid {proc.pid}); log: {log}")
+    except Exception as e:
+        click.echo(f"sync --detach could not start a background sync: {e}", err=True)
 
 
 @cli.command()
