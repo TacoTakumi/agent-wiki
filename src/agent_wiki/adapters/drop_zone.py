@@ -78,11 +78,11 @@ class DropZoneAdapter(ConversationAdapter):
             yield DropZoneRef(path=p)
 
     def session_key(self, ref: DropZoneRef) -> str:
-        # Same validation as read_bundle, so a dry run's verdict matches the
-        # real run's; only the read is cheaper (header only, body untouched).
+        # Same parsing and validation as read_bundle, so a dry run's verdict
+        # (key or error) matches the real run's; only the read is cheaper.
         meta = _read_frontmatter_header(ref.path)
         if meta is None:
-            # Frontmatter longer than the cap: fall back to the full parser
+            # No closing delimiter within the cap: let the full parser decide
             # rather than guess; this is the rare path, not the normal one.
             meta = parse_page(ref.path)["meta"] or {}
         if meta.get("type") != "conversation":
@@ -122,27 +122,28 @@ _MAX_HEADER_LINES = 200
 
 
 def _read_frontmatter_header(path: Path) -> dict | None:
-    """Parse only the leading ``---`` frontmatter block, stopping at its close.
+    """Parse only the leading frontmatter block, exactly as ``parse_page`` would.
 
-    The body is never read, so the cost is independent of transcript size.
-    Returns ``None`` when the block is not closed within the line cap.
+    Mirrors ``parse_page``'s rules (the file must start with ``---\\n``; the block
+    ends at the next ``---\\n``; strict UTF-8; YAML errors propagate; a
+    non-mapping is returned as-is) while reading no further than the closing
+    delimiter, so the cost is independent of transcript size. Returns ``None``
+    when no closing delimiter appears within the line cap; the caller then
+    falls back to the full parser so the verdict stays identical.
     """
-    lines: list[str] = []
-    with open(path, "r", encoding="utf-8", errors="replace") as f:
-        first = f.readline()
-        if first.strip() != "---":
+    chunks: list[str] = []
+    with open(path, "r", encoding="utf-8") as f:
+        if f.readline() != "---\n":
             return {}
-        for line in f:
-            if line.strip() == "---":
-                break
-            lines.append(line)
-            if len(lines) > _MAX_HEADER_LINES:
-                return None  # unterminated frontmatter; do not scan the body
-    try:
-        meta = yaml.safe_load("".join(lines))
-    except yaml.YAMLError:
-        return {}
-    return meta if isinstance(meta, dict) else {}
+        for i, line in enumerate(f):
+            idx = line.find("---\n")
+            if idx != -1:
+                chunks.append(line[:idx])
+                return yaml.safe_load("".join(chunks)) or {}
+            chunks.append(line)
+            if i >= _MAX_HEADER_LINES:
+                return None
+    return None
 
 
 def _sha1(path: Path) -> str:
