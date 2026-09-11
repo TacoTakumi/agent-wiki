@@ -102,3 +102,15 @@ def test_cli_hook_install_pi(pi_dir):
     result = runner.invoke(cli, ["hook", "uninstall", "--agent", "pi"])
     assert result.exit_code == 0, result.output
     assert not (pi_dir / "extensions" / "awiki-sync.ts").exists()
+
+
+def test_install_refuses_to_overwrite_a_foreign_file(pi_dir):
+    ext = pi_dir / "extensions" / "awiki-sync.ts"
+    ext.parent.mkdir(parents=True)
+    ext.write_text("export default function () {}\n")
+    with pytest.raises(ValueError):
+        pi_backend.install()
+    assert ext.read_text() == "export default function () {}\n"
+    result = CliRunner().invoke(cli, ["hook", "install", "--agent", "pi"])
+    assert result.exit_code != 0
+    assert "not awiki-managed" in result.output

@@ -199,3 +199,16 @@ def test_session_key_reads_only_frontmatter_header(tmp_path, monkeypatch):
     (tmp_path / "vault" / "raw" / "sessions").mkdir(parents=True)
     conv = adapter.to_bundle(refs[0])
     assert key == f"{conv.agent}:{conv.session_id}"
+
+
+def test_sync_dry_run_leaves_drop_zone_file_in_place(tmp_vault, tmp_path):
+    zone = tmp_path / "incoming"
+    zone.mkdir()
+    (zone / "one.md").write_text(VALID_BUNDLE)
+    _configure_vault(tmp_vault, zone)
+
+    results = sync(tmp_vault, dry_run=True)
+    assert [r.action for r in results] == ["new"]
+    assert results[0].key == "my-assistant:2026-04-18-1030"
+    assert (zone / "one.md").exists()
+    assert not list((tmp_vault / BUNDLE_SUBDIR).glob("*.md"))

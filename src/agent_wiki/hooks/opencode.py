@@ -19,6 +19,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from agent_wiki.hooks.managed_file import ManagedFileHook
+
 MARKER = "awiki-managed plugin"
 PLUGIN_NAME = "awiki-sync.js"
 SWEEP_COMMAND = "awiki sync --detach"
@@ -51,62 +53,11 @@ def _default_plugin_path() -> Path:
     return config_home / "opencode" / "plugins" / PLUGIN_NAME
 
 
-def _is_managed(path: Path) -> bool:
-    try:
-        return MARKER in path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        return False
-
-
-def _atomic_write(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
-
-
-_CONTEXT_NOOP = (
-    "OpenCode has no auto-context hook (no prompt-submit event to attach `awiki context` to); "
-    "nothing to do for --only context. The startup sweep is the OpenCode hook: omit --only "
-    "or pass --only sweep."
+_HOOK = ManagedFileHook(
+    host="OpenCode", event="session.created", command=SWEEP_COMMAND, marker=MARKER,
+    source=PLUGIN_SOURCE, default_path=_default_plugin_path,
 )
 
-
-def install(config_path: Path | None = None, only: str | None = None) -> str:
-    """Write the sweep plugin. Idempotent; a foreign file at the path is refused."""
-    if only == "context":
-        return _CONTEXT_NOOP
-    path = config_path or _default_plugin_path()
-    if path.exists():
-        if not _is_managed(path):
-            raise ValueError(
-                f"Refusing to overwrite {path}: it is not awiki-managed (no marker). "
-                "Move it aside or pass --config-path."
-            )
-        if path.read_text(encoding="utf-8") == PLUGIN_SOURCE:
-            return f"Hook already installed at {path}."
-    _atomic_write(path, PLUGIN_SOURCE)
-    return f"Installed `{SWEEP_COMMAND}` on session.created into {path}."
-
-
-def uninstall(config_path: Path | None = None, only: str | None = None) -> str:
-    """Delete the sweep plugin, but only if it carries the awiki marker."""
-    if only == "context":
-        return "OpenCode has no auto-context hook; nothing to remove for --only context."
-    path = config_path or _default_plugin_path()
-    if not path.exists():
-        return f"Nothing to uninstall: {path} does not exist."
-    if not _is_managed(path):
-        return f"Left {path} in place: it is not awiki-managed (no marker)."
-    path.unlink()
-    return f"Uninstalled {path}."
-
-
-def status(config_path: Path | None = None) -> str:
-    path = config_path or _default_plugin_path()
-    line = f"  sweep    session.created `{SWEEP_COMMAND}`: "
-    if path.exists() and _is_managed(path):
-        return f"OpenCode hooks ({path}):\n{line}installed"
-    if path.exists():
-        return f"OpenCode hooks ({path}):\n{line}not installed (a file exists there but is not awiki-managed)"
-    return f"OpenCode hooks ({path}):\n{line}not installed"
+install = _HOOK.install
+uninstall = _HOOK.uninstall
+status = _HOOK.status

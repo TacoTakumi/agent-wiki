@@ -976,6 +976,16 @@ def _detach_sync(source, since, dry_run, include_live) -> None:
     from agent_wiki.locking import run_log_path
 
     try:
+        from agent_wiki.config import _override_entry_or_raise, _default_entry
+        entry = _override_entry_or_raise() or _default_entry()
+        if entry.url and not entry.path:
+            click.echo(
+                f"sync --detach: vault '{entry.name}' is remote ({entry.url}); the "
+                "server owns its session sources, so there is nothing to sweep from "
+                "this machine. Run `awiki sync` for a blocking server-side sync.",
+                err=True,
+            )
+            return
         vault_path = get_vault_path()
         log = run_log_path(vault_path, "sync")
         argv = [sys.executable, "-c", "from agent_wiki.cli import cli; cli()"]

@@ -92,3 +92,15 @@ def test_cli_hook_install_opencode(oc_dir):
     result = runner.invoke(cli, ["hook", "uninstall", "--agent", "opencode"])
     assert result.exit_code == 0, result.output
     assert not (oc_dir / "awiki-sync.js").exists()
+
+
+def test_install_refuses_to_overwrite_a_foreign_file(oc_dir):
+    plugin = oc_dir / "awiki-sync.js"
+    plugin.parent.mkdir(parents=True)
+    plugin.write_text("export const X = async () => ({})\n")
+    with pytest.raises(ValueError):
+        oc_backend.install()
+    assert plugin.read_text() == "export const X = async () => ({})\n"
+    result = CliRunner().invoke(cli, ["hook", "install", "--agent", "opencode"])
+    assert result.exit_code != 0
+    assert "not awiki-managed" in result.output
