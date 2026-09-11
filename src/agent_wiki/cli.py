@@ -720,7 +720,11 @@ def search(query, topic, limit):
               help="Print only the page's heading lines, in file order.")
 @click.option("--section", "section", default=None, metavar="TEXT",
               help="Print only the section whose heading contains TEXT.")
-def show(path, outline, section):
+@click.option("--head", "head", type=int, default=None, metavar="N",
+              help="Keep only the first N child sections of the selection.")
+@click.option("--tail", "tail", type=int, default=None, metavar="N",
+              help="Keep only the last N child sections of the selection.")
+def show(path, outline, section, head, tail):
     """Print a wiki page (or any vault file) by its vault-relative path.
 
     With multiple vaults configured the path may carry a vault: prefix; an
@@ -729,10 +733,12 @@ def show(path, outline, section):
     path falls back to <path>.md, with a warning on stderr.
 
     --outline prints the page's heading lines only; --section TEXT prints the
-    first section whose heading contains TEXT, subsections included. Without
-    either the page is printed verbatim, frontmatter included."""
+    first section whose heading contains TEXT, subsections included; --head N
+    and --tail N cut that down to its first or last N child sections. Without
+    any of them the page is printed verbatim, frontmatter included."""
     from agent_wiki.sections import (
-        match_headings, render_outline, select_section, strip_frontmatter)
+        match_headings, render_outline, select_section, slice_children,
+        strip_frontmatter)
 
     svc, ref = _dispatch_ref(path, _show_probe)
     try:
@@ -757,6 +763,8 @@ def show(path, outline, section):
             click.echo(
                 f"note: other headings also match '{section}':\n{others}",
                 err=True)
+        if head is not None or tail is not None:
+            content = slice_children(content, head=head, tail=tail)
     if outline:
         content = render_outline(content)
     click.echo(content, nl=False)

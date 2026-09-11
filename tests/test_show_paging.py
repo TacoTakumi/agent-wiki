@@ -183,3 +183,87 @@ def test_show_help_lists_the_section_flag(tmp_config, tmp_vault):
     result = CliRunner().invoke(cli, ["show", "--help"])
     assert result.exit_code == 0
     assert "--section" in result.stdout
+
+
+def _check_log_body(entries=5):
+    """A page whose 'Check log' section holds `entries` dated child entries,
+    each with body text and one deeper sub-entry, followed by a leaf section."""
+    parts = ["# Ops\n", "\n", "## Check log\n", "\n", "Preamble for the log.\n", "\n"]
+    for n in range(1, entries + 1):
+        parts += [
+            f"### Entry {n}\n", "\n", f"Body {n}.\n", "\n",
+            f"#### Detail {n}\n", "\n", f"Detail body {n}.\n", "\n",
+        ]
+    parts += ["## Notes\n", "\n", "Notes body with no sub-headings.\n"]
+    return "".join(parts)
+
+
+def test_section_head_prints_the_first_child_entries(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--section", "check log", "--head", "2"])
+    assert result.exit_code == 0
+    assert result.stdout == (
+        "## Check log\n"
+        "\n"
+        "Preamble for the log.\n"
+        "\n"
+        "### Entry 1\n"
+        "\n"
+        "Body 1.\n"
+        "\n"
+        "#### Detail 1\n"
+        "\n"
+        "Detail body 1.\n"
+        "\n"
+        "### Entry 2\n"
+        "\n"
+        "Body 2.\n"
+        "\n"
+        "#### Detail 2\n"
+        "\n"
+        "Detail body 2.\n"
+    )
+
+
+def test_section_tail_prints_the_last_child_entries(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--section", "check log", "--tail", "2"])
+    assert result.exit_code == 0
+    assert result.stdout.startswith("## Check log\n\nPreamble for the log.\n\n### Entry 4\n")
+    for n in (4, 5):
+        assert f"### Entry {n}\n" in result.stdout
+        assert f"#### Detail {n}\n" in result.stdout
+    for n in (1, 2, 3):
+        assert f"### Entry {n}\n" not in result.stdout
+    assert "## Notes" not in result.stdout
+
+
+def test_section_head_beyond_the_entry_count_prints_them_all(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    runner = CliRunner()
+    sliced = runner.invoke(
+        cli, ["show", "research/log.md", "--section", "check log", "--head", "9"])
+    whole = runner.invoke(
+        cli, ["show", "research/log.md", "--section", "check log"])
+    assert sliced.exit_code == 0
+    assert sliced.stdout == whole.stdout
+    assert "### Entry 5" in sliced.stdout
+
+
+def test_leaf_section_head_equals_the_unsliced_section(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    runner = CliRunner()
+    sliced = runner.invoke(
+        cli, ["show", "research/log.md", "--section", "notes", "--head", "1"])
+    whole = runner.invoke(cli, ["show", "research/log.md", "--section", "notes"])
+    assert sliced.exit_code == 0
+    assert sliced.stdout == whole.stdout == "## Notes\n\nNotes body with no sub-headings.\n"
+
+
+def test_show_help_lists_the_head_and_tail_flags(tmp_config, tmp_vault):
+    result = CliRunner().invoke(cli, ["show", "--help"])
+    assert result.exit_code == 0
+    assert "--head" in result.stdout
+    assert "--tail" in result.stdout
