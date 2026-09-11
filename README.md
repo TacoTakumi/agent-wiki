@@ -90,10 +90,14 @@ Each hook runs `awiki sync --detach` when the agent starts. That command returns
 in well under a second: the sync itself runs in a detached background process,
 consults its state file before parsing anything (an unchanged session costs one
 `stat`), and writes its log to the awiki state dir
-(`~/.local/state/agent-wiki/locks/<vault-digest>/sync.log`; `awiki sync --detach` prints the exact path on stderr). If another sweep already
-holds the vault lock, the new one exits at once instead of queueing, so several
-agents starting together are safe. The sweep targets the default vault; narrow it
-with `--vault`.
+(`~/.local/state/agent-wiki/locks/<vault-digest>/sync.log`; the command prints
+the exact path on stderr, and nothing on stdout, so an agent's hook output stays
+clean). The log holds the latest run; if another sweep already holds the vault
+lock, the new one appends a one-line "already running" notice and exits at once
+instead of queueing, so several agents starting together are safe. The sweep
+targets the default vault; narrow it with `--vault`. When the default vault is
+remote, the sweep is a no-op on this machine: the server owns its session
+sources, so run the sweep there.
 
 Why startup and not session end? No agent offers a reliable "session finished"
 signal (Claude Code's `SessionEnd` has a 1.5 s budget and skips on hangup;
@@ -439,9 +443,11 @@ awiki reingest my-notes.md             # re-render the page from it
 - Errors exactly as `reingest` does on a missing or ambiguous `<name>`.
 - On a **remote** vault the raw lives on the server: `raw` prints the server-side reference and notes on stderr that it is not directly editable from the client.
 
-#### `awiki sync [--source claude-code|opencode|pi|drop-zone] [--since DATE] [--dry-run] [--detach]`
+#### `awiki sync [--source claude-code|opencode|pi|drop-zone] [--since DATE] [--include-live] [--dry-run] [--detach]`
 
-Ingest conversations from configured sources. `--detach` forks the sync into a
+Ingest conversations from configured sources. Sessions modified in the last 60
+minutes are treated as live and skipped unless `--include-live` (or the
+source's `include_live: true`) is set. `--detach` forks the sync into a
 background process and returns at once (this is what the startup hooks run):
 output goes to a per-vault log in the awiki state dir, and a run that finds the
 vault lock held exits cleanly instead of waiting. See
@@ -615,6 +621,7 @@ awiki sync                           # all enabled sources
 awiki sync --source pi               # one source only
 awiki sync --dry-run                 # show what would be added
 awiki sync --since 2026-04-01        # older stuff only
+awiki sync --include-live            # also sessions touched in the last 60 minutes
 awiki sync --detach                  # what the hooks run: background, logs to the state dir
 ```
 
@@ -784,6 +791,23 @@ topics:
   - research
   - tools
 default_topic: research
+
+# Conversation sources for `awiki sync` (written by `awiki init`; edit by hand).
+# Each source takes `enabled`, an optional `include_live`, and a location:
+conversations:
+  topic: sessions
+sources:
+  claude_code:
+    enabled: true
+    path: ~/.claude/projects
+  pi:
+    enabled: true
+    path: ~/.pi/agent/sessions
+  opencode:
+    enabled: true          # no db_path: resolved via `opencode db path`, then the default
+  drop_zone:
+    enabled: true
+    path: incoming         # relative to the vault
 
 # Optional: a tag vocabulary that canonicalizes tags across the vault.
 tags:
