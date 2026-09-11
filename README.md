@@ -24,7 +24,8 @@ search the wiki first, read full pages, and save what is worth keeping.
 - **Ingest files _and_ URLs** - copy a file or fetch a web page into an immutable `raw/` archive (HTML via trafilatura, PDFs supported). Every ingest writes a sha256 **provenance sidecar** so drift is detectable. See [`awiki ingest`](#awiki-ingest-files-or-urls).
 - **Edit-the-raw, re-ingest** - pages are *rendered* from their `raw/` source. Edit the source and `awiki reingest`; if a page has drifted, you get a diff instead of a silent clobber. See [`awiki reingest`](#awiki-reingest-name).
 - **Fast search + full-page read** - multi-word AND search with coverage ranking (ripgrep-backed), then `awiki show <path>` prints any page verbatim. See [`awiki search`](#awiki-search-query).
-- **Conversation capture** - adapters pull Claude Code and OpenCode sessions (plus a drop-zone for any agent) into the vault, with optional LLM summarization. See [Ingesting conversations](#ingesting-conversations).
+- **Ongoing session ingestion** - every time Claude Code, pi, or OpenCode starts, a one-line hook kicks off a detached, lock-safe `awiki sync` that files every finished session from all three agents into the vault. Set it up once per agent; never run sync by hand again. See [Ongoing session ingestion](#ongoing-session-ingestion).
+- **Conversation capture** - adapters pull Claude Code, pi, and OpenCode sessions (plus a drop-zone for any agent) into the vault, with optional LLM summarization. See [Ingesting conversations](#ingesting-conversations).
 - **Auto-context hook** - a `UserPromptSubmit` hook silently surfaces relevant pages to your agent on every prompt, so it knows what it already knows. See [Auto-context hook](#auto-context-hook).
 - **Tag vocabulary** - an optional, CLI-managed vocabulary canonicalizes tags (aliases to preferred), with `awiki tag fix` and a lint-based CI gate. See [`awiki tag`](#awiki-tag-addsuggestfix).
 - **Vault linting** - audit broken links, orphans, raw/page drift, stale pages, oversized pages, index gaps, and tag issues in one pass. See [`awiki lint`](#awiki-lint).
@@ -46,8 +47,12 @@ Then set up the machine you want to work on:
 ```bash
 awiki init ~/vaults/agent-wiki     # create the vault
 awiki skills install               # install the bundled skills into your agent harness(es)
-awiki hook install --agent claude  # optional: surface relevant pages on every prompt
+awiki hook install --agent claude  # sessions flow in on every start; relevant pages on every prompt
 ```
+
+Also using pi or OpenCode? `awiki hook install --agent pi` and
+`awiki hook install --agent opencode` wire those in the same way. See
+[Ongoing session ingestion](#ongoing-session-ingestion).
 
 A vault is not per-repo. One vault serves every project you work on, and it can
 serve more than one machine too: `awiki serve` shares it over HTTP, and remote
@@ -66,6 +71,42 @@ awiki status
 That is the whole setup. Start your coding agent and say:
 
 > We use awiki here. Run `awiki guide` and wire it into this project's memory file.
+
+## Ongoing session ingestion
+
+Every conversation your agents have is a session transcript sitting in some
+per-agent store. Agent Wiki keeps those flowing into the vault automatically: any
+agent starting on the machine triggers a background sweep that ingests every
+finished session from every source, so the `sessions` topic stays current
+without you ever running `awiki sync` by hand. One command per agent:
+
+```bash
+awiki hook install --agent claude    # Claude Code: SessionStart hook in ~/.claude/settings.json
+awiki hook install --agent pi        # pi: extension in ~/.pi/agent/extensions/
+awiki hook install --agent opencode  # OpenCode: plugin in ~/.config/opencode/plugins/
+```
+
+Each hook runs `awiki sync --detach` when the agent starts. That command returns
+in well under a second: the sync itself runs in a detached background process,
+consults its state file before parsing anything (an unchanged session costs one
+`stat`), and writes its log to the awiki state dir
+(`~/.local/state/agent-wiki/locks/<vault>/sync.log`). If another sweep already
+holds the vault lock, the new one exits at once instead of queueing, so several
+agents starting together are safe. The sweep targets the default vault; narrow it
+with `--vault`.
+
+Why startup and not session end? No agent offers a reliable "session finished"
+signal (Claude Code's `SessionEnd` has a 1.5 s budget and skips on hangup;
+OpenCode has no exit event), but the next agent start is guaranteed. Sessions
+modified in the last 60 minutes are treated as live and picked up on a later
+sweep. Run `awiki sync` once by hand after installing to catch up on history -
+Claude Code prunes transcripts after 30 days by default.
+
+`awiki hook install --agent claude` also installs the
+[auto-context hook](#auto-context-hook); `--only sweep` or `--only context`
+narrows to one. `awiki hook status` shows each hook's state and
+`awiki hook uninstall` removes only what awiki wrote. Use `--agent manual` to
+print the wiring for any other host.
 
 ## Using awiki with your agent
 
@@ -290,22 +331,31 @@ vault, so a fresh agent can run it in any repo. See
 Install the bundled agent skills into the harnesses on your machine and keep them
 current. See [Agent skills](#agent-skills).
 
-#### `awiki hook install|uninstall|status [--agent claude|manual] [--config-path PATH]`
+#### `awiki hook install|uninstall|status [--agent claude|pi|opencode|manual] [--only context|sweep] [--config-path PATH]`
 
-Wire `awiki context` into an agent CLI's hook system.
+Wire awiki's two hooks into an agent CLI: the **startup sweep** (`awiki sync
+--detach` on every agent start) and, where the host supports it, the
+**auto-context hook** (`awiki context` on every prompt).
 
 ```bash
-awiki hook install --agent claude       # edits ~/.claude/settings.json (atomic, idempotent)
-awiki hook status --agent claude        # report install state
-awiki hook uninstall --agent claude     # remove only the awiki entry, preserve others
+awiki hook install --agent claude       # SessionStart sweep + UserPromptSubmit context in ~/.claude/settings.json
+awiki hook install --agent pi           # writes ~/.pi/agent/extensions/awiki-sync.ts (session_start sweep)
+awiki hook install --agent opencode     # writes ~/.config/opencode/plugins/awiki-sync.js (session.created sweep)
+awiki hook install --agent claude --only context   # just one of the two
+awiki hook status --agent claude        # per-hook installed / not installed
+awiki hook uninstall --agent claude     # remove only the awiki entries, preserve others
 awiki hook install --agent manual       # print copy-paste wiring for any host
 ```
 
-The Claude backend writes a `UserPromptSubmit` hook entry pointing at
-`awiki context`, preserves all other settings, and refuses to mutate the file if
-it is not valid JSON. Use `--config-path` to target a non-default settings file
-(handy for tests). The `manual` backend touches no files - it just prints the
-contract so you can wire OpenCode, Codex, Cursor, and others by hand. See
+Every backend is idempotent and atomic. The Claude backend edits
+`settings.json` in place, preserves all other keys, and refuses to touch a file
+that is not valid JSON. The pi and OpenCode backends each write one
+marker-tagged file and will never delete a file they did not write; pi and
+OpenCode have no prompt-submit event, so `--only context` is a no-op there. Use
+`--config-path` to target a non-default settings/extension/plugin file (handy
+for tests). The `manual` backend touches no files - it prints the contract for
+both hooks so you can wire Codex, Cursor, and others by hand. See
+[Ongoing session ingestion](#ongoing-session-ingestion) and
 [Auto-context hook](#auto-context-hook).
 
 #### `awiki doctor [--fix] [--dry-run] [--reconcile-raw]`
@@ -389,9 +439,13 @@ awiki reingest my-notes.md             # re-render the page from it
 - Errors exactly as `reingest` does on a missing or ambiguous `<name>`.
 - On a **remote** vault the raw lives on the server: `raw` prints the server-side reference and notes on stderr that it is not directly editable from the client.
 
-#### `awiki sync [--source cc|opencode|drop-zone] [--since DATE] [--dry-run]`
+#### `awiki sync [--source claude-code|opencode|pi|drop-zone] [--since DATE] [--dry-run] [--detach]`
 
-Ingest conversations from configured sources. See
+Ingest conversations from configured sources. `--detach` forks the sync into a
+background process and returns at once (this is what the startup hooks run):
+output goes to a per-vault log in the awiki state dir, and a run that finds the
+vault lock held exits cleanly instead of waiting. See
+[Ongoing session ingestion](#ongoing-session-ingestion) and
 [Ingesting conversations](#ingesting-conversations).
 
 #### `awiki ingest-conversation <bundle.md>`
@@ -545,24 +599,30 @@ into a canonical **Conversation Bundle** (a single markdown file with frontmatte
 stored under `raw/sessions/`). Bundles are then ingested into the `sessions` topic
 like any other wiki page.
 
-Three adapters ship today:
+Four adapters ship today:
 
 - **claude-code** - reads Claude Code JSONL transcripts from `~/.claude/projects/<slug>/*.jsonl`.
-- **opencode** - reads Opencode's SQLite store at `~/.local/share/opencode/opencode.db` (opened read-only).
+- **pi** - reads pi session files from `~/.pi/agent/sessions/<cwd-slug>/<timestamp>_<uuid>.jsonl` (session format v3; one file is one session).
+- **opencode** - reads OpenCode's SQLite store (opened read-only). The path comes from `sources.opencode.db_path` if set, else from `opencode db path` when the binary is on `PATH`, else `~/.local/share/opencode/opencode.db`.
 - **drop-zone** - picks up pre-written bundles from a configured directory (default: `<vault>/incoming/`). This is how external agents without a built-in adapter (for example a personal assistant) file conversations.
 
-Run the sync manually:
+Normally the startup hooks run the sync for you (see
+[Ongoing session ingestion](#ongoing-session-ingestion)). Run it by hand for a
+first catch-up or to inspect what is pending:
 
 ```bash
 awiki sync                           # all enabled sources
-awiki sync --source claude-code      # one source only
+awiki sync --source pi               # one source only
 awiki sync --dry-run                 # show what would be added
 awiki sync --since 2026-04-01        # older stuff only
+awiki sync --detach                  # what the hooks run: background, logs to the state dir
 ```
 
 Sync is state-tracked in `<vault>/.awiki-sync-state.json`, so reruns are
 idempotent. A changed session (mtime or content hash) gets re-ingested; unchanged
-sessions are skipped.
+sessions are skipped without being parsed. Session pages are pointers to their
+transcript, so `awiki doctor` leaves them out of its raw-drift and render-hash
+checks and `--reconcile-raw` never touches `raw/sessions/`.
 
 ### Writing bundles directly (for external agents)
 
@@ -621,7 +681,8 @@ Instead of relying on a memory-file prompt, you can have agent-wiki inject
 pointers to relevant pages on every user prompt:
 
 ```bash
-awiki hook install --agent claude
+awiki hook install --agent claude                 # both hooks: startup sweep + auto-context
+awiki hook install --agent claude --only context  # just the auto-context hook
 ```
 
 This adds a `UserPromptSubmit` hook to `~/.claude/settings.json` that runs
@@ -633,7 +694,8 @@ and short prompts. Toggle off per-vault with `auto_context: false` in `wiki.yaml
 wire, so the hook always includes a reachable remote vault) or one-shot with
 `AWIKI_AUTO_CONTEXT=0`.
 
-For other agent CLIs (OpenCode, Codex, and so on),
+pi and OpenCode have no prompt-submit event, so this hook is Claude Code only
+today. For other agent CLIs (Codex, Cursor, and so on),
 `awiki hook install --agent manual` prints the wiring contract so you can hook it
 up by hand.
 
@@ -1004,7 +1066,7 @@ agent-wiki/
     locking.py        # per-vault file locks
     log.py            # append-only activity log
     redact.py         # secret redaction on ingest
-    adapters/         # claude_code, opencode, drop_zone
+    adapters/         # claude_code, opencode, pi, drop_zone
     hooks/            # per-agent install backends (claude, manual)
     data/guide.md     # the canonical memory-file block
     skills/           # bundled agent skills (package data)

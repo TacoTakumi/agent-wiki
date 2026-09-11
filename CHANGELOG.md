@@ -9,6 +9,59 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.9.0]
+
+### Added
+- **Ongoing session ingestion.** `awiki hook install --agent claude|pi|opencode`
+  now wires a startup sweep into the agent: every agent start runs
+  `awiki sync --detach`, so finished sessions from all sources flow into the
+  vault without anyone running sync by hand. Claude Code gets a `SessionStart`
+  hook (all sources, no matcher) beside the existing `UserPromptSubmit`
+  context hook; pi gets an awiki-managed extension in
+  `~/.pi/agent/extensions/` that handles `session_start` via `pi.exec`;
+  OpenCode gets an awiki-managed plugin in `~/.config/opencode/plugins/` that
+  handles `session.created` via Bun's `$`. Both file backends are
+  marker-tagged, idempotent, and never delete a file they did not write.
+  `--only context|sweep` narrows install/uninstall to one hook;
+  `hook status` reports each hook separately; the `manual` backend prints the
+  wiring for both hooks on all three hosts.
+- **pi adapter.** `sources.pi` (default path `~/.pi/agent/sessions`) ingests
+  pi session files (format v3): one file is one session, keyed by the header
+  uuid, titled from the session name or first user message, with the last
+  `model_change` as the model and tool calls counted. It appears everywhere
+  sources are enumerated: `sync --source pi`, `adapt pi`, `awiki init`
+  defaults, and doctor's source-path check.
+- **`awiki sync --detach`.** Forks the sync into a detached background process
+  and returns at once. The child's output goes to a per-vault log in the awiki
+  state dir (beside the lock files, overwritten each run); it tries the vault
+  lock once and exits cleanly if another sync holds it. Without `--detach` the
+  blocking behaviour (10 s lock timeout, error on expiry) is unchanged. The
+  sweep targets the default vault unless narrowed with `--vault`.
+- **Cheap session keys.** Every adapter exposes `session_key(ref)` derived
+  without parsing the transcript (filename for Claude Code and pi, row id for
+  OpenCode, frontmatter header only for the drop zone), and the sync loop
+  consults the state file by that key before calling the parser. An unchanged
+  session now costs one `stat`; the state file format is unchanged and
+  existing state is honoured without migration.
+
+### Changed
+- **`awiki hook install --agent claude` installs two hooks by default** (the
+  new startup sweep plus the existing context hook). Pass `--only context` for
+  the previous behaviour. `hook uninstall` likewise removes both unless
+  narrowed.
+- **OpenCode DB path resolution.** With no `sources.opencode.db_path`, the
+  adapter now asks `opencode db path` (when the binary is on `PATH`) before
+  falling back to `~/.local/share/opencode/opencode.db`, so the rename to
+  `opencode-prod.db` in newer OpenCode releases no longer yields zero sessions.
+
+### Fixed
+- **Doctor no longer flags or clobbers session pages.** The
+  `raw-content-drift`, `render-hash-unstamped`, and `render-hash-divergent`
+  checks skip pages whose frontmatter `type` is `conversation` (a session page
+  is a pointer to its transcript by design), and `doctor --reconcile-raw`
+  leaves `raw/sessions/` bundles byte-identical instead of overwriting each
+  transcript with its pointer page.
+
 ## [0.8.1]
 
 ### Added
