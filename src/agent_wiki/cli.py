@@ -1231,9 +1231,10 @@ def hook_group():
 
 
 @hook_group.command("install")
-@click.option("--agent", default="claude", help="Target agent CLI (claude, manual).")
+@click.option("--agent", default="claude", help="Target agent CLI (claude, pi, manual).")
 @click.option("--config-path", default=None, type=click.Path(),
-              help="Override the agent's settings file path (for tests or non-default installs).")
+              help="Override the agent's settings file (claude) or extension file (pi) "
+                   "path, for tests or non-default installs.")
 @click.option("--only", default=None, type=click.Choice(["context", "sweep"]),
               help="Install just one hook: 'context' (auto-context on each prompt) "
                    "or 'sweep' (detached session sync on agent start). Default: both.")
