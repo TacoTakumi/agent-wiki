@@ -75,3 +75,12 @@ def strip_frontmatter(text: str) -> str:
             return "\n".join(rest)
 
     return text
+
+
+def render_outline(text: str) -> str:
+    """Return the heading lines of `text` verbatim, one per line.
+
+    The '#' marks and text are exactly as they appear in the source, in file
+    order, with nothing else - no body text, no numbering.
+    """
+    return "".join(f"{raw}\n" for _, _, _, raw in scan_headings(text))
