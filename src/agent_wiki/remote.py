@@ -158,8 +158,9 @@ class RemoteVaultService(VaultService):
         return self._check(self._c.post("/v1/index")).json()
 
     def sync(self, source=None, since=None, dry_run=False, include_live=False,
-             try_once=False) -> dict:
-        # try_once is a local-lock concern; the server serialises its own syncs.
+             try_once=False, on_locked=None) -> dict:
+        # try_once / on_locked are local-lock concerns; the server serialises
+        # its own syncs.
         return self._check(self._c.post("/v1/sync", json={
             "source": source, "since": since,
             "dry_run": dry_run, "include_live": include_live,

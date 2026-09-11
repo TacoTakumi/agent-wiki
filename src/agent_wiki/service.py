@@ -91,7 +91,7 @@ class VaultService(ABC):
     @abstractmethod
     def sync(self, source: str | None = None, since: str | None = None,
              dry_run: bool = False, include_live: bool = False,
-             try_once: bool = False) -> dict: ...
+             try_once: bool = False, on_locked=None) -> dict: ...
 
     @abstractmethod
     def adapt(self, source: str, ref: str, output: str | None = None) -> dict: ...
@@ -254,7 +254,7 @@ class LocalVaultService(VaultService):
 
     def sync(self, source: str | None = None, since: str | None = None,
              dry_run: bool = False, include_live: bool = False,
-             try_once: bool = False) -> dict:
+             try_once: bool = False, on_locked=None) -> dict:
         """Run sync under the vault locks.
 
         ``try_once`` makes the lock acquisition non-blocking: when another
@@ -262,6 +262,9 @@ class LocalVaultService(VaultService):
         results instead of waiting out the timeout and raising. Detached
         background syncs use this so concurrent agent startups never pile
         up; the default (blocking, 10 s timeout, TimeoutError) is unchanged.
+        ``on_locked`` (optional callable) runs once both locks are held and
+        before any work, so a caller can reset per-run output exactly when it
+        is the sole writer.
         """
         config = load_vault_config(self.vault_path)
         since_dt = None
@@ -289,6 +292,8 @@ class LocalVaultService(VaultService):
             try:
                 with file_lock(self.vault_path, "log", timeout=timeout), \
                         file_lock(self.vault_path, "index", timeout=timeout):
+                    if on_locked is not None:
+                        on_locked()
                     results = _sync(self.vault_path, source=source, dry_run=False,
                                     since=since_dt, summarizer=summarizer, redactor=redactor)
             except TimeoutError:

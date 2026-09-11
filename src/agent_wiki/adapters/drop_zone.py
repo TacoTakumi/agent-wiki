@@ -77,13 +77,16 @@ class DropZoneAdapter(ConversationAdapter):
 
     def session_key(self, ref: DropZoneRef) -> str:
         meta = _read_frontmatter_header(ref.path)
-        agent = meta.get("agent")
-        session_id = meta.get("session_id")
-        if not agent or not session_id:
+        if meta.get("type") != "conversation":
             raise ValueError(
-                f"{ref.path}: bundle missing required frontmatter: agent, session_id"
+                f"{ref.path}: not a conversation bundle (type={meta.get('type')!r})"
             )
-        return f"{agent}:{session_id}"
+        missing = [k for k in ("agent", "session_id") if not meta.get(k)]
+        if missing:
+            raise ValueError(
+                f"{ref.path}: bundle missing required frontmatter: {', '.join(missing)}"
+            )
+        return f"{meta['agent']}:{meta['session_id']}"
 
     def fingerprint(self, ref: DropZoneRef) -> str:
         # Content hash so re-dropping a file with the same name but different
@@ -107,6 +110,9 @@ class DropZoneAdapter(ConversationAdapter):
         return conv
 
 
+_MAX_HEADER_LINES = 200
+
+
 def _read_frontmatter_header(path: Path) -> dict:
     """Parse only the leading ``---`` frontmatter block, stopping at its close.
 
@@ -121,6 +127,8 @@ def _read_frontmatter_header(path: Path) -> dict:
             if line.strip() == "---":
                 break
             lines.append(line)
+            if len(lines) > _MAX_HEADER_LINES:
+                return {}  # unterminated frontmatter; do not scan the body
     try:
         meta = yaml.safe_load("".join(lines))
     except yaml.YAMLError:

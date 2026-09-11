@@ -116,12 +116,23 @@ def test_detach_skips_when_lock_is_held(detach_env):
 
     vault = detach_env
     log = run_log_path(vault, "sync")
+    log.write_text("earlier run output\n")
     with file_lock(vault, "log", timeout=1):
         result = CliRunner().invoke(cli, ["sync", "--detach"])
         assert result.exit_code == 0, result.output
-        assert _wait_for(lambda: log.exists() and "already running" in log.read_text())
+        assert _wait_for(lambda: "already running" in log.read_text())
     assert not (vault / STATE_FILE).exists()
     assert not list((vault / "sessions").glob("*.md"))
+    # A skipped sweep appends its notice; only a sweep that holds the lock
+    # resets the log, so the earlier run's output survives.
+    assert log.read_text().startswith("earlier run output\n")
+
+    CliRunner().invoke(cli, ["sync", "--detach"])
+    assert _wait_for(lambda: "3 new" in log.read_text())
+    text = log.read_text()
+    assert "earlier run output" not in text
+    assert "already running" not in text
+    assert text.startswith("awiki sync started ")
 
 
 def test_blocking_sync_still_times_out_when_lock_is_held(detach_env, monkeypatch):
