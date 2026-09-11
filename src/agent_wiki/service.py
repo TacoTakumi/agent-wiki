@@ -22,6 +22,7 @@ from agent_wiki.doctor import (
 from agent_wiki.index import rebuild_index as _rebuild_index
 from agent_wiki.ingest import ingest_extracted, ingest_file, ingest_url, resolve_raw
 from agent_wiki.lint import lint_vault
+from agent_wiki.locking import DEFAULT_TIMEOUT as DEFAULT_LOCK_TIMEOUT
 from agent_wiki.locking import file_lock
 from agent_wiki.log import read_log
 from agent_wiki.page import is_sidecar, parse_page, render_page
@@ -251,7 +252,16 @@ class LocalVaultService(VaultService):
         return {"ok": True}
 
     def sync(self, source: str | None = None, since: str | None = None,
-             dry_run: bool = False, include_live: bool = False) -> dict:
+             dry_run: bool = False, include_live: bool = False,
+             try_once: bool = False) -> dict:
+        """Run sync under the vault locks.
+
+        ``try_once`` makes the lock acquisition non-blocking: when another
+        sync already holds the vault, return ``{"busy": True}`` with empty
+        results instead of waiting out the timeout and raising. Detached
+        background syncs use this so concurrent agent startups never pile
+        up; the default (blocking, 10 s timeout, TimeoutError) is unchanged.
+        """
         config = load_vault_config(self.vault_path)
         since_dt = None
         if since:
@@ -267,13 +277,20 @@ class LocalVaultService(VaultService):
                     sources_cfg[name]["include_live"] = True
         summarizer = _build_summarizer(config) if not dry_run else None
         redactor = _build_redactor(config) if not dry_run else None
+        counts = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
         if dry_run:
             results = _sync(self.vault_path, source=source, dry_run=True, since=since_dt)
         else:
-            with file_lock(self.vault_path, "log"), file_lock(self.vault_path, "index"):
-                results = _sync(self.vault_path, source=source, dry_run=False,
-                                since=since_dt, summarizer=summarizer, redactor=redactor)
-        counts = {"new": 0, "updated": 0, "skipped": 0, "error": 0}
+            timeout = 0.0 if try_once else DEFAULT_LOCK_TIMEOUT
+            try:
+                with file_lock(self.vault_path, "log", timeout=timeout), \
+                        file_lock(self.vault_path, "index", timeout=timeout):
+                    results = _sync(self.vault_path, source=source, dry_run=False,
+                                    since=since_dt, summarizer=summarizer, redactor=redactor)
+            except TimeoutError:
+                if not try_once:
+                    raise
+                return {"results": [], "counts": counts, "busy": True}
         out = []
         for r in results:
             counts[r.action] = counts.get(r.action, 0) + 1

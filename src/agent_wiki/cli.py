@@ -921,18 +921,30 @@ def status():
 @click.option("--detach", is_flag=True, default=False,
               help="Run the sync in a background process and return at once; "
                    "its output goes to a per-vault log in the awiki state dir")
-def sync(source, since, dry_run, include_live, detach):
+@click.option("--detached-worker", "detached_worker", is_flag=True, default=False,
+              hidden=True,
+              help="Internal: this process is the background half of --detach; "
+                   "try the vault lock once and skip if another sync holds it")
+def sync(source, since, dry_run, include_live, detach, detached_worker):
     """Discover new conversations from configured sources and ingest them."""
     if detach:
         _detach_sync(source=source, since=since, dry_run=dry_run,
                      include_live=include_live)
         return
+    kwargs = {}
+    if detached_worker:
+        kwargs["try_once"] = True
     try:
         out = _service().sync(
             source=source, since=since, dry_run=dry_run, include_live=include_live,
+            **kwargs,
         )
     except ValueError as e:
         raise click.ClickException(str(e))
+
+    if out.get("busy"):
+        click.echo("sync already running for this vault (lock held); skipping this run")
+        return
 
     for r in out["results"]:
         if r["action"] == "error":
@@ -970,7 +982,7 @@ def _detach_sync(source, since, dry_run, include_live) -> None:
         override = _raw_vault_override()
         if override:
             argv += ["--vault", override]
-        argv.append("sync")
+        argv += ["sync", "--detached-worker"]
         if source:
             argv += ["--source", source]
         if since:

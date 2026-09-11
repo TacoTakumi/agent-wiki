@@ -55,3 +55,13 @@ def test_timeout_raises(tmp_path):
             # Same process, different fd: LOCK_NB contention -> timeout fast.
             with file_lock(vault, "log", timeout=0.2):
                 pass
+
+
+def test_zero_timeout_tries_once_and_returns_at_once(tmp_path):
+    vault = tmp_path / "vault"; vault.mkdir()
+    with file_lock(vault, "log", timeout=5):
+        started = time.monotonic()
+        with pytest.raises(TimeoutError):
+            with file_lock(vault, "log", timeout=0):
+                pass
+        assert time.monotonic() - started < 0.5

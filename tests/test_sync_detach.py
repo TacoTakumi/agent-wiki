@@ -109,3 +109,35 @@ def test_detach_log_is_overwritten_each_run(detach_env):
     text = log.read_text()
     assert "3 new" not in text
     assert "3 unchanged" in text
+
+
+def test_detach_skips_when_lock_is_held(detach_env):
+    from agent_wiki.locking import file_lock
+
+    vault = detach_env
+    log = run_log_path(vault, "sync")
+    with file_lock(vault, "log", timeout=1):
+        result = CliRunner().invoke(cli, ["sync", "--detach"])
+        assert result.exit_code == 0, result.output
+        assert _wait_for(lambda: log.exists() and "already running" in log.read_text())
+    assert not (vault / STATE_FILE).exists()
+    assert not list((vault / "sessions").glob("*.md"))
+
+
+def test_blocking_sync_still_times_out_when_lock_is_held(detach_env, monkeypatch):
+    import contextlib
+    from agent_wiki import locking, service
+
+    vault = detach_env
+
+    @contextlib.contextmanager
+    def short_timeout(vault_path, name, timeout=locking.DEFAULT_TIMEOUT):
+        with locking.file_lock(vault_path, name, timeout=min(timeout, 0.3)):
+            yield
+
+    monkeypatch.setattr(service, "file_lock", short_timeout)
+    with locking.file_lock(vault, "log", timeout=1):
+        result = CliRunner().invoke(cli, ["sync"])
+    assert result.exit_code != 0
+    assert isinstance(result.exception, TimeoutError)
+    assert not (vault / STATE_FILE).exists()
