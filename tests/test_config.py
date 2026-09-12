@@ -135,9 +135,12 @@ def test_page_max_lines_rejects_an_unrecognised_lint_key():
     assert "page_max_lines" in message
 
 
-def test_an_unrecognised_lint_key_is_rejected_before_a_valid_one_is_read():
+def test_an_unrecognised_lint_key_is_reported_before_a_bad_value():
+    # Both checks can fire here, so this pins the order: with a valid value
+    # alongside, only the key check could raise and the test would pass either
+    # way round.
     with pytest.raises(ValueError, match="page_max_line'"):
-        parse_page_max_lines({"lint": {"page_max_lines": 100, "page_max_line": 9}})
+        parse_page_max_lines({"lint": {"page_max_lines": "abc", "page_max_line": 9}})
 
 
 def test_page_max_lines_rejects_a_non_mapping_config():

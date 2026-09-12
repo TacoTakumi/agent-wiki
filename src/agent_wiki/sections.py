@@ -169,7 +169,10 @@ def _as_block(lines: list[str]) -> str:
 
     A trailing empty element is the artifact of the source text's final
     newline, not a blank line, so it goes first. Blank lines inside an
-    unterminated fenced code block are content and are kept.
+    unterminated fenced code block are content and are kept - so text ending
+    in an open fence is the one case that comes back with a blank tail, and
+    the one case whose result does not end in exactly one newline. An empty
+    result is the empty string, never a bare newline.
     """
     if lines and lines[-1] == "":
         lines = lines[:-1]
@@ -189,9 +192,9 @@ def slice_children(text: str, head: int | None = None,
     inside the section. The section heading and its preamble (everything before
     the first child) are always kept, and each kept child brings its own
     subsections. A count beyond the number of children keeps them all, and a
-    count of zero keeps the preamble alone. Every sliced result drops trailing
-    blank lines and, unless it is empty, ends in exactly one newline - so a
-    section with no children comes back normalised, not untouched.
+    count of zero keeps the preamble alone. Every sliced result is normalised by
+    `_as_block` rather than passed through - so a section with no children comes
+    back changed, not untouched.
     """
     if head is None and tail is None:
         return text
@@ -212,9 +215,8 @@ def slice_top_level(text: str, head: int | None = None,
     is the page's only H1; otherwise they are the sections at the shallowest
     heading level present. Everything before the first of them - the H1 line
     and any preamble - is kept, and a count of zero keeps that alone. Every
-    sliced result drops trailing blank lines and, unless it is empty, ends in
-    exactly one newline - so a page with no headings comes back normalised, not
-    untouched.
+    sliced result is normalised by `_as_block` rather than passed through - so a
+    page with no headings comes back changed, not untouched.
     """
     if head is None and tail is None:
         return text
@@ -241,7 +243,8 @@ def _keep(lines: list[str], sections: list[tuple[int, int, str, str]],
     starts = [section[0] for section in sections]
     bounds = list(zip(starts, starts[1:] + [len(lines)]))
     # Count from the front for the tail too: bounds[-tail:] would hand back the
-    # whole list on a count of zero, where head=0 correctly keeps none.
+    # whole list on a count of zero, where head=0 correctly keeps none. A
+    # negative count is undefined either way; the CLI rejects anything below 1.
     kept = (bounds[:head] if head is not None
             else bounds[max(len(bounds) - tail, 0):])
 
