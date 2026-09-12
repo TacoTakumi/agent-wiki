@@ -116,7 +116,7 @@ def test_match_headings_returns_empty_when_nothing_matches():
 
 
 def test_select_section_stops_before_the_next_same_level_heading():
-    out = select_section(SECTIONED, "watermarks")
+    out = select_section(SECTIONED, "watermarks").text
     assert out == (
         "## Watermarks - as of 2026-09-01\n"
         "\n"
@@ -133,16 +133,16 @@ def test_select_section_stops_before_the_next_same_level_heading():
 
 
 def test_select_section_runs_to_end_of_file_for_the_last_section():
-    assert select_section(SECTIONED, "sources") == "## Sources\n\nSource list.\n"
+    assert select_section(SECTIONED, "sources").text == "## Sources\n\nSource list.\n"
 
 
 def test_select_section_stops_before_a_higher_level_heading():
     text = "### Deep\n\nx\n\n## Shallow\n\ny\n"
-    assert select_section(text, "deep") == "### Deep\n\nx\n"
+    assert select_section(text, "deep").text == "### Deep\n\nx\n"
 
 
 def test_select_section_matches_case_insensitively_and_trims_the_query():
-    assert select_section(SECTIONED, "  SOURCES  ") == "## Sources\n\nSource list.\n"
+    assert select_section(SECTIONED, "  SOURCES  ").text == "## Sources\n\nSource list.\n"
 
 
 def test_select_section_takes_the_first_match_in_file_order():
@@ -150,7 +150,7 @@ def test_select_section_takes_the_first_match_in_file_order():
         "## Check log\n\nfirst\n\n## Sources\n\nlist\n\n"
         "### Old check log\n\nsecond\n"
     )
-    assert select_section(text, "check log") == "## Check log\n\nfirst\n"
+    assert select_section(text, "check log").text == "## Check log\n\nfirst\n"
 
 
 def test_select_section_returns_none_when_no_heading_matches():
@@ -158,7 +158,7 @@ def test_select_section_returns_none_when_no_heading_matches():
 
 
 def test_select_section_ends_with_a_newline_when_the_source_does_not():
-    assert select_section("## A\nbody", "a") == "## A\nbody\n"
+    assert select_section("## A\nbody", "a").text == "## A\nbody\n"
 
 
 CHECK_LOG_SECTION = """## Check log
@@ -339,11 +339,11 @@ def test_strip_frontmatter_keeps_a_block_that_is_not_valid_yaml():
 
 
 def test_select_section_keeps_blank_lines_inside_an_unterminated_fence():
-    assert select_section("## A\n\n```\ncode\n\n\n", "a") == "## A\n\n```\ncode\n\n\n"
+    assert select_section("## A\n\n```\ncode\n\n\n", "a").text == "## A\n\n```\ncode\n\n\n"
 
 
 def test_select_section_still_trims_blanks_after_a_closed_fence():
-    assert select_section("## A\n\n```\ncode\n```\n\n\n", "a") == (
+    assert select_section("## A\n\n```\ncode\n```\n\n\n", "a").text == (
         "## A\n\n```\ncode\n```\n"
     )
 
@@ -353,3 +353,15 @@ def test_slice_toplevel_head_beyond_the_count_matches_a_kept_slice_exactly():
     # all, rather than only modulo whitespace.
     text = H1_PAGE + "\n\n"
     assert slice_top_level(text, head=9) == slice_top_level(text, head=4)
+
+
+def test_select_section_reports_only_matches_outside_the_selection():
+    # A match nested inside the printed section is not something the caller
+    # missed, so it is not listed as an "other".
+    text = (
+        "## Check log\n\nfirst\n\n### Check log details\n\nnested\n\n"
+        "## Sources\n\nlist\n\n### Old check log\n\nsecond\n"
+    )
+    selected = select_section(text, "check log")
+    assert "### Check log details" in selected.text
+    assert selected.others == ["### Old check log"]

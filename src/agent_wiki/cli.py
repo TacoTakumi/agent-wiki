@@ -738,13 +738,15 @@ def show(ctx, path, outline, section, head, tail):
     and --tail N cut that down to its first or last N child sections. Without
     any of them the page is printed verbatim, frontmatter included."""
     from agent_wiki.sections import (
-        match_headings, render_outline, select_section, slice_children,
-        slice_top_level, strip_frontmatter)
+        render_outline, select_section, slice_children, slice_top_level,
+        strip_frontmatter)
 
     # Validate the flag combination before anything is read or printed, so a
     # misuse never half-prints a page.
     if head is not None and tail is not None:
         ctx.fail("--head and --tail cannot be combined.")
+    if section is not None and not section.strip():
+        ctx.fail("--section needs some heading text to match.")
     for name, value in (("--head", head), ("--tail", tail)):
         if value is not None and value < 1:
             ctx.fail(f"{name} needs a count of at least 1.")
@@ -765,15 +767,14 @@ def show(ctx, path, outline, section, head, tail):
     if outline or section is not None or head is not None or tail is not None:
         content = strip_frontmatter(content)
     if section is not None:
-        matches = match_headings(content, section)
-        if not matches:
+        selected = select_section(content, section)
+        if selected is None:
             raise click.ClickException(f"no heading matches: {section}")
-        content = select_section(content, section)
-        if len(matches) > 1:
-            others = "\n".join(raw for _, _, _, raw in matches[1:])
+        content = selected.text
+        if selected.others:
             click.echo(
-                f"note: other headings also match '{section}':\n{others}",
-                err=True)
+                f"note: other headings also match '{section}':\n"
+                + "\n".join(selected.others), err=True)
         if head is not None or tail is not None:
             content = slice_children(content, head=head, tail=tail)
     elif head is not None or tail is not None:

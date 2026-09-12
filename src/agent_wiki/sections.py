@@ -8,6 +8,7 @@ block. Setext headings are deliberately not recognised.
 """
 
 import re
+from typing import NamedTuple
 
 import yaml
 
@@ -115,6 +116,14 @@ def render_outline(text: str) -> str:
     return "".join(f"{raw}\n" for _, _, _, raw in scan_headings(text))
 
 
+class Section(NamedTuple):
+    """A selected section: its text, and the heading lines that also matched
+    the query but fall outside it (the ones the caller did not get)."""
+
+    text: str
+    others: list[str]
+
+
 def match_headings(text: str, query: str) -> list[tuple[int, int, str, str]]:
     """Return the headings of `text` whose text matches `query`, in file order.
 
@@ -122,36 +131,46 @@ def match_headings(text: str, query: str) -> list[tuple[int, int, str, str]]:
     line minus its leading '#' marks, whitespace-trimmed); `query` is trimmed
     the same way.
     """
+    return _match(scan_headings(text), query)
+
+
+def _match(headings: list[tuple[int, int, str, str]],
+           query: str) -> list[tuple[int, int, str, str]]:
+    """The one match rule: case-insensitive substring, both sides trimmed."""
     needle = query.strip().lower()
-    return [h for h in scan_headings(text) if needle in h[2].lower()]
+    return [h for h in headings if needle in h[2].lower()]
 
 
-def select_section(text: str, query: str) -> str | None:
+def select_section(text: str, query: str) -> "Section | None":
     """Return the first section of `text` whose heading matches `query`.
 
     The section runs from its heading line through the line before the next
     heading of the same or a higher level, or to the end of the text - so
     deeper subsections come with it. Returns None when no heading matches.
 
+    `others` carries the heading lines that matched but lie outside the
+    returned section; a match nested inside it is already in the text, so it
+    is not reported as missed.
+
     Trailing blank lines are dropped and the result ends in exactly one
     newline, so a section that ends at a heading and one that ends at EOF read
     the same.
     """
     headings = scan_headings(text)
+    matches = _match(headings, query)
+    if not matches:
+        return None
+
+    start, level = matches[0][0], matches[0][1]
     lines = text.split("\n")
-    needle = query.strip().lower()
+    end = len(lines)
+    for later_index, later_level, _, _ in headings:
+        if later_index > start and later_level <= level:
+            end = later_index
+            break
 
-    for position, (index, level, heading_text, _raw) in enumerate(headings):
-        if needle not in heading_text.lower():
-            continue
-        end = len(lines)
-        for later_index, later_level, _, _ in headings[position + 1:]:
-            if later_level <= level:
-                end = later_index
-                break
-        return _as_block(lines[index:end])
-
-    return None
+    others = [h[3] for h in matches[1:] if not start <= h[0] < end]
+    return Section(_as_block(lines[start:end]), others)
 
 
 def _as_block(lines: list[str]) -> str:
