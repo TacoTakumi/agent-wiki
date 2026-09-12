@@ -10,7 +10,7 @@ from every other project.
 snippets); multi-word queries match every term, so add words to narrow. `awiki show <path>` prints
 a page whole - right for most, wasteful for a long log or watch page. Slice those instead:
 `--outline` lists the headings, `--section "<heading text>"` prints that one section with its
-subsections, and `--head N` / `--tail N` keep the first or last N of them.
+subsections, and `--head N` / `--tail N` keep only its first or last N child sections.
 
     awiki show research/postgres-tuning.md --section "Connection pooling"
 

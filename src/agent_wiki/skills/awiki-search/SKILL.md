@@ -27,8 +27,9 @@ outline runs past a screen - is better read in parts:
 - `--outline` prints the page's heading lines only, so you can pick a target
 - `--section "<heading text>"` prints the first section whose heading contains
   that text, subsections included
-- `--head N` / `--tail N` keep the first or last N subsections of that section,
-  or of the page's top-level sections when no `--section` is given
+- `--head N` / `--tail N` keep the first or last N *child* sections of that
+  section - each kept child brings its own deeper subsections with it - or the
+  first or last N top-level sections when no `--section` is given
 
 For example:
 

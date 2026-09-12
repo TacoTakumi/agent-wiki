@@ -188,9 +188,10 @@ def slice_children(text: str, head: int | None = None,
     direct child is a heading below it that is not nested under another heading
     inside the section. The section heading and its preamble (everything before
     the first child) are always kept, and each kept child brings its own
-    subsections. A count beyond the number of children keeps them all, a count
-    of zero keeps the preamble alone, and a section with no children comes back
-    with only its trailing blank lines trimmed.
+    subsections. A count beyond the number of children keeps them all, and a
+    count of zero keeps the preamble alone. Every sliced result drops trailing
+    blank lines and, unless it is empty, ends in exactly one newline - so a
+    section with no children comes back normalised, not untouched.
     """
     if head is None and tail is None:
         return text
@@ -210,8 +211,10 @@ def slice_top_level(text: str, head: int | None = None,
     The top-level sections are the H1's direct children when the first heading
     is the page's only H1; otherwise they are the sections at the shallowest
     heading level present. Everything before the first of them - the H1 line
-    and any preamble - is kept, a count of zero keeps that alone, and a page
-    with no headings comes back with only its trailing blank lines trimmed.
+    and any preamble - is kept, and a count of zero keeps that alone. Every
+    sliced result drops trailing blank lines and, unless it is empty, ends in
+    exactly one newline - so a page with no headings comes back normalised, not
+    untouched.
     """
     if head is None and tail is None:
         return text
