@@ -63,8 +63,10 @@ def parse_page(path: Path) -> dict:
     is the second, deliberately stricter rule, for arbitrary markdown that may not
     be a page at all: it requires the closing line to be `---` alone and the block
     to parse as a YAML mapping, so prose opening on a `---` thematic break keeps
-    its text. The two agree on every render_page output; read a page here, loose
-    text there.
+    its text. They agree on well-formed frontmatter but not on all of it: this
+    reader splits on the first `---` + newline found anywhere, so a value that
+    contains one (a title ending in `---`) splits mid-line and the two diverge.
+    Read a page here, loose text there.
     """
     content = path.read_text()
 
