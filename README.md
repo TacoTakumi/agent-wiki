@@ -142,9 +142,13 @@ reached through the `awiki` CLI. Go there first for project- or domain-specific 
 before re-deriving something that was likely figured out before; what you save there is available
 from every other project.
 
-**Search, then read the whole page.** `awiki search "<query>"` lists matching pages (title, path,
-snippets); always `awiki show <path>` to read a page in full before acting. Multi-word queries
-match every term, so add words to narrow.
+**Search, then read the page.** `awiki search "<query>"` lists matching pages (title, path,
+snippets); multi-word queries match every term, so add words to narrow. `awiki show <path>` prints
+a page whole - right for most, wasteful for a long log or watch page. Slice those instead:
+`--outline` lists the headings, `--section "<heading text>"` prints that one section with its
+subsections, and `--head N` / `--tail N` keep the first or last N of them.
+
+    awiki show research/postgres-tuning.md --section "Connection pooling"
 
 **Save what's worth keeping** - a decision, a non-obvious fix, a reusable pattern - with the
 **`awiki-save`** skill (or **`awiki-ingest`** to pull an existing file into the vault).
