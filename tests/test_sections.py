@@ -319,3 +319,37 @@ def test_slice_toplevel_on_a_page_with_no_headings_returns_it_unchanged():
 def test_slice_toplevel_with_repeated_h1s_treats_them_as_the_top_level():
     text = "# One\n\none\n\n# Two\n\ntwo\n"
     assert slice_top_level(text, head=1) == "# One\n\none\n"
+
+
+def test_strip_frontmatter_keeps_a_page_opening_with_a_thematic_break():
+    # '---' over prose is a horizontal rule, not frontmatter: dropping it would
+    # silently delete the intro.
+    text = "---\n\nImportant intro paragraph.\n\n---\n\n# Real Title\n\nbody\n"
+    assert strip_frontmatter(text) == text
+
+
+def test_strip_frontmatter_keeps_a_block_that_is_not_a_yaml_mapping():
+    text = "---\n- one\n- two\n---\n\nbody\n"
+    assert strip_frontmatter(text) == text
+
+
+def test_strip_frontmatter_keeps_a_block_that_is_not_valid_yaml():
+    text = "---\ntitle: [unclosed\n---\n\nbody\n"
+    assert strip_frontmatter(text) == text
+
+
+def test_select_section_keeps_blank_lines_inside_an_unterminated_fence():
+    assert select_section("## A\n\n```\ncode\n\n\n", "a") == "## A\n\n```\ncode\n\n\n"
+
+
+def test_select_section_still_trims_blanks_after_a_closed_fence():
+    assert select_section("## A\n\n```\ncode\n```\n\n\n", "a") == (
+        "## A\n\n```\ncode\n```\n"
+    )
+
+
+def test_slice_toplevel_head_beyond_the_count_matches_a_kept_slice_exactly():
+    # "N beyond the count keeps all" holds byte-for-byte, trailing blanks and
+    # all, rather than only modulo whitespace.
+    text = H1_PAGE + "\n\n"
+    assert slice_top_level(text, head=9) == slice_top_level(text, head=4)

@@ -9,6 +9,8 @@ block. Setext headings are deliberately not recognised.
 
 import re
 
+import yaml
+
 # Up to three leading spaces, 1-6 '#', then at least one space before the text.
 # Four or more leading spaces is an indented code block, and '#hash' with no
 # space is ordinary text.
@@ -29,9 +31,32 @@ def scan_headings(text: str) -> list[tuple[int, int, str, str]]:
     end of the text.
     """
     headings: list[tuple[int, int, str, str]] = []
+    lines = text.split("\n")
+
+    for index, (raw, in_fence) in enumerate(zip(lines, _fence_map(lines))):
+        if in_fence:
+            continue
+        heading = _HEADING_RE.match(raw)
+        if heading:
+            headings.append(
+                (index, len(heading.group(1)), heading.group(2).strip(), raw)
+            )
+
+    return headings
+
+
+def _fence_map(lines: list[str]) -> list[bool]:
+    """For each line, whether it lies inside a fenced code block.
+
+    The fence delimiter lines themselves count as inside. A fence opens on
+    three or more backticks or tildes and closes only on a fence of the same
+    character, at least as long, with nothing after it but whitespace; an
+    unclosed fence runs to the end.
+    """
+    inside: list[bool] = []
     fence: tuple[str, int] | None = None
 
-    for index, raw in enumerate(text.split("\n")):
+    for raw in lines:
         fence_match = _FENCE_RE.match(raw)
         if fence_match:
             marker = fence_match.group(1)
@@ -43,36 +68,40 @@ def scan_headings(text: str) -> list[tuple[int, int, str, str]]:
                 and raw.strip() == marker
             ):
                 fence = None
+            inside.append(True)
             continue
-        if fence is not None:
-            continue
-        heading = _HEADING_RE.match(raw)
-        if heading:
-            headings.append(
-                (index, len(heading.group(1)), heading.group(2).strip(), raw)
-            )
+        inside.append(fence is not None)
 
-    return headings
+    return inside
 
 
 def strip_frontmatter(text: str) -> str:
     """Return `text` without a leading YAML frontmatter block.
 
     The block runs from an opening '---' on the first line to the next line
-    that is '---' on its own; the single blank line separating it from the body
-    goes with it. Text without a well-formed leading block - including one that
-    is never closed - is returned unchanged.
+    that is '---' on its own, and must parse as a YAML mapping - so a page that
+    opens with a '---' thematic break, or a stray divider, keeps its text. The
+    single blank line separating a real block from the body goes with it. Text
+    without a well-formed leading block - including one that is never closed -
+    is returned unchanged.
     """
     if not text.startswith("---\n"):
         return text
 
     lines = text.split("\n")
     for index in range(1, len(lines)):
-        if lines[index].strip() == "---":
-            rest = lines[index + 1:]
-            if rest and rest[0] == "":
-                rest = rest[1:]
-            return "\n".join(rest)
+        if lines[index].strip() != "---":
+            continue
+        try:
+            meta = yaml.safe_load("\n".join(lines[1:index]))
+        except yaml.YAMLError:
+            return text
+        if not isinstance(meta, dict):
+            return text
+        rest = lines[index + 1:]
+        if rest and rest[0] == "":
+            rest = rest[1:]
+        return "\n".join(rest)
 
     return text
 
@@ -126,10 +155,19 @@ def select_section(text: str, query: str) -> str | None:
 
 
 def _as_block(lines: list[str]) -> str:
-    """Join `lines` into text ending in exactly one newline, blank tail dropped."""
-    while lines and not lines[-1].strip():
+    """Join `lines` into text ending in exactly one newline, blank tail dropped.
+
+    A trailing empty element is the artifact of the source text's final
+    newline, not a blank line, so it goes first. Blank lines inside an
+    unterminated fenced code block are content and are kept.
+    """
+    if lines and lines[-1] == "":
         lines = lines[:-1]
-    return "".join(f"{line}\n" for line in lines)
+    inside = _fence_map(lines)
+    end = len(lines)
+    while end and not lines[end - 1].strip() and not inside[end - 1]:
+        end -= 1
+    return "".join(f"{line}\n" for line in lines[:end])
 
 
 def slice_children(text: str, head: int | None = None,
@@ -146,12 +184,12 @@ def slice_children(text: str, head: int | None = None,
     if head is None and tail is None:
         return text
 
-    headings = scan_headings(text)
-    children = _direct_children(headings[1:])
+    lines = text.split("\n")
+    children = _direct_children(scan_headings(text)[1:])
     if not children:
-        return text
+        return _as_block(lines)
 
-    return _keep(text.split("\n"), children, head, tail)
+    return _keep(lines, children, head, tail)
 
 
 def slice_top_level(text: str, head: int | None = None,
@@ -169,7 +207,7 @@ def slice_top_level(text: str, head: int | None = None,
 
     headings = scan_headings(text)
     if not headings:
-        return text
+        return _as_block(text.split("\n"))
 
     if headings[0][1] == 1 and sum(1 for h in headings if h[1] == 1) == 1:
         return slice_children(text, head=head, tail=tail)

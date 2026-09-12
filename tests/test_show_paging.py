@@ -439,3 +439,30 @@ def test_head_beyond_the_count_equals_the_file_without_its_frontmatter(
     assert result.exit_code == 0
     assert page.endswith(TOPLEVEL_BODY)
     assert result.stdout == TOPLEVEL_BODY
+
+
+def test_outline_alone_drops_the_frontmatter(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body="# Title\n\nbody\n")
+    result = CliRunner().invoke(cli, ["show", "research/log.md", "--outline"])
+    assert result.exit_code == 0
+    assert result.stdout == "# Title\n"
+
+
+def test_tail_alone_drops_the_frontmatter(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=TOPLEVEL_BODY)
+    result = CliRunner().invoke(cli, ["show", "research/log.md", "--tail", "9"])
+    assert result.exit_code == 0
+    assert not result.stdout.startswith("---")
+    assert result.stdout == TOPLEVEL_BODY
+
+
+def test_section_tail_beyond_the_entry_count_prints_them_all(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=_check_log_body())
+    runner = CliRunner()
+    sliced = runner.invoke(
+        cli, ["show", "research/log.md", "--section", "check log", "--tail", "9"])
+    whole = runner.invoke(
+        cli, ["show", "research/log.md", "--section", "check log"])
+    assert sliced.exit_code == 0
+    assert sliced.stdout == whole.stdout
+    assert "### Entry 1" in sliced.stdout
