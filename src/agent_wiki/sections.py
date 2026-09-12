@@ -124,19 +124,10 @@ class Section(NamedTuple):
     others: list[str]
 
 
-def match_headings(text: str, query: str) -> list[tuple[int, int, str, str]]:
-    """Return the headings of `text` whose text matches `query`, in file order.
-
-    A match is a case-insensitive substring test against the heading text (the
-    line minus its leading '#' marks, whitespace-trimmed); `query` is trimmed
-    the same way.
-    """
-    return _match(scan_headings(text), query)
-
-
 def _match(headings: list[tuple[int, int, str, str]],
            query: str) -> list[tuple[int, int, str, str]]:
-    """The one match rule: case-insensitive substring, both sides trimmed."""
+    """The one match rule: case-insensitive substring against the heading text
+    (the line minus its leading '#' marks), both sides whitespace-trimmed."""
     needle = query.strip().lower()
     return [h for h in headings if needle in h[2].lower()]
 
@@ -197,8 +188,9 @@ def slice_children(text: str, head: int | None = None,
     direct child is a heading below it that is not nested under another heading
     inside the section. The section heading and its preamble (everything before
     the first child) are always kept, and each kept child brings its own
-    subsections. A count beyond the number of children keeps them all, and a
-    section with no children is returned unchanged.
+    subsections. A count beyond the number of children keeps them all, a count
+    of zero keeps the preamble alone, and a section with no children comes back
+    with only its trailing blank lines trimmed.
     """
     if head is None and tail is None:
         return text
@@ -218,8 +210,8 @@ def slice_top_level(text: str, head: int | None = None,
     The top-level sections are the H1's direct children when the first heading
     is the page's only H1; otherwise they are the sections at the shallowest
     heading level present. Everything before the first of them - the H1 line
-    and any preamble - is kept, and a page with no headings is returned
-    unchanged.
+    and any preamble - is kept, a count of zero keeps that alone, and a page
+    with no headings comes back with only its trailing blank lines trimmed.
     """
     if head is None and tail is None:
         return text
@@ -245,7 +237,10 @@ def _keep(lines: list[str], sections: list[tuple[int, int, str, str]],
     """
     starts = [section[0] for section in sections]
     bounds = list(zip(starts, starts[1:] + [len(lines)]))
-    kept = bounds[:head] if head is not None else bounds[-tail:]
+    # Count from the front for the tail too: bounds[-tail:] would hand back the
+    # whole list on a count of zero, where head=0 correctly keeps none.
+    kept = (bounds[:head] if head is not None
+            else bounds[max(len(bounds) - tail, 0):])
 
     sliced = lines[:starts[0]]
     for start, end in kept:
