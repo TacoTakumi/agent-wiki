@@ -80,10 +80,11 @@ def test_outline_on_a_page_with_no_headings_prints_nothing(tmp_config, tmp_vault
     assert result.stdout == ""
 
 
-def test_show_help_lists_the_outline_flag(tmp_config, tmp_vault):
+def test_show_help_lists_every_slicing_flag(tmp_config, tmp_vault):
     result = CliRunner().invoke(cli, ["show", "--help"])
     assert result.exit_code == 0
-    assert "--outline" in result.stdout
+    for flag in ("--outline", "--section", "--head", "--tail"):
+        assert flag in result.stdout
 
 
 WATERMARK_BODY = """# Feeds
@@ -179,12 +180,6 @@ def test_section_with_no_match_exits_one_and_names_the_text(tmp_config, tmp_vaul
     assert "nosuch" in result.stderr
 
 
-def test_show_help_lists_the_section_flag(tmp_config, tmp_vault):
-    result = CliRunner().invoke(cli, ["show", "--help"])
-    assert result.exit_code == 0
-    assert "--section" in result.stdout
-
-
 def _check_log_body(entries=5):
     """A page whose 'Check log' section holds `entries` dated child entries,
     each with body text and one deeper sub-entry, followed by a leaf section."""
@@ -260,13 +255,6 @@ def test_leaf_section_head_equals_the_unsliced_section(tmp_config, tmp_vault):
     whole = runner.invoke(cli, ["show", "research/log.md", "--section", "notes"])
     assert sliced.exit_code == 0
     assert sliced.stdout == whole.stdout == "## Notes\n\nNotes body with no sub-headings.\n"
-
-
-def test_show_help_lists_the_head_and_tail_flags(tmp_config, tmp_vault):
-    result = CliRunner().invoke(cli, ["show", "--help"])
-    assert result.exit_code == 0
-    assert "--head" in result.stdout
-    assert "--tail" in result.stdout
 
 
 TOPLEVEL_BODY = """# Ops
@@ -437,8 +425,7 @@ def test_head_beyond_the_count_equals_the_file_without_its_frontmatter(
     page = _make_page(tmp_vault, body=TOPLEVEL_BODY)
     result = CliRunner().invoke(cli, ["show", "research/log.md", "--head", "99"])
     assert result.exit_code == 0
-    assert page.endswith(TOPLEVEL_BODY)
-    assert result.stdout == TOPLEVEL_BODY
+    assert result.stdout == page.split("---\n\n", 1)[1]
 
 
 def test_outline_alone_drops_the_frontmatter(tmp_config, tmp_vault):
@@ -466,3 +453,26 @@ def test_section_tail_beyond_the_entry_count_prints_them_all(tmp_config, tmp_vau
     assert sliced.exit_code == 0
     assert sliced.stdout == whole.stdout
     assert "### Entry 1" in sliced.stdout
+
+
+def test_empty_section_text_is_a_usage_error(tmp_config, tmp_vault):
+    _make_page(tmp_vault, body=WATERMARK_BODY)
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--section", "   "])
+    assert result.exit_code == 2
+    assert result.stdout == ""
+    assert "Usage:" in result.stderr
+
+
+def test_section_note_omits_matches_inside_the_printed_section(
+        tmp_config, tmp_vault):
+    body = (
+        "# Ops\n\n## Check log\n\ncurrent\n\n### Check log details\n\n"
+        "nested\n\n## Sources\n\nlist\n"
+    )
+    _make_page(tmp_vault, body=body)
+    result = CliRunner().invoke(
+        cli, ["show", "research/log.md", "--section", "check log"])
+    assert result.exit_code == 0
+    assert "### Check log details" in result.stdout
+    assert "also match" not in result.stderr
