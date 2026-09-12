@@ -1,7 +1,6 @@
 """Unit tests for the pure markdown slicing primitives."""
 
 from agent_wiki.sections import (
-    match_headings,
     slice_children,
     slice_top_level,
     scan_headings,
@@ -101,18 +100,6 @@ Feed B text.
 
 Source list.
 """
-
-
-def test_match_headings_lists_every_match_in_file_order():
-    text = "## Check log\n\nx\n\n### Old check log\n\ny\n"
-    assert [h[3] for h in match_headings(text, "check log")] == [
-        "## Check log",
-        "### Old check log",
-    ]
-
-
-def test_match_headings_returns_empty_when_nothing_matches():
-    assert match_headings(SECTIONED, "nosuch") == []
 
 
 def test_select_section_stops_before_the_next_same_level_heading():
@@ -235,6 +222,18 @@ def test_slice_children_tail_beyond_the_child_count_keeps_all():
     assert slice_children(CHECK_LOG_SECTION, tail=9) == CHECK_LOG_SECTION
 
 
+def test_slice_children_head_of_zero_keeps_only_the_preamble():
+    assert slice_children(CHECK_LOG_SECTION, head=0) == (
+        "## Check log\n\nPreamble.\n"
+    )
+
+
+def test_slice_children_tail_of_zero_keeps_only_the_preamble():
+    assert slice_children(CHECK_LOG_SECTION, tail=0) == (
+        "## Check log\n\nPreamble.\n"
+    )
+
+
 def test_slice_children_head_on_a_leaf_section_returns_it_unchanged():
     assert slice_children(LEAF_SECTION, head=1) == LEAF_SECTION
 
@@ -310,6 +309,14 @@ def test_slice_toplevel_without_an_h1_uses_the_shallowest_level():
 
 def test_slice_toplevel_head_beyond_the_section_count_keeps_all():
     assert slice_top_level(H1_PAGE, head=9) == H1_PAGE
+
+
+def test_slice_toplevel_head_of_zero_keeps_only_the_preamble():
+    assert slice_top_level(H1_PAGE, head=0) == "# Ops\n\nPage preamble.\n"
+
+
+def test_slice_toplevel_tail_of_zero_keeps_only_the_preamble():
+    assert slice_top_level(H1_PAGE, tail=0) == "# Ops\n\nPage preamble.\n"
 
 
 def test_slice_toplevel_on_a_page_with_no_headings_returns_it_unchanged():

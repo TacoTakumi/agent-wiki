@@ -57,7 +57,15 @@ def slugify(text: str) -> str:
 
 
 def parse_page(path: Path) -> dict:
-    """Parse a wiki page into meta (frontmatter) and body."""
+    """Parse a wiki page into meta (frontmatter) and body.
+
+    The canonical reader for a page this package wrote. `sections.strip_frontmatter`
+    is the second, deliberately stricter rule, for arbitrary markdown that may not
+    be a page at all: it requires the closing line to be `---` alone and the block
+    to parse as a YAML mapping, so prose opening on a `---` thematic break keeps
+    its text. The two agree on every render_page output; read a page here, loose
+    text there.
+    """
     content = path.read_text()
 
     if content.startswith("---\n"):
