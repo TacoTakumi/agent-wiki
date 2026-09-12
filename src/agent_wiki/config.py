@@ -256,20 +256,38 @@ def load_registry() -> dict:
 PAGE_MAX_LINES_DEFAULT = 500  # a page body longer than this is a split candidate
 
 
+class VaultConfigError(ValueError):
+    """A wiki.yaml setting is malformed. Distinct from the ValueErrors a vault
+    service raises for I/O and transport problems, so a command can tell a
+    config typo (the user's to fix, and fatal) from an unreachable vault (a
+    skip)."""
+
+
 def parse_page_max_lines(config) -> int:
     """Read the SIZE lint threshold from a vault config dict's 'lint:' block.
 
     An absent block, an absent key, or a None value yields the built-in
-    default. The value must be a whole number of at least 1; anything else is
-    a configuration error (ValueError). The block is hand-edited, like
-    'topics' and 'default_topic'.
+    default. The value must be a whole number of at least 1; a malformed block
+    or value is a VaultConfigError. The block is hand-edited, like 'topics' and
+    'default_topic'.
     """
-    block = (config or {}).get("lint") or {}
+    if config is None:
+        config = {}
+    if not isinstance(config, dict):
+        raise VaultConfigError(
+            f"invalid wiki.yaml: expected a mapping, got {type(config).__name__}")
+    block = config.get("lint")
+    if block is None:
+        block = {}
+    if not isinstance(block, dict):
+        raise VaultConfigError(
+            f"invalid lint block {block!r} in wiki.yaml; expected a mapping "
+            f"such as 'lint: {{page_max_lines: 500}}'")
     value = block.get("page_max_lines")
     if value is None:
         return PAGE_MAX_LINES_DEFAULT
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise ValueError(
+        raise VaultConfigError(
             f"invalid lint page_max_lines {value!r} in wiki.yaml; "
             f"expected a whole number of at least 1"
         )

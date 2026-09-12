@@ -117,3 +117,14 @@ def test_page_max_lines_rejects_a_non_integer():
 def test_page_max_lines_rejects_a_non_positive_value():
     with pytest.raises(ValueError, match="page_max_lines"):
         parse_page_max_lines({"lint": {"page_max_lines": 0}})
+
+
+def test_page_max_lines_rejects_a_non_mapping_lint_block():
+    for block in (500, "500", [1], True):
+        with pytest.raises(ValueError, match="lint block"):
+            parse_page_max_lines({"lint": block})
+
+
+def test_page_max_lines_rejects_a_non_mapping_config():
+    with pytest.raises(ValueError, match="expected a mapping"):
+        parse_page_max_lines("not a config")

@@ -892,13 +892,14 @@ def lint(refetch, strict):
     support the operation is skipped with a printed notice — skips alone
     never change the exit code."""
     from agent_wiki.config import (
-        backend_for_entry, load_registry, resolve_vault_override)
+        VaultConfigError, backend_for_entry, load_registry,
+        resolve_vault_override)
 
     registry = load_registry() if resolve_vault_override() is None else {}
     if len(registry) <= 1:
         try:
             issues = _service().lint(refetch=refetch)
-        except ValueError as e:
+        except VaultConfigError as e:
             # A malformed wiki.yaml setting (e.g. the lint threshold) is the
             # user's to fix: name it plainly instead of raising a traceback.
             raise click.ClickException(str(e))
@@ -926,6 +927,10 @@ def lint(refetch, strict):
         click.echo(f"vault: {name}")
         try:
             issues = backend_for_entry(registry[name]).lint(refetch=refetch)
+        except VaultConfigError as e:
+            # A config typo is fatal wherever it is found: skipping it would
+            # silently disable linting for that vault and keep --strict green.
+            raise click.ClickException(f"vault '{name}': {e}")
         except Exception as e:
             msg = " ".join(str(e).split())
             click.echo(f"  skipped: {msg}")
