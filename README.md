@@ -584,8 +584,9 @@ awiki lint --refetch     # also re-fetch URL sources and flag upstream changes (
 **Tuning the SIZE threshold.** The page-length that trips a **SIZE** finding is
 `page_max_lines`, an optional integer in a `lint:` block in `wiki.yaml`. The
 built-in default is 500 lines, counted on the page body with the frontmatter
-excluded. Hand-edit the block like `topics`; a value that is not a whole number
-of at least 1 makes `awiki lint` fail and name the key.
+excluded. Hand-edit the block like `topics`; an unrecognised key in the block, or
+a value that is not a whole number of at least 1, makes `awiki lint` fail and
+name the key.
 
 ```yaml
 lint:
