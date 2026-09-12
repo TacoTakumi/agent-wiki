@@ -59,14 +59,25 @@ def slugify(text: str) -> str:
 def parse_page(path: Path) -> dict:
     """Parse a wiki page into meta (frontmatter) and body.
 
-    The canonical reader for a page this package wrote. `sections.strip_frontmatter`
-    is the second, deliberately stricter rule, for arbitrary markdown that may not
-    be a page at all: it requires the closing line to be `---` alone and the block
-    to parse as a YAML mapping, so prose opening on a `---` thematic break keeps
-    its text. They agree on well-formed frontmatter but not on all of it: this
-    reader splits on the first `---` + newline found anywhere, so a value that
-    contains one (a title ending in `---`) splits mid-line and the two diverge.
-    Read a page here, loose text there.
+    The canonical reader for a page this package wrote. The body it returns
+    starts at the closing delimiter, so it keeps the blank line render_page
+    inserts.
+
+    `sections.strip_frontmatter` is the second reader, for arbitrary markdown
+    that may not be a page at all; it is what the sliced `awiki show` views use.
+    Neither rule contains the other, so they are not interchangeable - on a page
+    this package wrote they already differ by that blank line, and elsewhere:
+
+    - this one needs the literal `---` + newline and finds it anywhere, so a
+      value ending in `---` splits mid-line, and a closing `--- ` with trailing
+      space is not seen as frontmatter at all; that one matches a closing line
+      whose stripped text is `---`.
+    - this one lets a YAML error propagate and accepts a block that is not a
+      mapping; that one returns the text unchanged in both cases, so prose
+      opening on a `---` thematic break keeps its text.
+
+    Read a page here, loose text there. `adapters.drop_zone` carries a third,
+    streaming reader that deliberately mirrors THIS one - change that with it.
     """
     content = path.read_text()
 

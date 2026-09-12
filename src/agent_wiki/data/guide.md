@@ -3,14 +3,14 @@
 Durable, hard-won knowledge - decisions, research, tool/config details, fixes - lives in the
 **Agent Wiki**, one markdown vault **shared across all your projects** (and the assistant itself),
 reached through the `awiki` CLI. Go there first for project- or domain-specific knowledge, and
-before re-deriving something that was likely figured out before; what you save there is available
-from every other project.
+before re-deriving something that was likely figured out before.
 
 **Search, then read the page.** `awiki search "<query>"` lists matching pages (title, path,
 snippets); multi-word queries match every term, so add words to narrow. `awiki show <path>` prints
 a page whole - right for most, wasteful for a long log or watch page. Slice those instead:
 `--outline` lists the headings, `--section "<heading text>"` prints that one section with its
-subsections, and `--head N` / `--tail N` keep only its first or last N child sections.
+subsections, and `--head N` / `--tail N` keep only the first or last N child sections of it,
+or of the whole page when no `--section` is given.
 
     awiki show research/postgres-tuning.md --section "Connection pooling"
 
