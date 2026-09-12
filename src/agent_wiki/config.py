@@ -254,6 +254,7 @@ def load_registry() -> dict:
 
 
 PAGE_MAX_LINES_DEFAULT = 500  # a page body longer than this is a split candidate
+LINT_SETTINGS = ("page_max_lines",)  # every key the 'lint:' block accepts
 
 
 class VaultConfigError(ValueError):
@@ -267,9 +268,10 @@ def parse_page_max_lines(config) -> int:
     """Read the SIZE lint threshold from a vault config dict's 'lint:' block.
 
     An absent block, an absent key, or a None value yields the built-in
-    default. The value must be a whole number of at least 1; a malformed block
-    or value is a VaultConfigError. The block is hand-edited, like 'topics' and
-    'default_topic'.
+    default. The value must be a whole number of at least 1; a malformed block,
+    an unrecognised key, or a malformed value is a VaultConfigError. The block
+    is hand-edited, like 'topics' and 'default_topic', so a typo anywhere in it
+    is reported rather than silently ignored.
     """
     if config is None:
         config = {}
@@ -283,6 +285,12 @@ def parse_page_max_lines(config) -> int:
         raise VaultConfigError(
             f"invalid lint block {block!r} in wiki.yaml; expected a mapping "
             f"such as 'lint: {{page_max_lines: 500}}'")
+    unknown = [key for key in block if key not in LINT_SETTINGS]
+    if unknown:
+        raise VaultConfigError(
+            f"unrecognised lint setting "
+            f"{', '.join(repr(key) for key in unknown)} in wiki.yaml; "
+            f"recognised: {', '.join(LINT_SETTINGS)}")
     value = block.get("page_max_lines")
     if value is None:
         return PAGE_MAX_LINES_DEFAULT

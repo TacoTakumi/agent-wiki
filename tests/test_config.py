@@ -125,6 +125,21 @@ def test_page_max_lines_rejects_a_non_mapping_lint_block():
             parse_page_max_lines({"lint": block})
 
 
+def test_page_max_lines_rejects_an_unrecognised_lint_key():
+    # A typo in the key would otherwise run lint at the default and say nothing,
+    # while a typo in the block or the value is already loud.
+    with pytest.raises(ValueError) as excinfo:
+        parse_page_max_lines({"lint": {"page_max_line": 100}})
+    message = str(excinfo.value)
+    assert "page_max_line" in message
+    assert "page_max_lines" in message
+
+
+def test_an_unrecognised_lint_key_is_rejected_before_a_valid_one_is_read():
+    with pytest.raises(ValueError, match="page_max_line'"):
+        parse_page_max_lines({"lint": {"page_max_lines": 100, "page_max_line": 9}})
+
+
 def test_page_max_lines_rejects_a_non_mapping_config():
     with pytest.raises(ValueError, match="expected a mapping"):
         parse_page_max_lines("not a config")

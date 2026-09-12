@@ -27,10 +27,10 @@ below are reconstructed from the commits that bumped `__version__`.
   byte-identical to the file.
 - **Configurable SIZE lint threshold.** An optional `lint: page_max_lines`
   integer in `wiki.yaml` sets the page length that trips a **SIZE** finding,
-  read through the one vault-config reader. A malformed block, or a value that
-  is not a whole number of at least 1, makes `awiki lint` fail with a message
-  naming the key - in a multi-vault run too, where a config error is fatal
-  rather than a skip.
+  read through the one vault-config reader. A malformed block, an unrecognised
+  key inside it, or a value that is not a whole number of at least 1 makes
+  `awiki lint` fail with a message naming the key - in a multi-vault run too,
+  where a config error is fatal rather than a skip.
 
 ### Changed
 - The **SIZE** lint default rose from 200 to 500 lines, so the finding lands on
