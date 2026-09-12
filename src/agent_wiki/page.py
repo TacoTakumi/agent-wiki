@@ -69,13 +69,17 @@ def parse_page(path: Path) -> dict:
     this package wrote they already differ by that blank line, and elsewhere:
 
     - this one closes the block on the first literal `---` + newline found
-      anywhere, so a value ending in `---` splits mid-line; that one closes on
-      the first line whose stripped text is `---`. A closing `--- ` with a
-      trailing space therefore does not close the block here at all: the next
-      `---` line in the body does, swallowing everything above it.
+      anywhere, so a value ending in `---` splits mid-line and a closer
+      carrying a trailing space is never the close; that one closes on the
+      first line whose stripped text is `---`.
     - this one lets a YAML error propagate and accepts a block that is not a
       mapping; that one returns the text unchanged in both cases, so prose
       opening on a `---` thematic break keeps its text.
+
+    A page whose block does not close on an exact `---` line therefore lands in
+    one of three places here, depending on what follows it: no frontmatter
+    found and the whole file returned as the body, a raise, or a block closed
+    by some later `---` line. Do not predict which from this docstring - run it.
 
     Read a page here, loose text there. `adapters.drop_zone` carries a third,
     streaming reader that deliberately mirrors THIS one - change that with it.

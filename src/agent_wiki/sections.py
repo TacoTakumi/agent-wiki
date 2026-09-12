@@ -170,9 +170,10 @@ def _as_block(lines: list[str]) -> str:
     A trailing empty element is the artifact of the source text's final
     newline, not a blank line, so it goes first. Blank lines inside an
     unterminated fenced code block are content and are kept - so text ending
-    in an open fence is the one case that comes back with a blank tail, and
-    the one non-empty result that does not end in exactly one newline. An
-    empty result is the empty string, never a bare newline.
+    in an open fence is the only result that can come back with a blank tail,
+    and the only non-empty result that can fail to end in exactly one newline
+    (a kept tail of whitespace-only lines still ends in one). An empty result
+    is the empty string, never a bare newline.
     """
     if lines and lines[-1] == "":
         lines = lines[:-1]
@@ -192,9 +193,10 @@ def slice_children(text: str, head: int | None = None,
     inside the section. The section heading and its preamble (everything before
     the first child) are always kept, and each kept child brings its own
     subsections. A count beyond the number of children keeps them all, and a
-    count of zero keeps the preamble alone. Every sliced result is normalised by
-    `_as_block` rather than passed through - so a section with no children comes
-    back changed, not untouched.
+    count of zero keeps the preamble alone. A section with no children is still
+    re-emitted through `_as_block` - trailing blank lines dropped, one final
+    newline - so it comes back byte-identical only if it already ends that way.
+    Called with neither count, `text` is returned verbatim.
     """
     if head is None and tail is None:
         return text
@@ -214,9 +216,11 @@ def slice_top_level(text: str, head: int | None = None,
     The top-level sections are the H1's direct children when the first heading
     is the page's only H1; otherwise they are the sections at the shallowest
     heading level present. Everything before the first of them - the H1 line
-    and any preamble - is kept, and a count of zero keeps that alone. Every
-    sliced result is normalised by `_as_block` rather than passed through - so a
-    page with no headings comes back changed, not untouched.
+    and any preamble - is kept, and a count of zero keeps that alone. A page
+    with no headings is still re-emitted through `_as_block` - trailing blank
+    lines dropped, one final newline - so it comes back byte-identical only if
+    it already ends that way. Called with neither count, `text` is returned
+    verbatim.
     """
     if head is None and tail is None:
         return text
