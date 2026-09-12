@@ -497,6 +497,23 @@ awiki show research/raft-consensus.md    # prints that page in full
 - Accepts any file inside the vault (topic pages, `raw/`, `index.md`, `log.md`).
 - Paths that escape the vault are rejected; missing files and binary (non-UTF-8) files report an error and exit non-zero.
 
+**Reading part of a long page.** Four flags slice the output so a long log or
+watch page does not have to be read whole. Any of them drops the YAML
+frontmatter, so what you get is plain markdown; without them the output stays
+byte-identical to the file.
+
+```bash
+awiki show projects/feed-log.md --outline                  # just the heading lines
+awiki show projects/feed-log.md --section "check log"      # one section, subsections included
+awiki show projects/feed-log.md --section "check log" --head 3   # its first 3 entries
+awiki show projects/feed-log.md --tail 2                   # the last 2 top-level sections
+```
+
+- `--outline` prints every heading line verbatim, in file order, and nothing else. Headings inside fenced code blocks are not counted.
+- `--section TEXT` matches TEXT against each heading's text, case-insensitively, as a substring. The first match wins and prints through the line before the next heading of the same or a higher level. Other matching headings are listed on stderr; no match exits non-zero.
+- `--head N` and `--tail N` keep the first or last N child sections of the `--section` selection, or of the page's top-level sections when no section is given. The heading and the text above the first child are always kept.
+- `--head` and `--tail` cannot be combined with each other or with `--outline`, and N must be at least 1. `--section` and `--outline` together list the headings inside the selected section.
+
 #### `awiki status`
 
 Show a vault overview: page count per topic, raw file count, and last activity.
@@ -549,7 +566,7 @@ Audit the vault for issues:
 - **DRIFT** - a page whose body no longer matches its `raw/` source
 - **SOURCE** - a `raw/` file edited in place (drifted from its recorded sha256)
 - **STALE** - a page whose body lags its newest source
-- **SIZE** - pages over 200 lines, flagged as split candidates
+- **SIZE** - pages over `page_max_lines` (default 500), flagged as split candidates
 - **INDEX** - pages missing from `index.md`
 - **TAG** - tag-audit findings: alias-fixable or novel tags, or vocabulary conflicts (only when a `tags:` vocabulary is configured)
 - **UPSTREAM** - a URL source whose upstream content changed (only with `--refetch`)
@@ -558,6 +575,17 @@ Audit the vault for issues:
 awiki lint
 awiki lint --strict      # CI gate: exit non-zero if any TAG finding exists
 awiki lint --refetch     # also re-fetch URL sources and flag upstream changes (network; local vaults only)
+```
+
+**Tuning the SIZE threshold.** The page-length that trips a **SIZE** finding is
+`page_max_lines`, an optional integer in a `lint:` block in `wiki.yaml`. The
+built-in default is 500 lines, counted on the page body with the frontmatter
+excluded. Hand-edit the block like `topics`; a value that is not a whole number
+of at least 1 makes `awiki lint` fail and name the key.
+
+```yaml
+lint:
+  page_max_lines: 500
 ```
 
 #### `awiki tag add|suggest|fix`
