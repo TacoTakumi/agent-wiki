@@ -9,6 +9,31 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.10.0]
+
+### Added
+- **Sliced page reads.** `awiki show` gains four flags so a long log or watch
+  page can be read in parts instead of whole. `--outline` prints only the
+  page's heading lines, verbatim and in file order. `--section TEXT` prints the
+  first section whose heading contains TEXT (case-insensitive substring),
+  through the line before the next heading of the same or a higher level, so
+  subsections come with it; other matching headings are listed on stderr, and
+  no match exits non-zero. `--head N` and `--tail N` keep the first or last N
+  child sections of that selection, or of the page's top-level sections when no
+  section is given, always keeping the heading and the text above the first
+  child. Headings inside fenced code blocks are never counted, any of the four
+  flags drops the YAML frontmatter, and slicing runs client-side so local and
+  remote vaults print identically. Flagless `awiki show` is unchanged and stays
+  byte-identical to the file.
+- **Configurable SIZE lint threshold.** An optional `lint: page_max_lines`
+  integer in `wiki.yaml` sets the page length that trips a **SIZE** finding,
+  read through the one vault-config reader. A value that is not a whole number
+  of at least 1 makes `awiki lint` fail with a message naming the key.
+
+### Changed
+- The **SIZE** lint default rose from 200 to 500 lines, so the finding lands on
+  genuine split candidates rather than on ordinary pages.
+
 ## [0.9.1]
 
 ### Fixed
