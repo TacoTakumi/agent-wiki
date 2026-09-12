@@ -13,6 +13,7 @@ scopes; that lets a no-flag install (user scope) and `--scope project` land in
 distinct, assertable directories.
 """
 
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -70,3 +71,13 @@ def test_scope_project_installs_to_project_dir(harness_env):
             f"{name} not installed under project scope\n{result.output}")
         assert not (_claude_skills_dir(home) / name).exists(), (
             f"{name} leaked into user scope on a --scope project install\n{result.output}")
+
+
+def test_search_skill_points_at_the_sliced_reads():
+    """The shipped awiki-search skill is what an agent actually follows after a
+    search, so it must offer the sliced reads for a long page rather than only
+    `awiki show <path>`."""
+    text = (resources.files("agent_wiki") / "skills" / "awiki-search"
+            / "SKILL.md").read_text(encoding="utf-8")
+    for flag in ("--outline", "--section"):
+        assert flag in text, f"awiki-search skill never mentions {flag}"

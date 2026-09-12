@@ -35,6 +35,12 @@ below are reconstructed from the commits that bumped `__version__`.
 ### Changed
 - The **SIZE** lint default rose from 200 to 500 lines, so the finding lands on
   genuine split candidates rather than on ordinary pages.
+- The agent-facing docs point at the sliced reads. The packaged `awiki-search`
+  skill and the block `awiki guide` prints now name `--outline`, `--section`,
+  `--head` and `--tail` and carry a sliced-read example, where both previously
+  told an agent only to read a page whole. Run `awiki skills update` to refresh
+  an installed skill; the guide block is static, so an already-pasted copy in an
+  agent-memory file keeps working and can be replaced from `awiki guide --raw`.
 
 ## [0.9.1]
 

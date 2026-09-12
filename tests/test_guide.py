@@ -143,16 +143,18 @@ def test_block_only_references_real_commands():
 
 
 def test_block_is_trimmed_and_habits_inline():
-    # The packaged block is short and self-contained: the file itself is <=15
-    # non-blank lines, and the load-bearing habits live inline (not deferred to
-    # a pointer) — search->show, save, and the edit-raw->reingest edit-loop.
+    # The packaged block is short and self-contained: the file itself is <=18
+    # non-blank lines, and the habits it has to carry live inline (not deferred
+    # to a pointer) - search->show, slicing a long page, save, and the
+    # edit-raw->reingest edit-loop. The cap is a bloat guard, not a target:
+    # every line of this block lands in someone's agent-memory file.
     from importlib import resources
 
     file_text = (resources.files("agent_wiki") / "data" / "guide.md").read_text(
         encoding="utf-8"
     )
     nonblank = [ln for ln in file_text.splitlines() if ln.strip()]
-    assert len(nonblank) <= 15, f"block file has {len(nonblank)} non-blank lines (>15)"
+    assert len(nonblank) <= 18, f"block file has {len(nonblank)} non-blank lines (>18)"
 
     block = render_block()
     # (a) search-first then read the full page
@@ -163,6 +165,19 @@ def test_block_is_trimmed_and_habits_inline():
     # (b) exactly one edit-raw -> reingest loop, with a never-hand-edit sense
     assert block.count("awiki reingest") == 1
     assert "hand-edit" in block.lower()
+
+
+def test_block_points_at_the_sliced_reads():
+    # The flags are useless if nothing tells an agent they exist: the block must
+    # name them and show one, and must not send an agent at a long page whole
+    # with no alternative offered.
+    block = render_block()
+    for flag in ("--outline", "--section"):
+        assert flag in block, f"block never mentions {flag}"
+    assert "awiki show" in block
+    flat = " ".join(block.lower().split())
+    assert "read a page in full" not in flat
+    assert "read the whole page" not in flat
 
 
 def test_block_drops_web_search_replacement_and_vault_branch():
