@@ -135,3 +135,49 @@ def test_render_hash_stable_under_trailing_whitespace_and_newlines():
 
 def test_render_hash_differs_on_real_body_change():
     assert render_hash("# T\n\nbody\n") != render_hash("# T\n\nbody edited\n")
+
+
+# parse_page's docstring describes exactly how it diverges from
+# sections.strip_frontmatter. That paragraph has been wrong more than once, so
+# each claim in it is pinned here: change the behaviour and the docstring is
+# forced to move with it.
+
+def _parse(tmp_path, text):
+    path = tmp_path / "page.md"
+    path.write_text(text)
+    return parse_page(path)
+
+
+def test_the_two_readers_differ_on_the_blank_separator_of_every_page(tmp_path):
+    from agent_wiki.sections import strip_frontmatter
+    text = render_page({"title": "T"}, "# T\n\nbody\n")
+    assert _parse(tmp_path, text)["body"] == "\n# T\n\nbody\n"
+    assert strip_frontmatter(text) == "# T\n\nbody\n"
+
+
+def test_parse_page_closes_on_the_first_delimiter_found_anywhere(tmp_path):
+    # A value ending in '---' carries the delimiter, so the split lands mid-line.
+    assert _parse(tmp_path, "---\ntitle: a---\n---\n\nbody\n")["meta"] == {"title": "a"}
+
+
+def test_a_closer_with_a_trailing_space_never_closes_the_block(tmp_path):
+    from agent_wiki.sections import strip_frontmatter
+    text = "---\ntitle: T\n--- \n\nbody\n"
+    assert _parse(tmp_path, text)["meta"] == {}
+    assert strip_frontmatter(text) == "body\n"
+
+
+def test_parse_page_propagates_a_yaml_error_where_the_other_returns_the_text(tmp_path):
+    import yaml
+    from agent_wiki.sections import strip_frontmatter
+    text = "---\ntitle: [unclosed\n---\n\nbody\n"
+    with pytest.raises(yaml.YAMLError):
+        _parse(tmp_path, text)
+    assert strip_frontmatter(text) == text
+
+
+def test_parse_page_accepts_a_non_mapping_block_where_the_other_returns_the_text(tmp_path):
+    from agent_wiki.sections import strip_frontmatter
+    text = "---\n- a\n- b\n---\n\nbody\n"
+    assert _parse(tmp_path, text)["meta"] == ["a", "b"]
+    assert strip_frontmatter(text) == text
