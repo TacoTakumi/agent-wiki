@@ -60,18 +60,19 @@ def parse_page(path: Path) -> dict:
     """Parse a wiki page into meta (frontmatter) and body.
 
     The canonical reader for a page this package wrote. The body it returns
-    starts at the closing delimiter, so it keeps the blank line render_page
-    inserts.
+    starts on the line after the closing delimiter, so it keeps the blank line
+    render_page inserts.
 
     `sections.strip_frontmatter` is the second reader, for arbitrary markdown
     that may not be a page at all; it is what the sliced `awiki show` views use.
     Neither rule contains the other, so they are not interchangeable - on a page
     this package wrote they already differ by that blank line, and elsewhere:
 
-    - this one needs the literal `---` + newline and finds it anywhere, so a
-      value ending in `---` splits mid-line, and a closing `--- ` with trailing
-      space is not seen as frontmatter at all; that one matches a closing line
-      whose stripped text is `---`.
+    - this one closes the block on the first literal `---` + newline found
+      anywhere, so a value ending in `---` splits mid-line; that one closes on
+      the first line whose stripped text is `---`. A closing `--- ` with a
+      trailing space therefore does not close the block here at all: the next
+      `---` line in the body does, swallowing everything above it.
     - this one lets a YAML error propagate and accepts a block that is not a
       mapping; that one returns the text unchanged in both cases, so prose
       opening on a `---` thematic break keeps its text.

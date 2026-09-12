@@ -15,7 +15,7 @@ One small CLI (`awiki`) is the only door in, so the same commands work whether t
 vault is a local folder or a server shared across every project and machine you
 point at it. Onboarding an agent takes one command: **`awiki guide`** prints a
 self-installing block for your `CLAUDE.md` / `AGENTS.md` that teaches the agent to
-search the wiki first, read full pages, and save what is worth keeping.
+search the wiki first, read a page whole or in slices, and save what is worth keeping.
 
 ## Features
 
@@ -162,7 +162,7 @@ If `awiki` isn't installed or no vault is configured, skip the wiki and proceed 
 
 Prompts that map onto it:
 
-- "Check the wiki for X." - searches, then reads the matching pages in full.
+- "Check the wiki for X." - searches, then reads the matching pages, whole or a section at a time.
 - "Save that to the wiki." - the `awiki-save` skill writes the conversation's findings into a page.
 - "Pull this file into the wiki." - the `awiki-ingest` skill ingests an existing file.
 - "Fix the X page." - edits `raw/<name>` and re-renders with `awiki reingest`, never the page itself.

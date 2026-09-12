@@ -157,7 +157,7 @@ def test_block_is_trimmed_and_habits_inline():
     assert len(nonblank) <= 18, f"block file has {len(nonblank)} non-blank lines (>18)"
 
     block = render_block()
-    # (a) search-first then read the full page
+    # (a) search-first, then read the page
     assert "awiki search" in block
     assert "awiki show" in block
     # save nudge
@@ -175,6 +175,12 @@ def test_block_points_at_the_sliced_reads():
     for flag in ("--outline", "--section"):
         assert flag in block, f"block never mentions {flag}"
     assert "awiki show" in block
+    # ...and shows one, as an indented example line an agent can copy. Naming
+    # the flags in prose is not the same as demonstrating one.
+    examples = [ln.strip() for ln in block.splitlines()
+                if ln.startswith("    ") and ln.strip().startswith("awiki show")]
+    assert any("--" in ex for ex in examples), (
+        "block names the flags but shows no sliced-read example")
     flat = " ".join(block.lower().split())
     assert "read a page in full" not in flat
     assert "read the whole page" not in flat
