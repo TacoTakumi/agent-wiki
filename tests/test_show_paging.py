@@ -476,3 +476,15 @@ def test_section_note_omits_matches_inside_the_printed_section(
     assert result.exit_code == 0
     assert "### Check log details" in result.stdout
     assert "also match" not in result.stderr
+
+
+def test_crlf_page_slices_and_prints_with_unix_newlines(tmp_config, tmp_vault):
+    # The vault service reads with universal newlines, so slicing never sees a
+    # CR. This pins that: a CRLF page on disk slices correctly and prints LF.
+    page = render_page(META, TOPLEVEL_BODY)
+    (tmp_vault / "research" / "log.md").write_bytes(
+        page.replace("\n", "\r\n").encode())
+    result = CliRunner().invoke(cli, ["show", "research/log.md", "--head", "1"])
+    assert result.exit_code == 0
+    assert "\r" not in result.stdout
+    assert result.stdout == "# Ops\n\nPage preamble.\n\n## First\n\nFirst body.\n"
