@@ -171,8 +171,8 @@ def _as_block(lines: list[str]) -> str:
     newline, not a blank line, so it goes first. Blank lines inside an
     unterminated fenced code block are content and are kept - so text ending
     in an open fence is the one case that comes back with a blank tail, and
-    the one case whose result does not end in exactly one newline. An empty
-    result is the empty string, never a bare newline.
+    the one non-empty result that does not end in exactly one newline. An
+    empty result is the empty string, never a bare newline.
     """
     if lines and lines[-1] == "":
         lines = lines[:-1]
