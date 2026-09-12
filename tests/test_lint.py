@@ -379,3 +379,36 @@ def test_lint_rejects_a_zero_page_max_lines(tmp_config, tmp_vault):
 def test_lint_accepts_a_valid_page_max_lines(tmp_config, tmp_vault):
     result = _lint_with_page_max_lines(tmp_vault, 120)
     assert result.exit_code == 0
+
+
+def test_lint_rejects_a_non_mapping_lint_block(tmp_config, tmp_vault):
+    # The likeliest typo of the new key: 'lint: 500' instead of a mapping. It
+    # must read as a named config error, never as a traceback.
+    import yaml
+    config_file = tmp_vault / "wiki.yaml"
+    config = yaml.safe_load(config_file.read_text())
+    config["lint"] = 500
+    config_file.write_text(yaml.dump(config))
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    result = CliRunner().invoke(cli, ["lint"])
+    assert result.exit_code != 0
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "lint block" in result.stderr
+
+
+def test_lint_fails_when_one_of_several_vaults_has_a_bad_threshold(
+        two_vault_config, tmp_path):
+    # A config typo is fatal wherever it is found: downgrading it to a skip
+    # would silently disable linting for that vault and keep --strict green.
+    import yaml
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    work = tmp_path / "work-vault" / "wiki.yaml"
+    config = yaml.safe_load(work.read_text())
+    config["lint"] = {"page_max_lines": 0}
+    work.write_text(yaml.dump(config))
+    result = CliRunner().invoke(cli, ["lint"])
+    assert result.exit_code != 0
+    assert "page_max_lines" in result.stderr
+    assert "skipped" not in result.output
