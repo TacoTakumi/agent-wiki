@@ -535,11 +535,77 @@ def test_search_with_no_hits_says_so(viewer, search_pages):
     assert "No results found." in html
 
 
-def test_every_viewer_page_has_a_search_form(viewer, pages):
-    for url in ("/", "/vaults/main/", "/vaults/main/research/",
-                "/vaults/main/research/foo", "/vaults/main/-/tags/alpha"):
-        html = viewer.get(url).text
-        assert '<form method="get" action="/search" role="search">' in html, url
+VAULT_VIEWS = ("/vaults/main/", "/vaults/main/research/",
+               "/vaults/main/research/foo", "/vaults/main/-/tags/alpha")
+
+
+def site_header(html):
+    """The markup of the page's site header."""
+    found = re.search(r'<header class="site-header">(.*?)</header>', html,
+                      re.S)
+    assert found, "no site header"
+    return found.group(1)
+
+
+def header_search_forms(header):
+    """Each search form in the header, as its full markup."""
+    return re.findall(r'<form[^>]*action="/search".*?</form>', header, re.S)
+
+
+@pytest.mark.parametrize("url", ("/", "/search") + VAULT_VIEWS)
+def test_header_has_the_mark_and_wordmark_linking_home(viewer, pages, url):
+    header = site_header(viewer.get(url).text)
+    brand = re.search(r'<a class="brand" href="/">(.*?)</a>', header, re.S)
+    assert brand, url
+    assert "<svg" in brand.group(1) and "</svg>" in brand.group(1)
+    assert "Agent Wiki" in brand.group(1)
+
+
+@pytest.mark.parametrize("url", ("/", "/search") + VAULT_VIEWS)
+def test_header_has_the_theme_switch(viewer, pages, url):
+    header = site_header(viewer.get(url).text)
+    assert '<form class="theme" method="post" action="/theme"' in header
+
+
+@pytest.mark.parametrize("url", VAULT_VIEWS)
+def test_header_on_vault_views_links_the_vault_and_searches_it(viewer, pages,
+                                                               url):
+    header = site_header(viewer.get(url).text)
+    assert ('<span class="vault-pick"><a href="/vaults/main/">main</a>'
+            '</span>') in header
+    forms = header_search_forms(header)
+    assert len(forms) == 1
+    assert 'method="get"' in forms[0] and 'name="q"' in forms[0]
+    assert '<input type="hidden" name="vault" value="main">' in forms[0]
+
+
+def test_header_vault_name_is_escaped_and_its_link_quoted(tmp_vault, tmp_path):
+    name = "a&b c"
+    registry = {name: VaultEntry(name=name, path=make_vault(tmp_path / "v"))}
+    app = create_app(tmp_vault, SERVER_CONFIG,
+                     viewer=build_vault_catalog(registry))
+    client = TestClient(app, raise_server_exceptions=False)
+    header = site_header(client.get("/vaults/a%26b%20c/").text)
+    assert '<a href="/vaults/a%26b%20c/">a&amp;b c</a>' in header
+    assert ('<input type="hidden" name="vault" value="a&amp;b c">'
+            in header)
+
+
+def test_header_on_the_vault_list_searches_all_vaults(viewer, pages):
+    header = site_header(viewer.get("/").text)
+    forms = header_search_forms(header)
+    assert len(forms) == 1
+    assert 'method="get"' in forms[0] and 'name="q"' in forms[0]
+    assert 'name="vault"' not in forms[0]
+    assert "vault-pick" not in header
+
+
+@pytest.mark.parametrize("url", ["/search", "/search?q=foo"])
+def test_header_on_the_search_page_has_no_search_form(viewer, pages, url):
+    header = site_header(viewer.get(url).text)
+    assert header_search_forms(header) == []
+    assert 'role="search"' not in header
+    assert "vault-pick" not in header
 
 
 @pytest.fixture

@@ -13,13 +13,23 @@
 <body>
 <header class="site-header">
 <div class="container">
-<nav><a href="/">Vaults</a></nav>
-{% block search_form %}
-<form method="get" action="/search" role="search">
-<input type="search" name="q" aria-label="Search all vaults">
-<button type="submit">Search</button>
+<a class="brand" href="/">
+<svg viewBox="0 0 30 22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square">
+<path d="M7 2H3v18h4M12 2H8v18h4M18 2h4v18h-4M23 2h4v18h-4"/>
+</svg>
+Agent Wiki
+</a>
+{% if header_vault %}
+<span class="vault-pick"><a href="{{ header_vault_url }}">{{ header_vault }}</a></span>
+<form class="header-search" method="get" action="/search" role="search">
+<input type="hidden" name="vault" value="{{ header_vault }}">
+<input type="search" name="q" placeholder="Search {{ header_vault }}" aria-label="Search this vault">
 </form>
-{% endblock %}
+{% elif header_search %}
+<form class="header-search" method="get" action="/search" role="search">
+<input type="search" name="q" placeholder="Search all vaults" aria-label="Search all vaults">
+</form>
+{% endif %}
 <form class="theme" method="post" action="/theme" aria-label="Theme">
 <input type="hidden" name="next" value="{{ theme_next }}">
 {% for value in themes %}
