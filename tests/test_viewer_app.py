@@ -540,3 +540,28 @@ def test_every_viewer_page_has_a_search_form(viewer, pages):
                 "/vaults/main/research/foo", "/vaults/main/-/tags/alpha"):
         html = viewer.get(url).text
         assert '<form method="get" action="/search" role="search">' in html, url
+
+
+@pytest.fixture
+def bad_page(tag_pages):
+    """A page beside the tagged ones whose frontmatter is malformed YAML."""
+    (tag_pages / "research" / "broken.md").write_text(
+        "---\ntitle: [unclosed\ntags: [foo]\n---\nbody\n")
+    return tag_pages
+
+
+@pytest.mark.parametrize("url", [
+    "/vaults/main/",
+    "/vaults/main/research/",
+    "/vaults/main/-/tags/foo",
+    "/vaults/main/research/newer",
+])
+def test_unreadable_frontmatter_leaves_other_views_working(viewer, bad_page,
+                                                            url):
+    resp = viewer.get(url)
+    assert resp.status_code == 200
+    assert "/vaults/main/research/broken" not in resp.text
+
+
+def test_page_with_unreadable_frontmatter_returns_404(viewer, bad_page):
+    assert viewer.get("/vaults/main/research/broken").status_code == 404
