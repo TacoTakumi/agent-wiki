@@ -264,10 +264,16 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     @r.get("/", response_class=HTMLResponse)
     def vault_list(request: Request):
         # Each count is the vault home's About count: every topic's records.
-        counts = {
-            name: sum(len(recs) for recs in index_vault(path).topics.values())
-            for name, path in catalog.vaults.items()
-        }
+        # A vault that cannot be indexed (no or bad wiki.yaml, its directory
+        # gone) gets no count, so one broken vault never takes the list down.
+        counts = {}
+        for name, path in catalog.vaults.items():
+            try:
+                index = index_vault(path)
+            except Exception:
+                counts[name] = None
+                continue
+            counts[name] = sum(len(recs) for recs in index.topics.values())
         return render(request, "vaults.html", title="Vaults", catalog=catalog,
                       counts=counts)
 
