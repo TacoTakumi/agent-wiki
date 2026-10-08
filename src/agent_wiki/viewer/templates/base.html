@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="{{ theme }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -20,6 +20,12 @@
 <button type="submit">Search</button>
 </form>
 {% endblock %}
+<form class="theme" method="post" action="/theme" aria-label="Theme">
+<input type="hidden" name="next" value="{{ theme_next }}">
+{% for value in themes %}
+<button name="theme" value="{{ value }}" aria-pressed="{{ 'true' if value == theme else 'false' }}">{{ value | capitalize }}</button>
+{% endfor %}
+</form>
 </div>
 </header>
 <main class="container">

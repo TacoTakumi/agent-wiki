@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi import APIRouter, Form, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import ChoiceLoader, Environment, PackageLoader, select_autoescape
 
 from agent_wiki.multisearch import merged_search
@@ -27,9 +27,46 @@ templates = Environment(
 )
 
 
-def render(template: str, **context) -> HTMLResponse:
-    """Render a template from the viewer's templates folder as an HTML response."""
-    return HTMLResponse(templates.get_template(template).render(**context))
+# The header theme switch: the choice lives in this cookie for a year.
+THEME_COOKIE = "awiki_theme"
+THEMES = ("auto", "light", "dark")
+THEME_MAX_AGE = 31536000
+
+
+def current_theme(request: Request) -> str:
+    """The theme from the cookie, or auto when it is missing or not valid."""
+    value = request.cookies.get(THEME_COOKIE)
+    return value if value in THEMES else "auto"
+
+
+def request_target(request: Request) -> str:
+    """The requested path and query as the client sent them, still quoted, so
+    the theme switch can send the browser back to the same URL."""
+    raw = request.scope.get("raw_path")
+    path = raw.decode("latin-1") if raw else quote(request.url.path)
+    query = request.url.query
+    return f"{path}?{query}" if query else path
+
+
+def same_site_path(target: str | None) -> str:
+    """`target` when it is a path on this site, else /. A path starts with a
+    single / and holds no backslash or control character, so the browser can
+    not read it as another host."""
+    if (not target or not target.startswith("/") or target.startswith("//")
+            or "\\" in target
+            or any(ord(ch) < 32 or ord(ch) == 127 for ch in target)):
+        return "/"
+    return target
+
+
+def render(request: Request, template: str, **context) -> HTMLResponse:
+    """Render a template from the viewer's templates folder as an HTML
+    response. Every page gets the theme context here; the page depends on the
+    theme cookie, so the response varies on Cookie."""
+    html = templates.get_template(template).render(
+        theme=current_theme(request), themes=THEMES,
+        theme_next=request_target(request), **context)
+    return HTMLResponse(html, headers={"Vary": "Cookie"})
 
 
 def served_vault(catalog: VaultCatalog, name: str):
@@ -113,15 +150,26 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Kept out of the OpenAPI schema: the schema documents the /v1 API only.
     r = APIRouter(include_in_schema=False)
 
+    @r.post("/theme")
+    def set_theme(theme: str | None = Form(default=None),
+                  next: str | None = Form(default=None)):
+        if theme not in THEMES:
+            raise HTTPException(status_code=400, detail="unknown theme")
+        resp = RedirectResponse(same_site_path(next), status_code=303)
+        resp.set_cookie(THEME_COOKIE, theme, max_age=THEME_MAX_AGE, path="/",
+                        samesite="lax", httponly=True)
+        return resp
+
     @r.get("/", response_class=HTMLResponse)
-    def vault_list():
-        return render("vaults.html", title="Vaults", catalog=catalog)
+    def vault_list(request: Request):
+        return render(request, "vaults.html", title="Vaults", catalog=catalog)
 
     @r.get("/vaults/{name}/", response_class=HTMLResponse)
-    def vault_home(name: str):
+    def vault_home(request: Request, name: str):
         index = index_vault(served_vault(catalog, name))
         every_page = [rec for recs in index.topics.values() for rec in recs]
         return render(
+            request,
             "vault.html",
             title=name,
             name=name,
@@ -131,7 +179,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
         )
 
     @r.get("/search", response_class=HTMLResponse)
-    def search(q: str = "", vault: list[str] = Query(default=[])):
+    def search(request: Request, q: str = "",
+               vault: list[str] = Query(default=[])):
         # Unknown names are dropped; none left means every vault, as when
         # no vault parameter was given.
         selected = [n for n in catalog.vaults if n in vault] or list(
@@ -152,6 +201,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
                        partial=[search_hit(h) for h in out["partial"]
                                 if is_utf8(h["path"])])
         return render(
+            request,
             "search.html",
             title=f"{query} - Search" if query else "Search",
             q=query,
@@ -164,12 +214,13 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Registered before the page view, which would otherwise catch
     # /vaults/<name>/<topic>/ as a page path.
     @r.get("/vaults/{name}/{topic}/", response_class=HTMLResponse)
-    def topic_view(name: str, topic: str, page: int = 1):
+    def topic_view(request: Request, name: str, topic: str, page: int = 1):
         index = index_vault(served_vault(catalog, name))
         if topic not in index.topics:
             raise HTTPException(status_code=404, detail="topic not found")
         pages, last = screen(by_recency(index.topics[topic]), page)
         return render(
+            request,
             "topic.html",
             title=f"{topic} - {name}",
             name=name,
@@ -183,13 +234,14 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Registered before the page view, which would 404 it: "-" is not a
     # topic. A path parameter, so a tag holding a slash still reaches here.
     @r.get("/vaults/{name}/-/tags/{tag:path}", response_class=HTMLResponse)
-    def tag_view(name: str, tag: str, page: int = 1):
+    def tag_view(request: Request, name: str, tag: str, page: int = 1):
         index = index_vault(served_vault(catalog, name))
         wanted = tag.casefold()
         tagged = [rec for recs in index.topics.values() for rec in recs
                   if any(t.casefold() == wanted for t in rec.tags)]
         pages, last = screen(by_recency(tagged), page)
         return render(
+            request,
             "tag.html",
             title=f"{tag} - {name}",
             name=name,
@@ -203,7 +255,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Registered after the vault home, topic and tag routes, so those keep
     # their URLs.
     @r.get("/vaults/{name}/{path:path}", response_class=HTMLResponse)
-    def page_view(name: str, path: str):
+    def page_view(request: Request, name: str, path: str):
         vault_dir = served_vault(catalog, name)
         page_file = resolve_page(vault_dir, path)
         if page_file is None:
@@ -220,6 +272,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
         links = {title: page_url(name, url_path)
                  for title, url_path in index.titles.items()}
         return render(
+            request,
             "page.html",
             title=record.title,
             name=name,
