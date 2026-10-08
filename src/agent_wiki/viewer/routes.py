@@ -39,6 +39,12 @@ def page_url(name: str, url_path: str) -> str:
     return f"/vaults/{quote(name, safe='')}/{quote(url_path)}"
 
 
+def tag_url(name: str, tag: str) -> str:
+    """The viewer URL of a tag page. The /-/ segment keeps it clear of any
+    topic folder; the tag is quoted whole, so spaces and & round-trip."""
+    return f"/vaults/{quote(name, safe='')}/-/tags/{quote(tag, safe='')}"
+
+
 def source_entries(sources) -> list[tuple[str, bool]]:
     """Each sources entry as (text, is_link): only http and https URLs are
     links; raw/ paths and anything else stay plain text."""
@@ -113,8 +119,28 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             page_url=page_url,
         )
 
-    # Registered after the vault home and topic routes, so those keep their
-    # URLs.
+    # Registered before the page view, which would 404 it: "-" is not a
+    # topic. A path parameter, so a tag holding a slash still reaches here.
+    @r.get("/vaults/{name}/-/tags/{tag:path}", response_class=HTMLResponse)
+    def tag_view(name: str, tag: str, page: int = 1):
+        index = index_vault(served_vault(catalog, name))
+        wanted = tag.casefold()
+        tagged = [rec for recs in index.topics.values() for rec in recs
+                  if any(t.casefold() == wanted for t in rec.tags)]
+        pages, last = screen(by_recency(tagged), page)
+        return render(
+            "tag.html",
+            title=f"{tag} - {name}",
+            name=name,
+            tag=tag,
+            pages=pages,
+            page=page,
+            last_page=last,
+            page_url=page_url,
+        )
+
+    # Registered after the vault home, topic and tag routes, so those keep
+    # their URLs.
     @r.get("/vaults/{name}/{path:path}", response_class=HTMLResponse)
     def page_view(name: str, path: str):
         vault_dir = served_vault(catalog, name)
@@ -135,7 +161,9 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
         return render(
             "page.html",
             title=record.title,
+            name=name,
             page=record,
+            tag_url=tag_url,
             body=render_markdown(page["body"], links),
             sources=source_entries(page["meta"].get("sources")),
         )

@@ -7,7 +7,7 @@
 <dt>Topic</dt><dd>{{ page.topic }}</dd>
 {% if page.created %}<dt>Created</dt><dd>{{ page.created }}</dd>{% endif %}
 {% if page.updated %}<dt>Updated</dt><dd>{{ page.updated }}</dd>{% endif %}
-{% if page.tags %}<dt>Tags</dt><dd><ul class="tags">{% for tag in page.tags %}<li>{{ tag }}</li>{% endfor %}</ul></dd>{% endif %}
+{% if page.tags %}<dt>Tags</dt><dd><ul class="tags">{% for tag in page.tags %}<li><a href="{{ tag_url(name, tag) }}">{{ tag }}</a></li>{% endfor %}</ul></dd>{% endif %}
 </dl>
 </header>
 {# The body is sanitised by render_markdown; nothing else here is trusted. #}

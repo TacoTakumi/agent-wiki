@@ -344,3 +344,79 @@ def test_empty_topic_shows_no_pages_and_no_pager(viewer, many_pages):
     assert page_links(resp.text) == []
     assert 'rel="next"' not in resp.text
     assert 'rel="prev"' not in resp.text
+
+
+def tagged_page(title, tags, updated):
+    lines = ["---", f"title: {title}", "topic: research",
+             f"updated: '{updated}'"]
+    if tags:
+        lines.append("tags: [" + ", ".join(f"'{t}'" for t in tags) + "]")
+    return "\n".join(lines + ["---", "", f"# {title}", ""])
+
+
+@pytest.fixture
+def tag_pages(catalog):
+    """Two pages tagged Foo and foo, one untagged, and one in another topic
+    with a tag that needs URL quoting."""
+    main = catalog.vaults["main"]
+    (main / "research" / "older.md").write_text(
+        tagged_page("Older", ["Foo"], "2026-01-01"))
+    (main / "research" / "newer.md").write_text(
+        tagged_page("Newer", ["foo", "bar"], "2026-02-01"))
+    (main / "research" / "untagged.md").write_text(
+        tagged_page("Untagged", [], "2026-03-01"))
+    (main / "tools" / "spaced.md").write_text(
+        tagged_page("Spaced", ["machine learning", "c++ & co"], "2026-04-01"))
+    return main
+
+
+def test_tag_page_lists_pages_with_the_tag_any_case_newest_first(viewer,
+                                                                 tag_pages):
+    resp = viewer.get("/vaults/main/-/tags/foo")
+    assert resp.status_code == 200
+    assert page_links(resp.text) == ["/vaults/main/research/newer",
+                                     "/vaults/main/research/older"]
+
+
+def test_page_view_links_each_tag_to_its_tag_page(viewer, tag_pages):
+    html = viewer.get("/vaults/main/research/newer").text
+    assert '<a href="/vaults/main/-/tags/foo">foo</a>' in html
+    assert '<a href="/vaults/main/-/tags/bar">bar</a>' in html
+
+
+def test_tag_with_special_characters_round_trips(viewer, tag_pages):
+    html = viewer.get("/vaults/main/tools/spaced").text
+    for tag in ["machine learning", "c++ & co"]:
+        href = re.search(
+            rf'<a href="([^"]+)">{re.escape(tag.replace("&", "&amp;"))}</a>',
+            html).group(1)
+        assert href.startswith("/vaults/main/-/tags/")
+        assert " " not in href
+        resp = viewer.get(href)
+        assert resp.status_code == 200
+        assert page_links(resp.text) == ["/vaults/main/tools/spaced"]
+
+
+def test_unused_tag_returns_200_with_no_page_links(viewer, tag_pages):
+    resp = viewer.get("/vaults/main/-/tags/nosuchtag")
+    assert resp.status_code == 200
+    assert page_links(resp.text) == []
+    assert 'rel="next"' not in resp.text
+
+
+def test_tag_page_in_an_unserved_vault_returns_404(viewer, tag_pages):
+    assert viewer.get("/vaults/team/-/tags/foo").status_code == 404
+
+
+def test_tag_page_pages_through_50_at_a_time(viewer, many_pages):
+    main = many_pages
+    for n in range(60):
+        (main / "tools" / f"t{n:02d}.md").write_text(
+            tagged_page(f"Tagged {n:02d}", ["many"], f"2026-05-{n % 28 + 1:02d}"))
+    first = viewer.get("/vaults/main/-/tags/many")
+    assert len(page_links(first.text)) == 50
+    assert 'rel="next" href="?page=2"' in first.text
+    second = viewer.get("/vaults/main/-/tags/many?page=2")
+    assert len(page_links(second.text)) == 10
+    assert 'rel="prev" href="?page=1"' in second.text
+    assert viewer.get("/vaults/main/-/tags/many?page=3").status_code == 404
