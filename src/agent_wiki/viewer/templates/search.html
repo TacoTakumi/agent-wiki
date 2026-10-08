@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block search_form %}{% endblock %}
+{% macro result(hit, show_coverage=False) %}
+<li><span class="vault">{{ hit.vault }}</span> <a class="result" href="{{ hit.url }}">{{ hit.title }}</a>{% if show_coverage %} <small>({{ hit.coverage }}/{{ hit.term_count }} terms)</small>{% endif %}
+{% if hit.lines %}
+<ul class="matches">
+{% for line in hit.lines %}
+<li><code>{{ line }}</code></li>
+{% endfor %}
+</ul>
+{% endif %}
+</li>
+{% endmacro %}
+{% block content %}
+<h1>Search</h1>
+<form method="get" action="/search" role="search">
+<input type="search" name="q" value="{{ q }}" aria-label="Search">
+<button type="submit">Search</button>
+<fieldset>
+<legend>Vaults</legend>
+{% for name in vaults %}
+<label><input type="checkbox" name="vault" value="{{ name }}"{% if name in selected %} checked{% endif %}> {{ name }}</label>
+{% endfor %}
+</fieldset>
+</form>
+{% for name, reason in skipped %}
+<p>Skipped vault {{ name }}: {{ reason }}</p>
+{% endfor %}
+{% if out %}
+{% if out.total == 0 %}
+<p>No results found.</p>
+{% else %}
+{% if out.all %}
+<ul class="results">
+{% for hit in out.all %}{{ result(hit) }}{% endfor %}
+</ul>
+{% endif %}
+{% if out.partial %}
+<h2>Partial matches (some terms only)</h2>
+<ul class="results">
+{% for hit in out.partial %}{{ result(hit, show_coverage=True) }}{% endfor %}
+</ul>
+{% endif %}
+{% if out.truncated %}
+<p>Showing {{ out.shown }} of {{ out.total }} matches - narrow your query or search fewer vaults.</p>
+{% endif %}
+{% endif %}
+{% endif %}
+{% endblock %}

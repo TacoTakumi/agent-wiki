@@ -420,3 +420,123 @@ def test_tag_page_pages_through_50_at_a_time(viewer, many_pages):
     assert len(page_links(second.text)) == 10
     assert 'rel="prev" href="?page=1"' in second.text
     assert viewer.get("/vaults/main/-/tags/many?page=3").status_code == 404
+
+
+def search_page(title, topic, body):
+    return "\n".join(["---", f"title: {title}", f"topic: {topic}", "---", "",
+                      f"# {title}", "", body, ""])
+
+
+def checked_vaults(html):
+    """The vault names whose search checkbox is checked."""
+    return re.findall(
+        r'<input type="checkbox" name="vault" value="([^"]+)" checked>', html)
+
+
+def result_links(html):
+    """The page links in the search results, in order."""
+    return re.findall(r'<a class="result" href="([^"]+)"', html)
+
+
+@pytest.fixture
+def search_pages(catalog):
+    """A page matching 'zebraquux' in each served vault."""
+    main, work = catalog.vaults["main"], catalog.vaults["work"]
+    (main / "research" / "mainpage.md").write_text(
+        search_page("Main Zebra", "research", "zebraquux in main"))
+    (work / "tools" / "workpage.md").write_text(
+        search_page("Work Zebra", "tools", "zebraquux in work"))
+    return catalog
+
+
+def test_search_spans_all_vaults_with_every_checkbox_checked(viewer,
+                                                            search_pages):
+    resp = viewer.get("/search?q=zebraquux")
+    assert resp.status_code == 200
+    html = resp.text
+    assert sorted(result_links(html)) == [
+        "/vaults/main/research/mainpage", "/vaults/work/tools/workpage"]
+    assert ">Main Zebra</a>" in html
+    assert ">Work Zebra</a>" in html
+    assert '<span class="vault">main</span>' in html
+    assert '<span class="vault">work</span>' in html
+    assert checked_vaults(html) == ["main", "work"]
+
+
+def test_search_limited_to_the_named_vault(viewer, search_pages):
+    html = viewer.get("/search?q=zebraquux&vault=main").text
+    assert result_links(html) == ["/vaults/main/research/mainpage"]
+    assert checked_vaults(html) == ["main"]
+    assert 'name="vault" value="work">' in html
+
+
+def test_search_ignores_unknown_vault_names(viewer, search_pages):
+    html = viewer.get("/search?q=zebraquux&vault=main&vault=nosuch").text
+    assert result_links(html) == ["/vaults/main/research/mainpage"]
+    assert checked_vaults(html) == ["main"]
+
+
+def test_search_with_only_unknown_vaults_searches_all(viewer, search_pages):
+    html = viewer.get("/search?q=zebraquux&vault=nosuch&vault=team").text
+    assert len(result_links(html)) == 2
+    assert checked_vaults(html) == ["main", "work"]
+
+
+def test_search_cuts_lines_to_200_characters(viewer, catalog):
+    main = catalog.vaults["main"]
+    (main / "research" / "long.md").write_text(
+        search_page("Long", "research", "zebraquux " + "x" * 990))
+    html = viewer.get("/search?q=zebraquux").text
+    assert "x" * 190 in html
+    assert "x" * 191 not in html
+
+
+def test_search_shows_at_most_3_lines_per_result(viewer, catalog):
+    main = catalog.vaults["main"]
+    body = "\n\n".join(f"zebraquux line{n}" for n in range(5))
+    (main / "research" / "many.md").write_text(
+        search_page("Many", "research", body))
+    html = viewer.get("/search?q=zebraquux").text
+    assert "line2" in html
+    assert "line3" not in html
+    assert "line4" not in html
+
+
+def test_search_caps_tiers_and_notes_truncation(viewer, catalog):
+    main = catalog.vaults["main"]
+    for n in range(25):
+        (main / "research" / f"both{n:02d}.md").write_text(
+            search_page(f"Both {n:02d}", "research", "zebraquux okapi"))
+    for n in range(8):
+        (main / "tools" / f"one{n:02d}.md").write_text(
+            search_page(f"One {n:02d}", "tools", "zebraquux only"))
+    html = viewer.get("/search?q=zebraquux+okapi").text
+    assert len(result_links(html)) == 25
+    assert "Partial matches (some terms only)" in html
+    assert "Showing 25 of 33 matches" in html
+
+
+def test_search_without_truncation_has_no_notice(viewer, search_pages):
+    assert "Showing" not in viewer.get("/search?q=zebraquux").text
+
+
+def test_empty_query_shows_the_form_only(viewer, search_pages):
+    for url in ("/search", "/search?q=", "/search?q=+"):
+        resp = viewer.get(url)
+        assert resp.status_code == 200
+        assert 'name="q"' in resp.text
+        assert result_links(resp.text) == []
+        assert "No results" not in resp.text
+        assert checked_vaults(resp.text) == ["main", "work"]
+
+
+def test_search_with_no_hits_says_so(viewer, search_pages):
+    html = viewer.get("/search?q=nothingmatchesthis").text
+    assert "No results found." in html
+
+
+def test_every_viewer_page_has_a_search_form(viewer, pages):
+    for url in ("/", "/vaults/main/", "/vaults/main/research/",
+                "/vaults/main/research/foo", "/vaults/main/-/tags/alpha"):
+        html = viewer.get(url).text
+        assert '<form method="get" action="/search" role="search">' in html, url
