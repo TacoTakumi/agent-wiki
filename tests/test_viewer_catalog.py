@@ -237,6 +237,27 @@ def test_index_skips_a_page_symlinked_out_of_the_vault(tmp_vault, tmp_path):
     assert "Secret" not in index.titles
 
 
+def test_index_skips_a_symlink_loop(tmp_vault):
+    from agent_wiki.viewer.catalog import index_vault
+
+    _write_page(tmp_vault / "research" / "good.md", "Good")
+    loop = tmp_vault / "research" / "loop.md"
+    loop.symlink_to(loop)
+
+    index = index_vault(tmp_vault)
+
+    assert [rec.title for rec in index.topics["research"]] == ["Good"]
+
+
+def test_resolve_page_refuses_a_symlink_loop(tmp_vault):
+    from agent_wiki.viewer.catalog import resolve_page
+
+    loop = tmp_vault / "research" / "loop.md"
+    loop.symlink_to(loop)
+
+    assert resolve_page(tmp_vault, "research/loop") is None
+
+
 def test_resolve_page_finds_topic_pages(tmp_vault):
     from agent_wiki.viewer.catalog import resolve_page
 

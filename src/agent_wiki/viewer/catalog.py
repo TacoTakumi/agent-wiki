@@ -101,8 +101,12 @@ class VaultIndex:
 def _inside(path: Path, topic_root: Path) -> bool:
     """Whether `path`, with symlinks followed, is a file under `topic_root`.
     `topic_root` is the resolved vault joined with the topic name, so a topic
-    folder that is itself a symlink out of the vault admits nothing."""
-    real = path.resolve()
+    folder that is itself a symlink out of the vault admits nothing. A path
+    that cannot be resolved, such as a symlink loop, is not inside."""
+    try:
+        real = path.resolve()
+    except (RuntimeError, OSError):
+        return False
     return real.is_file() and real.is_relative_to(topic_root)
 
 
