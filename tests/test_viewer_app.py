@@ -2,6 +2,7 @@
 without a token, and absent (404) when the viewer is off."""
 
 import re
+import shutil
 from pathlib import Path
 
 import pytest
@@ -122,6 +123,35 @@ def test_vault_list_box_has_no_inline_style(counted_viewer):
     html = counted_viewer.get("/").text
     main = re.search(r"<main.*?</main>", html, re.S).group(0)
     assert "style=" not in main
+
+
+@pytest.mark.parametrize("breakage", ["no_config", "bad_config", "removed"])
+def test_vault_list_survives_a_vault_it_cannot_index(tmp_vault, tmp_path,
+                                                    breakage):
+    good = make_vault(tmp_path / "good")
+    (good / "research" / "a.md").write_text(tagged_page("A", [], "2026-01-01"))
+    broken = make_vault(tmp_path / "broken")
+    registry = {
+        "good": VaultEntry(name="good", path=good),
+        "broken": VaultEntry(name="broken", path=broken),
+    }
+    catalog = build_vault_catalog(registry)
+    if breakage == "no_config":
+        (broken / "wiki.yaml").unlink()
+    elif breakage == "bad_config":
+        (broken / "wiki.yaml").write_text("topics: [unclosed\n")
+    else:
+        shutil.rmtree(broken)
+    client = TestClient(create_app(tmp_vault, SERVER_CONFIG, viewer=catalog),
+                        raise_server_exceptions=False)
+    resp = client.get("/")
+    assert resp.status_code == 200
+    rows = re.findall(r'<li><a class="title" href="([^"]+)">([^<]+)</a>(.*?)</li>',
+                      resp.text)
+    assert rows == [
+        ("/vaults/broken/", "broken", ""),
+        ("/vaults/good/", "good", '<span class="meta">1 page</span>'),
+    ]
 
 
 def test_vault_list_keeps_unavailable_and_skipped_remote_note(counted_viewer):

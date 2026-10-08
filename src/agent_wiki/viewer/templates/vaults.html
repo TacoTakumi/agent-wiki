@@ -7,7 +7,7 @@
 <ul class="rows">
 {% for name in catalog.vaults %}
 {% set n = counts[name] %}
-<li><a class="title" href="/vaults/{{ name | urlencode }}/">{{ name }}</a><span class="meta">{{ "{:,}".format(n) }} page{{ "s" if n != 1 }}</span></li>
+<li><a class="title" href="/vaults/{{ name | urlencode }}/">{{ name }}</a>{% if n is not none %}<span class="meta">{{ "{:,}".format(n) }} page{{ "s" if n != 1 }}</span>{% endif %}</li>
 {% endfor %}
 </ul>
 </div>
