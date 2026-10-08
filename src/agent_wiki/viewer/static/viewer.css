@@ -126,9 +126,6 @@ button:hover,
 .btn:hover { background: var(--bg-hover); }
 .btn-accent,
 .btn-accent:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-fieldset { border: 1px solid var(--border); border-radius: var(--radius); margin: 12px 0; padding: 8px 12px; }
-legend { color: var(--fg-muted); padding: 0 4px; }
-fieldset label { display: inline-block; margin-right: 16px; }
 
 /* ---------- Topic tabs ---------- */
 .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; margin-bottom: -1px; }
@@ -147,6 +144,8 @@ fieldset label { display: inline-block; margin-right: 16px; }
 .crumbs .sep { color: var(--fg-muted); }
 .crumbs [aria-current] { color: var(--fg); font-weight: 600; }
 h1.page-title { font-size: 26px; line-height: 1.25; font-weight: 600; margin: 12px 0 6px; letter-spacing: -0.01em; }
+/* A heading with no breadcrumb above it keeps clear of the header. */
+main > h1.page-title:first-child { margin-top: 24px; }
 .page-sub { color: var(--fg-muted); margin: 0 0 20px; }
 
 /* ---------- Box with rows (listings) ---------- */
@@ -235,8 +234,7 @@ aside dd { margin: 0; font-variant-numeric: tabular-nums; }
 .result { margin-bottom: 16px; }
 .result .box-head { font-weight: 400; justify-content: flex-start; flex-wrap: wrap; }
 .result .box-head a { font-weight: 600; }
-.vault-label,
-span.vault { display: inline-block; font-size: 12px; padding: 0 8px; line-height: 20px; border-radius: 999px;
+.vault-label { display: inline-block; font-size: 12px; padding: 0 8px; line-height: 20px; border-radius: 999px;
   border: 1px solid var(--border); color: var(--fg-muted); background: var(--bg); }
 .result .box-head .terms { margin-left: auto; font-size: 12px; color: var(--fg-muted); }
 .snippets { margin: 0; padding: 8px 0; list-style: none; font-family: var(--mono); font-size: 12.5px; }
@@ -245,9 +243,3 @@ span.vault { display: inline-block; font-size: 12px; padding: 0 8px; line-height
 mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
 h2.tier { font-size: 16px; font-weight: 600; margin: 28px 0 12px; }
 .notice { color: var(--fg-muted); }
-
-/* The current search results list (until it moves to result boxes). */
-ul.results { list-style: none; padding: 0; }
-ul.results > li { margin-bottom: 16px; }
-ul.matches { list-style: none; margin: 4px 0 0 0; padding-left: 16px; border-left: 1px solid var(--border); }
-ul.matches code { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }
