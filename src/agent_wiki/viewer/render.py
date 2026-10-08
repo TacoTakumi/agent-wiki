@@ -4,9 +4,15 @@ Rendering is two pure steps: markdown-it-py parses the body (raw HTML in the
 body is passed through), then nh3 cleans the result against an allowlist. The
 sanitiser is the safety boundary: whatever the parser emits, script and style
 elements, event-handler attributes and javascript: URLs never reach the page.
+
+A [[...]] in the body is a wikilink. It is an inline rule, so code spans and
+fenced code keep it as literal text. The whole bracket text is looked up as an
+exact page title (no Obsidian alias or callout handling); an unknown title
+renders as <span class="missing">.
 """
 
 import copy
+import re
 
 import nh3
 from markdown_it import MarkdownIt
@@ -20,13 +26,47 @@ ALLOWED_ATTRIBUTES = copy.deepcopy(nh3.ALLOWED_ATTRIBUTES)
 ALLOWED_ATTRIBUTES.setdefault("code", set()).add("class")
 ALLOWED_ATTRIBUTES["th"].add("style")
 ALLOWED_ATTRIBUTES["td"].add("style")
+ALLOWED_ATTRIBUTES.setdefault("span", set()).add("class")
 ALLOWED_STYLE_PROPERTIES = {"text-align"}
+
+# The same bracket rule as page.extract_wikilinks, so the viewer links exactly
+# what lint checks.
+WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def _wikilink_rule(state, silent: bool) -> bool:
+    """Inline rule: turn [[Title]] into a link to the page with that title, or
+    a span with class missing when no page has it. Titles come from
+    state.env["wikilinks"], a title -> URL map."""
+    if not state.src.startswith("[[", state.pos):
+        return False
+    match = WIKILINK_RE.match(state.src, state.pos)
+    if match is None or match.end() > state.posMax:
+        return False
+    if not silent:
+        title = match.group(1)
+        url = state.env.get("wikilinks", {}).get(title)
+        if url is None:
+            token = state.push("wikilink_missing_open", "span", 1)
+            token.attrs = {"class": "missing"}
+            state.push("text", "", 0).content = title
+            state.push("wikilink_missing_close", "span", -1)
+        else:
+            token = state.push("link_open", "a", 1)
+            token.attrs = {"href": url}
+            state.push("text", "", 0).content = title
+            state.push("link_close", "a", -1)
+    state.pos = match.end()
+    return True
 
 
 def build_parser() -> MarkdownIt:
     """CommonMark with GFM tables and strikethrough, raw HTML allowed (it is
-    sanitised afterwards). New inline rules hook in here."""
-    return MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
+    sanitised afterwards). The wikilink rule runs before the link rule so
+    [[...]] is never read as a markdown link."""
+    md = MarkdownIt("commonmark", {"html": True}).enable(["table", "strikethrough"])
+    md.inline.ruler.before("link", "wikilink", _wikilink_rule)
+    return md
 
 
 def sanitise(html: str) -> str:
@@ -38,6 +78,7 @@ def sanitise(html: str) -> str:
     )
 
 
-def render_markdown(body: str) -> str:
-    """Render a markdown page body to sanitised HTML."""
-    return sanitise(build_parser().render(body))
+def render_markdown(body: str, links: dict[str, str] | None = None) -> str:
+    """Render a markdown page body to sanitised HTML. links maps an exact page
+    title to its URL; a wikilink to a title not in it renders as missing."""
+    return sanitise(build_parser().render(body, {"wikilinks": links or {}}))

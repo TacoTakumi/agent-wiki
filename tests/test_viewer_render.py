@@ -56,3 +56,46 @@ def test_render_keeps_headings_links_and_images():
 def test_render_keeps_fenced_code_language_class():
     html = render_markdown("```python\nx = 1\n```\n")
     assert 'class="language-python"' in html
+
+
+LINKS = {"Alpha Page": "/vaults/main/research/alpha-page", "A": "/vaults/main/research/a"}
+
+
+def test_wikilink_to_known_title_becomes_anchor():
+    html = render_markdown("See [[Alpha Page]] here.\n", links=LINKS)
+    assert '<a href="/vaults/main/research/alpha-page"' in html
+    assert ">Alpha Page</a>" in html
+    assert "[[" not in html
+
+
+def test_wikilink_to_unknown_title_is_missing_span_without_href():
+    html = render_markdown("See [[Nowhere]] here.\n", links=LINKS)
+    assert '<span class="missing">Nowhere</span>' in html
+    assert "href" not in html
+
+
+def test_wikilink_bracket_text_is_escaped():
+    html = render_markdown("[[<b>x</b> & y]]\n", links={})
+    assert "<b>" not in html
+    assert "&lt;b&gt;x&lt;/b&gt; &amp; y" in html
+
+
+def test_wikilink_in_inline_and_fenced_code_stays_literal():
+    body = "Use `[[Alpha Page]]` inline.\n\n```\n[[Alpha Page]]\n```\n"
+    html = render_markdown(body, links=LINKS)
+    assert "<code>[[Alpha Page]]</code>" in html
+    assert "<pre><code>[[Alpha Page]]\n</code></pre>" in html
+    assert "href" not in html
+
+
+def test_wikilink_alias_syntax_is_looked_up_as_full_text():
+    html = render_markdown("[[A|b]]\n", links=LINKS)
+    assert '<span class="missing">A|b</span>' in html
+    assert "href" not in html
+
+
+def test_callout_renders_as_plain_blockquote():
+    html = render_markdown("> [!note]\n> Body text.\n", links=LINKS)
+    assert "<blockquote>" in html
+    assert "[!note]" in html
+    assert "Body text." in html
