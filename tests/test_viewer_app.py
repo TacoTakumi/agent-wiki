@@ -715,3 +715,159 @@ def test_search_lists_good_page_beside_undecodable_match(viewer, catalog):
     html = viewer.get("/search?q=zebra&vault=main").text
     assert "/vaults/main/research/good" in html
     assert "Skipped vault" not in html
+
+
+@pytest.fixture
+def nav_viewer(tmp_vault, tmp_path):
+    """A client over one vault 'main' whose topics are research (2 pages)
+    and tools (1 page), in that order."""
+    main = make_vault(tmp_path / "navmain")
+    (main / "wiki.yaml").write_text(
+        "vault: {name: Nav, version: 1}\n"
+        "topics: [research, tools]\ndefault_topic: research\n")
+    (main / "research" / "foo.md").write_text(
+        tagged_page("Foo", ["alpha"], "2026-01-01"))
+    (main / "research" / "bar.md").write_text(
+        tagged_page("Bar", [], "2026-01-02"))
+    (main / "tools" / "hammer.md").write_text(
+        tagged_page("Hammer", ["alpha"], "2026-01-03"))
+    registry = {"main": VaultEntry(name="main", path=main)}
+    app = create_app(tmp_vault, SERVER_CONFIG,
+                     viewer=build_vault_catalog(registry))
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def topic_tabs(html):
+    """The topic tabs as (href, label, count, is_current), in order; count is
+    None for a tab without a count."""
+    row = re.search(r'<nav class="tabs" aria-label="Topics">(.*?)</nav>',
+                    html, re.S)
+    assert row, "no tab row"
+    tabs = []
+    for href, attrs, inner in re.findall(
+            r'<a href="([^"]*)"([^>]*)>(.*?)</a>', row.group(1), re.S):
+        count = re.search(r'<span class="count">([^<]*)</span>', inner)
+        label = re.sub(r"<span.*?</span>", "", inner, flags=re.S).strip()
+        tabs.append((href, label, count.group(1) if count else None,
+                     'aria-current="page"' in attrs))
+    return tabs
+
+
+def breadcrumb(html):
+    """The breadcrumb parts as (text, href or None, is_current), in order."""
+    nav = re.search(r'<nav class="crumbs" aria-label="Breadcrumb">(.*?)</nav>',
+                    html, re.S)
+    assert nav, "no breadcrumb"
+    parts = []
+    for tag, attrs, text in re.findall(r"<(a|span)([^>]*)>(.*?)</\1>",
+                                       nav.group(1), re.S):
+        if 'class="sep"' in attrs:
+            continue
+        href = re.search(r'href="([^"]*)"', attrs)
+        parts.append((text.strip(), href.group(1) if href else None,
+                      'aria-current="page"' in attrs))
+    return parts
+
+
+def test_tabs_on_vault_home_read_overview_then_topics_with_counts(nav_viewer):
+    assert topic_tabs(nav_viewer.get("/vaults/main/").text) == [
+        ("/vaults/main/", "Overview", None, True),
+        ("/vaults/main/research/", "research", "2", False),
+        ("/vaults/main/tools/", "tools", "1", False),
+    ]
+
+
+@pytest.mark.parametrize("url, current", [
+    ("/vaults/main/", "Overview"),
+    ("/vaults/main/research/", "research"),
+    ("/vaults/main/tools/", "tools"),
+    ("/vaults/main/research/foo", "research"),
+    ("/vaults/main/tools/hammer", "tools"),
+    ("/vaults/main/-/tags/alpha", None),
+])
+def test_tabs_mark_the_current_tab(nav_viewer, url, current):
+    tabs = topic_tabs(nav_viewer.get(url).text)
+    assert [label for _, label, _, _ in tabs] == [
+        "Overview", "research", "tools"]
+    marked = [label for _, label, _, is_current in tabs if is_current]
+    assert marked == ([current] if current else [])
+
+
+def test_tabs_sit_in_the_header_below_the_top_row(nav_viewer):
+    header = site_header(nav_viewer.get("/vaults/main/").text)
+    assert '<div class="container tabs-row">' in header
+    assert header.index('class="theme"') < header.index('class="tabs"')
+
+
+def test_tabs_counts_match_the_topic_listings(nav_viewer):
+    for href, _, count, _ in topic_tabs(nav_viewer.get("/vaults/main/").text):
+        if count is not None:
+            listing = nav_viewer.get(href).text
+            assert len(page_links(listing)) == int(count), href
+
+
+@pytest.mark.parametrize("url", ["/", "/search", "/search?q=foo"])
+def test_no_tabs_on_the_vault_list_or_search(nav_viewer, url):
+    html = nav_viewer.get(url).text
+    # The inlined stylesheet names the classes, so look for the markup.
+    assert '<nav class="tabs"' not in html
+    assert 'class="container tabs-row"' not in html
+
+
+def test_tabs_and_breadcrumb_quote_names(tmp_vault, tmp_path):
+    vault = make_vault(tmp_path / "q")
+    (vault / "wiki.yaml").write_text(
+        "vault: {name: Q, version: 1}\ntopics: ['my notes']\n")
+    (vault / "my notes").mkdir()
+    (vault / "my notes" / "p.md").write_text(
+        tagged_page("P", ["x"], "2026-01-01"))
+    name = "a&b c"
+    app = create_app(tmp_vault, SERVER_CONFIG, viewer=build_vault_catalog(
+        {name: VaultEntry(name=name, path=vault)}))
+    client = TestClient(app, raise_server_exceptions=False)
+    html = client.get("/vaults/a%26b%20c/my%20notes/p").text
+    assert topic_tabs(html) == [
+        ("/vaults/a%26b%20c/", "Overview", None, False),
+        ("/vaults/a%26b%20c/my%20notes/", "my notes", "1", True),
+    ]
+    assert breadcrumb(html) == [
+        ("a&amp;b c", "/vaults/a%26b%20c/", False),
+        ("my notes", "/vaults/a%26b%20c/my%20notes/", False),
+    ]
+
+
+def test_breadcrumb_on_vault_home(nav_viewer):
+    assert breadcrumb(nav_viewer.get("/vaults/main/").text) == [
+        ("Vaults", "/", False),
+        ("main", None, True),
+    ]
+
+
+def test_breadcrumb_on_topic_listing(nav_viewer):
+    assert breadcrumb(nav_viewer.get("/vaults/main/research/").text) == [
+        ("main", "/vaults/main/", False),
+        ("research", None, True),
+    ]
+
+
+def test_breadcrumb_on_tag_page(nav_viewer):
+    # There is no tags index view, so 'tags' is plain text.
+    assert breadcrumb(nav_viewer.get("/vaults/main/-/tags/alpha").text) == [
+        ("main", "/vaults/main/", False),
+        ("tags", None, False),
+        ("alpha", None, True),
+    ]
+
+
+def test_breadcrumb_on_page_view_links_both_parts(nav_viewer):
+    html = nav_viewer.get("/vaults/main/tools/hammer").text
+    assert breadcrumb(html) == [
+        ("main", "/vaults/main/", False),
+        ("tools", "/vaults/main/tools/", False),
+    ]
+    assert html.index('class="crumbs"') < html.index("<h1>Hammer</h1>")
+
+
+@pytest.mark.parametrize("url", ["/", "/search"])
+def test_no_breadcrumb_on_the_vault_list_or_search(nav_viewer, url):
+    assert 'class="crumbs"' not in nav_viewer.get(url).text
