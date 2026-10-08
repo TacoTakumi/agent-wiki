@@ -1610,6 +1610,18 @@ def tag_fix(path, topic, write):
         click.echo(f"{changed} page(s) would change. Re-run with --write to apply.")
 
 
+def _is_loopback(host: str) -> bool:
+    """True for localhost, 127.0.0.0/8 and ::1. Any other name or address
+    may be reachable from other hosts."""
+    import ipaddress
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 @cli.command()
 @click.option("--bind", default=None, help="Bind address (default from server.yaml or 127.0.0.1).")
 @click.option("--port", default=None, type=int, help="Port (default from server.yaml or 8731).")
@@ -1626,8 +1638,14 @@ def serve(bind, port, viewer):
     host = bind or server_config["bind"]
     bind_port = port or server_config["port"]
     if not server_config["tokens"]:
-        click.echo("WARNING: no tokens configured; all requests will be rejected. "
+        # The viewer needs no token, so with it on only the API is shut out.
+        rejected = "all API requests" if viewer else "all requests"
+        click.echo(f"WARNING: no tokens configured; {rejected} will be rejected. "
                    "Run 'awiki token add ...' first.", err=True)
+    if viewer and not _is_loopback(host):
+        click.echo(f"WARNING: the viewer is on and {host} is not a loopback "
+                   "address; every served vault is readable without "
+                   "authentication.", err=True)
     catalog = None
     if viewer:
         from agent_wiki.viewer.catalog import load_vault_catalog
