@@ -9,6 +9,14 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.11.1]
+
+### Changed
+- **The web viewer hides session pages.** The conversations topic
+  (`conversations.topic` in wiki.yaml, `sessions` by default) is left out of
+  the viewer's topic tabs, page counts, tag pages and search, and its page and
+  topic URLs return 404.
+
 ## [0.11.0]
 
 ### Added
