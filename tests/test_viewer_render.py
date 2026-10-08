@@ -99,3 +99,59 @@ def test_callout_renders_as_plain_blockquote():
     assert "<blockquote>" in html
     assert "[!note]" in html
     assert "Body text." in html
+
+
+# The page view shows the title as its own H1, so a body that opens with the
+# same H1 would show it twice.
+
+TITLE_BODY = "# Foo Page\n\nText.\n"
+
+
+def test_title_first_h1_matching_title_is_dropped():
+    html = render_markdown(TITLE_BODY, title="Foo Page")
+    assert "<h1" not in html
+    assert "<p>Text.</p>" in html
+
+
+def test_title_match_ignores_surrounding_whitespace():
+    html = render_markdown("\n\n#   Foo Page   \n\nText.\n", title="  Foo Page ")
+    assert "<h1" not in html
+
+
+def test_title_first_h1_with_other_text_is_kept():
+    html = render_markdown("# Other\n\nText.\n", title="Foo Page")
+    assert "<h1>Other</h1>" in html
+
+
+def test_title_later_matching_h1_is_kept():
+    html = render_markdown("Intro.\n\n# Foo Page\n", title="Foo Page")
+    assert "<h1>Foo Page</h1>" in html
+
+
+def test_title_first_h2_matching_title_is_kept():
+    html = render_markdown("## Foo Page\n", title="Foo Page")
+    assert "<h2>Foo Page</h2>" in html
+
+
+def test_title_absent_keeps_first_h1():
+    assert "<h1>Foo Page</h1>" in render_markdown(TITLE_BODY)
+
+
+def test_title_page_view_shows_one_h1(tmp_vault, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from agent_wiki.registry import VaultEntry
+    from agent_wiki.server.app import create_app
+    from agent_wiki.viewer.catalog import build_vault_catalog
+    from conftest import make_vault
+    from test_viewer_app import SERVER_CONFIG
+
+    main = make_vault(tmp_path / "main")
+    (main / "research" / "foo.md").write_text(
+        "---\ntitle: Foo Page\ntopic: research\n---\n\n"
+        "# Foo Page\n\nBody text.\n")
+    catalog = build_vault_catalog({"main": VaultEntry(name="main", path=main)})
+    client = TestClient(create_app(tmp_vault, SERVER_CONFIG, viewer=catalog))
+    html = client.get("/vaults/main/research/foo").text
+    assert "Body text." in html
+    assert len(re.findall(r"<h1[\s>]", html)) == 1
