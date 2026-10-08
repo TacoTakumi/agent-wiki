@@ -9,6 +9,29 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.11.0]
+
+### Added
+- **Read-only web viewer.** `awiki serve --viewer` also serves an HTML viewer
+  beside the JSON API, for every local vault in the registry (or only the
+  `--vault` / `AWIKI_VAULT` override, served as `local` when it is a bare
+  path). `/` lists the vaults and counts the skipped remote ones. Each vault
+  has a home page with its topics, page counts and the 20 most recent pages;
+  topic and tag pages list 50 pages per screen; a page view shows the
+  frontmatter, the rendered markdown and the sources. `[[Title]]` links
+  resolve by frontmatter title, the same rule lint uses, and an unknown title
+  is marked missing. `/search` searches the chosen vaults through the same
+  merge and ranking as `awiki search`. Page bodies are sanitised, pages use
+  no JavaScript and carry their CSS inline (vendored Simple.css and
+  github-markdown-css, MIT), and only topic-folder pages are served: `raw/`,
+  config files and paths outside the vault return 404. The viewer needs no
+  token, so `serve` warns when it is on and the bind address is not loopback.
+  The `/v1` API is unchanged.
+
+### Changed
+- `awiki search` across several vaults now ranks through one shared function,
+  which the viewer search also uses. Its output is unchanged.
+
 ## [0.10.0]
 
 ### Added
