@@ -5,6 +5,7 @@ import yaml
 from click.testing import CliRunner
 
 from agent_wiki.cli import cli
+from agent_wiki.page import parse_page
 from agent_wiki.doctor import (
     MissingConversationsBlock,
     MissingDropZoneDir,
@@ -593,6 +594,10 @@ def _session(vault: Path, session_id: str, title: str, prompt: str,
              agent: str = "claude-code", page: bool = True) -> tuple[Path, Path]:
     """Write a bundle (and, by default, its session page) whose first user
     turn is the local-command caveat and whose second is ``prompt``."""
+    config = yaml.safe_load((vault / "wiki.yaml").read_text())
+    if "sessions" not in config["topics"]:
+        config["topics"].append("sessions")
+        (vault / "wiki.yaml").write_text(yaml.dump(config))
     body = (
         f"{CAVEAT_TURN}\n\n## [10:00:01] user\n\n{prompt}\n\n"
         "## [10:00:02] assistant\n\n## Plan\n\nok\n"
@@ -633,3 +638,55 @@ def test_session_titles_dry_run_changes_no_file(tmp_vault, tmp_config):
     assert result.exit_code == 0, result.output
     assert "session-titles" in result.output
     assert (bundle.read_bytes(), page.read_bytes()) == before
+
+
+def _session_titles_check():
+    from agent_wiki.doctor import SessionTitles
+    return SessionTitles()
+
+
+def test_session_titles_fix_retitles_bundle_and_page(tmp_vault):
+    bundle, page = _session(tmp_vault, "bad", CAVEAT_TITLE, "Fix the login bug")
+    old_bundle_body = parse_page(bundle)["body"]
+    old_page_body = parse_page(page)["body"]
+
+    result = _session_titles_check().fix(tmp_vault)
+    assert "1" in result
+
+    new_bundle = parse_page(bundle)
+    assert new_bundle["meta"]["title"] == "Fix the login bug"
+    assert new_bundle["body"] == old_bundle_body
+
+    new_page = parse_page(page)
+    assert new_page["meta"]["title"] == "Fix the login bug"
+    old_head, _, old_rest = old_page_body.lstrip("\n").partition("\n")
+    new_head, _, new_rest = new_page["body"].lstrip("\n").partition("\n")
+    assert old_head == f"# {CAVEAT_TITLE}"
+    assert new_head == "# Fix the login bug"
+    assert new_rest == old_rest
+
+    assert "Fix the login bug" in (tmp_vault / "index.md").read_text()
+    assert _session_titles_check().detect(tmp_vault) is None
+
+
+def test_session_titles_fix_redacts_the_page_title(tmp_vault):
+    config = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    config["redaction"] = {"username": "alice"}
+    (tmp_vault / "wiki.yaml").write_text(yaml.dump(config))
+    bundle, page = _session(tmp_vault, "bad", CAVEAT_TITLE, "Ask alice about the deploy")
+
+    _session_titles_check().fix(tmp_vault)
+
+    assert parse_page(bundle)["meta"]["title"] == "Ask alice about the deploy"
+    assert parse_page(page)["meta"]["title"] == "Ask [USER] about the deploy"
+    assert "# Ask [USER] about the deploy" in parse_page(page)["body"]
+
+
+def test_session_titles_fix_skips_a_bundle_with_no_page(tmp_vault):
+    _session(tmp_vault, "paged", CAVEAT_TITLE, "Fix the login bug")
+    orphan, _ = _session(tmp_vault, "orphan", CAVEAT_TITLE, "Write the notes", page=False)
+
+    result = _session_titles_check().fix(tmp_vault)
+
+    assert "retitled 1" in result and "skipped 1" in result
+    assert parse_page(orphan)["meta"]["title"] == CAVEAT_TITLE
