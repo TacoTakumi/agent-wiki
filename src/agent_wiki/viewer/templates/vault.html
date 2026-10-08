@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ name }}</h1>
+<form method="get" action="/search">
+<input type="hidden" name="vault" value="{{ name }}">
+<input type="search" name="q" aria-label="Search this vault">
+<button type="submit">Search</button>
+</form>
+<h2>Topics</h2>
+<ul>
+{% for topic, records in topics.items() %}
+<li><a href="/vaults/{{ name | urlencode }}/{{ topic | urlencode }}/">{{ topic }}</a> ({{ records | length }})</li>
+{% endfor %}
+</ul>
+<h2>Recently updated</h2>
+{% if recent %}
+<ul class="pages">
+{% for rec in recent %}
+<li><a href="{{ page_url(name, rec.url_path) }}">{{ rec.title }}</a>{% if rec.updated or rec.created %} <small>{{ rec.updated or rec.created }}</small>{% endif %}</li>
+{% endfor %}
+</ul>
+{% else %}
+<p>No pages yet.</p>
+{% endif %}
+{% endblock %}

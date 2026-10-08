@@ -48,6 +48,31 @@ def source_entries(sources) -> list[tuple[str, bool]]:
             for s in sources]
 
 
+# How many pages the vault home lists, and how many one listing screen shows.
+RECENT_PAGES = 20
+SCREEN_SIZE = 50
+
+
+def by_recency(records) -> list:
+    """Pages newest first: by updated, then created, then title. Dates are
+    ISO strings, so they compare as text; an empty date sorts after every
+    real one, so pages with neither date come last."""
+    by_title = sorted(records, key=lambda rec: rec.title)
+    # A reverse sort is still stable, so equal dates keep title order.
+    return sorted(by_title, key=lambda rec: (rec.updated, rec.created),
+                  reverse=True)
+
+
+def screen(records: list, page: int) -> tuple[list, int]:
+    """One listing screen (1-based) of `records` and the last screen number,
+    or 404 past either end. An empty listing has one empty screen."""
+    last = max(1, -(-len(records) // SCREEN_SIZE))
+    if not 1 <= page <= last:
+        raise HTTPException(status_code=404, detail="page out of range")
+    start = (page - 1) * SCREEN_SIZE
+    return records[start:start + SCREEN_SIZE], last
+
+
 def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Kept out of the OpenAPI schema: the schema documents the /v1 API only.
     r = APIRouter(include_in_schema=False)
@@ -58,10 +83,38 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
 
     @r.get("/vaults/{name}/", response_class=HTMLResponse)
     def vault_home(name: str):
-        served_vault(catalog, name)
-        return render("base.html", title=name)
+        index = index_vault(served_vault(catalog, name))
+        every_page = [rec for recs in index.topics.values() for rec in recs]
+        return render(
+            "vault.html",
+            title=name,
+            name=name,
+            topics=index.topics,
+            recent=by_recency(every_page)[:RECENT_PAGES],
+            page_url=page_url,
+        )
 
-    # Registered after the vault home, so /vaults/<name>/ stays that route.
+    # Registered before the page view, which would otherwise catch
+    # /vaults/<name>/<topic>/ as a page path.
+    @r.get("/vaults/{name}/{topic}/", response_class=HTMLResponse)
+    def topic_view(name: str, topic: str, page: int = 1):
+        index = index_vault(served_vault(catalog, name))
+        if topic not in index.topics:
+            raise HTTPException(status_code=404, detail="topic not found")
+        pages, last = screen(by_recency(index.topics[topic]), page)
+        return render(
+            "topic.html",
+            title=f"{topic} - {name}",
+            name=name,
+            topic=topic,
+            pages=pages,
+            page=page,
+            last_page=last,
+            page_url=page_url,
+        )
+
+    # Registered after the vault home and topic routes, so those keep their
+    # URLs.
     @r.get("/vaults/{name}/{path:path}", response_class=HTMLResponse)
     def page_view(name: str, path: str):
         vault_dir = served_vault(catalog, name)

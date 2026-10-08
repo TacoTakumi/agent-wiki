@@ -1,0 +1,8 @@
+{# Previous and next links for a paged listing; needs page and last_page. #}
+{% if last_page > 1 %}
+<nav class="pager">
+{% if page > 1 %}<a rel="prev" href="?page={{ page - 1 }}">Previous</a>{% endif %}
+<span>Page {{ page }} of {{ last_page }}</span>
+{% if page < last_page %}<a rel="next" href="?page={{ page + 1 }}">Next</a>{% endif %}
+</nav>
+{% endif %}

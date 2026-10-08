@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<nav><a href="/vaults/{{ name | urlencode }}/">{{ name }}</a></nav>
+<h1>{{ topic }}</h1>
+{% if pages %}
+<ul class="pages">
+{% for rec in pages %}
+<li><a href="{{ page_url(name, rec.url_path) }}">{{ rec.title }}</a>{% if rec.updated or rec.created %} <small>{{ rec.updated or rec.created }}</small>{% endif %}</li>
+{% endfor %}
+</ul>
+{% else %}
+<p>No pages in this topic.</p>
+{% endif %}
+{% include "_pager.html" %}
+{% endblock %}

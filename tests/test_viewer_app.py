@@ -1,6 +1,9 @@
 """Viewer routes mounted into the server app: switched on by a catalog, served
 without a token, and absent (404) when the viewer is off."""
 
+import re
+from pathlib import Path
+
 import pytest
 from click.testing import CliRunner
 from fastapi.testclient import TestClient
@@ -8,7 +11,8 @@ from fastapi.testclient import TestClient
 from agent_wiki.cli import cli
 from agent_wiki.registry import VaultEntry
 from agent_wiki.server.app import create_app
-from agent_wiki.viewer.catalog import build_vault_catalog
+from agent_wiki.viewer.catalog import PageRecord, build_vault_catalog
+from agent_wiki.viewer.routes import by_recency
 from conftest import make_vault
 
 
@@ -211,3 +215,132 @@ def test_unservable_paths_return_404(viewer, pages, path):
 def test_page_in_an_unserved_vault_returns_404(viewer, pages):
     assert viewer.get("/vaults/team/research/foo").status_code == 404
     assert viewer.get("/vaults/gone/research/foo").status_code == 404
+
+
+def dated_page(title, topic, updated="", created=""):
+    lines = ["---", f"title: {title}", f"topic: {topic}"]
+    if created:
+        lines.append(f"created: '{created}'")
+    if updated:
+        lines.append(f"updated: '{updated}'")
+    return "\n".join(lines + ["---", "", f"# {title}", ""])
+
+
+def page_links(html, name="main"):
+    """The page links in a listing, in order: viewer hrefs that name a page,
+    not a topic (topic URLs end with a slash)."""
+    return re.findall(rf'href="(/vaults/{name}/[^"?]*[^/"])"', html)
+
+
+@pytest.fixture
+def home_pages(catalog):
+    """25 dated pages across research and tools, plus a .md file without
+    frontmatter that is not a page."""
+    main = catalog.vaults["main"]
+    for day in range(1, 26):
+        topic = "research" if day % 5 else "tools"
+        (main / topic / f"p{day:02d}.md").write_text(
+            dated_page(f"Page {day:02d}", topic, updated=f"2026-01-{day:02d}"))
+    (main / "research" / "nofm.md").write_text("# No frontmatter\n")
+    return main
+
+
+def test_vault_home_shows_topics_with_page_counts(viewer, home_pages):
+    html = viewer.get("/vaults/main/").text
+    assert '<a href="/vaults/main/research/">research</a> (20)' in html
+    assert '<a href="/vaults/main/tools/">tools</a> (5)' in html
+    assert '<a href="/vaults/main/projects/">projects</a> (0)' in html
+
+
+def test_vault_home_lists_the_20_most_recent_pages(viewer, home_pages):
+    links = page_links(viewer.get("/vaults/main/").text)
+    expected = []
+    for day in range(25, 5, -1):
+        topic = "research" if day % 5 else "tools"
+        expected.append(f"/vaults/main/{topic}/p{day:02d}")
+    assert links == expected
+
+
+def test_vault_home_has_a_search_form_for_this_vault(viewer, home_pages):
+    html = viewer.get("/vaults/main/").text
+    assert '<form method="get" action="/search">' in html
+    assert 'name="q"' in html
+    assert '<input type="hidden" name="vault" value="main">' in html
+
+
+def record(title, updated="", created=""):
+    return PageRecord(title=title, topic="research", tags=(), created=created,
+                      updated=updated, url_path=f"research/{title}",
+                      path=Path(f"{title}.md"))
+
+
+def test_recency_sorts_updated_then_created_then_title_undated_last():
+    records = [
+        record("undated"),
+        record("created-only", created="2026-05-01"),
+        record("b-same", updated="2026-02-01", created="2026-01-01"),
+        record("a-same", updated="2026-02-01", created="2026-01-01"),
+        record("newer-created", updated="2026-02-01", created="2026-01-09"),
+        record("newest", updated="2026-03-01"),
+    ]
+    assert [r.title for r in by_recency(records)] == [
+        "newest", "newer-created", "a-same", "b-same", "created-only",
+        "undated"]
+
+
+@pytest.fixture
+def many_pages(catalog):
+    """120 dated pages in research."""
+    main = catalog.vaults["main"]
+    for n in range(120):
+        (main / "research" / f"p{n:03d}.md").write_text(dated_page(
+            f"Page {n:03d}", "research",
+            updated=f"2026-{n // 28 + 1:02d}-{n % 28 + 1:02d}"))
+    return main
+
+
+def test_topic_first_screen_has_50_pages_and_a_next_link_only(viewer,
+                                                              many_pages):
+    resp = viewer.get("/vaults/main/research/")
+    assert resp.status_code == 200
+    links = page_links(resp.text)
+    assert len(links) == 50
+    assert links[0] == "/vaults/main/research/p119"
+    assert 'rel="next" href="?page=2"' in resp.text
+    assert 'rel="prev"' not in resp.text
+
+
+def test_topic_middle_screen_links_both_ways(viewer, many_pages):
+    html = viewer.get("/vaults/main/research/?page=2").text
+    assert len(page_links(html)) == 50
+    assert 'rel="prev" href="?page=1"' in html
+    assert 'rel="next" href="?page=3"' in html
+
+
+def test_topic_last_screen_has_the_rest_and_a_previous_link_only(viewer,
+                                                                many_pages):
+    resp = viewer.get("/vaults/main/research/?page=3")
+    assert resp.status_code == 200
+    links = page_links(resp.text)
+    assert len(links) == 20
+    assert links[-1] == "/vaults/main/research/p000"
+    assert 'rel="prev" href="?page=2"' in resp.text
+    assert 'rel="next"' not in resp.text
+
+
+@pytest.mark.parametrize("query", ["?page=4", "?page=0", "?page=-1"])
+def test_topic_screen_out_of_range_returns_404(viewer, many_pages, query):
+    assert viewer.get(f"/vaults/main/research/{query}").status_code == 404
+
+
+def test_unknown_topic_returns_404(viewer, many_pages):
+    assert viewer.get("/vaults/main/nosuchtopic/").status_code == 404
+    assert viewer.get("/vaults/team/research/").status_code == 404
+
+
+def test_empty_topic_shows_no_pages_and_no_pager(viewer, many_pages):
+    resp = viewer.get("/vaults/main/projects/")
+    assert resp.status_code == 200
+    assert page_links(resp.text) == []
+    assert 'rel="next"' not in resp.text
+    assert 'rel="prev"' not in resp.text
