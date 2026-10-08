@@ -53,11 +53,16 @@ def _search_ripgrep(
     cmd.append(str(search_path))
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        # A matched line need not be UTF-8: undecodable bytes are replaced
+        # rather than failing the whole search.
+        result = subprocess.run(cmd, capture_output=True, encoding="utf-8",
+                                errors="replace", timeout=10)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return {}
 
-    if result.returncode not in (0, 1):
+    # Exit code 2 means an error, such as a file it could not read; the
+    # matches it still printed for the other files are kept.
+    if result.returncode not in (0, 1, 2):
         return {}
 
     file_matches: dict[str, list[str]] = {}

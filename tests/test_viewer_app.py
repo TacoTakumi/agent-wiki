@@ -576,3 +576,14 @@ def test_search_lists_good_page_beside_unreadable_one(viewer, catalog):
     html = viewer.get("/search?q=zebra&vault=main").text
     assert "/vaults/main/research/good" in html
     assert "Skipped vault" not in html
+
+
+def test_search_lists_good_page_beside_undecodable_match(viewer, catalog):
+    main = catalog.vaults["main"]
+    (main / "research" / "good.md").write_text(
+        tagged_page("Good", [], "2026-01-01") + "zebra good\n")
+    (main / "research" / "latin.md").write_bytes(
+        b"---\ntitle: Latin\n---\nzebra caf\xe9\n")
+    html = viewer.get("/search?q=zebra&vault=main").text
+    assert "/vaults/main/research/good" in html
+    assert "Skipped vault" not in html
