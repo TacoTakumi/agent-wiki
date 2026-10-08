@@ -280,16 +280,30 @@ _HARNESS_TAGS = (
     "command-name", "command-message", "command-args", "system-reminder",
     "bash-input", "bash-stdout", "bash-stderr", "task-notification",
 )
-_HARNESS_TURN_RE = re.compile(
-    r"\s*(?:<(%s)>.*?</\1>\s*)+" % "|".join(map(re.escape, _HARNESS_TAGS)),
-    re.S,
-)
+_HARNESS_OPEN_RE = re.compile(r"\s*<(%s)>" % "|".join(map(re.escape, _HARNESS_TAGS)))
 # A line that is only an opening or closing tag, such as a prompt expansion's
 # <objective> wrapper.
 _TAG_LINE_RE = re.compile(r"</?[A-Za-z][\w.:-]*(?:\s[^<>]*)?>")
 _COMMAND_NAME_RE = re.compile(r"<command-name>(.*?)</command-name>", re.S)
 _COMMAND_ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.S)
 _TITLE_MAX = 80
+
+
+def _is_harness_turn(text: str) -> bool:
+    """True when ``text`` is one or more harness blocks and nothing else.
+
+    Scans block by block, each to its first closing tag, so the cost stays
+    linear in the text however many blocks a turn holds."""
+    pos, found = 0, False
+    while True:
+        opening = _HARNESS_OPEN_RE.match(text, pos)
+        if not opening:
+            return found and not text[pos:].strip()
+        closing = f"</{opening.group(1)}>"
+        end = text.find(closing, opening.end())
+        if end < 0:
+            return False
+        pos, found = end + len(closing), True
 
 
 def derive_title(sections: list[str]) -> str | None:
@@ -307,7 +321,7 @@ def derive_title(sections: list[str]) -> str | None:
         text = text.strip()
         if text.startswith("**tool_result:**"):
             continue
-        if _HARNESS_TURN_RE.fullmatch(text):
+        if _is_harness_turn(text):
             name = _COMMAND_NAME_RE.search(text)
             if command is None and name:
                 args = _COMMAND_ARGS_RE.search(text)
