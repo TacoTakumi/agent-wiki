@@ -124,11 +124,12 @@ def index_vault(vault_dir: Path) -> VaultIndex:
             if not _inside(md_file, root / topic):
                 continue
             # A page whose frontmatter cannot be read (bad YAML, a block that
-            # is not a mapping, not UTF-8) is left out, so one broken file
-            # does not take every listing and page view down with it.
+            # is not a mapping, not UTF-8, no read permission) is left out,
+            # so one broken file does not take every listing and page view
+            # down with it.
             try:
                 meta = parse_page(md_file)["meta"]
-            except (yaml.YAMLError, UnicodeDecodeError):
+            except (yaml.YAMLError, UnicodeDecodeError, OSError):
                 continue
             if not meta or not isinstance(meta, dict):
                 continue

@@ -565,3 +565,14 @@ def test_unreadable_frontmatter_leaves_other_views_working(viewer, bad_page,
 
 def test_page_with_unreadable_frontmatter_returns_404(viewer, bad_page):
     assert viewer.get("/vaults/main/research/broken").status_code == 404
+
+
+def test_search_lists_good_page_beside_unreadable_one(viewer, catalog):
+    main = catalog.vaults["main"]
+    (main / "research" / "good.md").write_text(
+        tagged_page("Good", [], "2026-01-01") + "zebra good\n")
+    (main / "research" / "broken.md").write_text(
+        "---\ntitle: [unclosed\n---\nzebra here\n")
+    html = viewer.get("/search?q=zebra&vault=main").text
+    assert "/vaults/main/research/good" in html
+    assert "Skipped vault" not in html

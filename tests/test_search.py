@@ -157,3 +157,34 @@ def test_search_python_fallback_partial_or(tmp_vault, monkeypatch):
     assert len(results) == 1
     assert results[0]["match_kind"] == "partial"
     assert results[0]["coverage"] == 1
+
+
+# A page whose frontmatter cannot be read is still a text match: it is listed
+# under its file stem, and the rest of the vault's results are unaffected.
+UNREADABLE_PAGES = {
+    "malformed": b"---\ntitle: [unclosed\n---\nzebra here\n",
+    "listblock": b"---\n- a\n---\nzebra here\n",
+    "latin1": "---\ntitle: Caf\xe9\n---\nzebra here\n".encode("latin-1"),
+}
+
+
+@pytest.mark.parametrize("ripgrep", [True, False], ids=["rg", "python"])
+@pytest.mark.parametrize("stem", sorted(UNREADABLE_PAGES))
+def test_search_lists_unreadable_page_under_its_stem(tmp_vault, monkeypatch,
+                                                     stem, ripgrep):
+    if not ripgrep:
+        monkeypatch.setattr("agent_wiki.search.shutil.which", lambda name: None)
+    elif __import__("shutil").which("rg") is None:
+        pytest.skip("ripgrep not installed")
+    _create_page(tmp_vault, "research", "good", "Good Page", "zebra good\n")
+    (tmp_vault / "research" / f"{stem}.md").write_bytes(UNREADABLE_PAGES[stem])
+    titles = sorted(r["title"] for r in search_vault(tmp_vault, "zebra"))
+    assert titles == sorted(["Good Page", stem])
+
+
+def test_python_search_reads_past_a_non_utf8_file(tmp_vault, monkeypatch):
+    monkeypatch.setattr("agent_wiki.search.shutil.which", lambda name: None)
+    _create_page(tmp_vault, "research", "good", "Good Page", "zebra good\n")
+    (tmp_vault / "research" / "other.md").write_bytes(b"caf\xe9 only\n")
+    assert [r["title"] for r in search_vault(tmp_vault, "zebra")] == [
+        "Good Page"]
