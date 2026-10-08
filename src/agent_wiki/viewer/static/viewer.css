@@ -223,13 +223,6 @@ aside dd { margin: 0; font-variant-numeric: tabular-nums; }
 /* A wikilink whose target page does not exist. */
 .missing { color: var(--fg-muted); text-decoration: underline dotted; cursor: help; }
 
-/* Page metadata as compact term and value rows (until the page view moves
-   to the sidebar layout). */
-article > header dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 24px; }
-article > header dt { color: var(--fg-muted); }
-article > header dd { margin: 0; }
-article > footer { margin-top: 32px; padding-top: 8px; border-top: 1px solid var(--border-muted); }
-
 /* ---------- Pager ---------- */
 .pager { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 16px 0 48px; color: var(--fg-muted); }
 .pager a { padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius); }

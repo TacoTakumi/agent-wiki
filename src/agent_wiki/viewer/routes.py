@@ -340,6 +340,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             header_vault=name,
             page=record,
             tag_url=tag_url,
+            topic_url=topic_url,
             body=render_markdown(page["body"], links, title=record.title),
             sources=source_entries(page["meta"].get("sources")),
             **vault_nav(name, index, topic,
