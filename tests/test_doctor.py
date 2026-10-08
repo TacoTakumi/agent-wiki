@@ -690,3 +690,14 @@ def test_session_titles_fix_skips_a_bundle_with_no_page(tmp_vault):
 
     assert "retitled 1" in result and "skipped 1" in result
     assert parse_page(orphan)["meta"]["title"] == CAVEAT_TITLE
+
+
+def test_session_titles_cli_fix_retitles_with_no_extra_flag(tmp_vault, tmp_config):
+    bundle, page = _session(tmp_vault, "bad", CAVEAT_TITLE, "Fix the login bug")
+
+    result = CliRunner().invoke(cli, ["doctor", "--fix"])
+
+    assert result.exit_code == 0, result.output
+    assert "retitled 1" in result.output
+    assert parse_page(bundle)["meta"]["title"] == "Fix the login bug"
+    assert parse_page(page)["meta"]["title"] == "Fix the login bug"
