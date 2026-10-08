@@ -6,11 +6,13 @@ from __future__ import annotations
 
 from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from jinja2 import Environment, PackageLoader, select_autoescape
 
+from agent_wiki.multisearch import merged_search
 from agent_wiki.page import parse_page
+from agent_wiki.registry import VaultEntry
 from agent_wiki.viewer.catalog import VaultCatalog, index_vault, resolve_page
 from agent_wiki.viewer.render import render_markdown
 
@@ -79,6 +81,30 @@ def screen(records: list, page: int) -> tuple[list, int]:
     return records[start:start + SCREEN_SIZE], last
 
 
+# The CLI search's caps (all-terms and partial tiers), and how much of each
+# hit's matching lines one result shows.
+SEARCH_LIMIT = 20
+SEARCH_PARTIAL_LIMIT = 5
+RESULT_LINES = 3
+LINE_CHARS = 200
+
+
+def search_hit(hit: dict) -> dict:
+    """One merged search hit as the results list shows it: its vault, title,
+    page view URL, coverage, and its first matching lines, each cut short."""
+    name = hit["vault"]
+    rel = hit["path"][len(name) + 1:]
+    url_path = rel[:-3] if rel.endswith(".md") else rel
+    return {
+        "vault": name,
+        "title": hit["title"],
+        "url": page_url(name, url_path),
+        "coverage": hit["coverage"],
+        "term_count": hit["term_count"],
+        "lines": [line[:LINE_CHARS] for line in hit["matches"][:RESULT_LINES]],
+    }
+
+
 def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Kept out of the OpenAPI schema: the schema documents the /v1 API only.
     r = APIRouter(include_in_schema=False)
@@ -98,6 +124,32 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             topics=index.topics,
             recent=by_recency(every_page)[:RECENT_PAGES],
             page_url=page_url,
+        )
+
+    @r.get("/search", response_class=HTMLResponse)
+    def search(q: str = "", vault: list[str] = Query(default=[])):
+        # Unknown names are dropped; none left means every vault, as when
+        # no vault parameter was given.
+        selected = [n for n in catalog.vaults if n in vault] or list(
+            catalog.vaults)
+        query = q.strip()
+        out, skipped = None, []
+        if query:
+            entries = {n: VaultEntry(name=n, path=catalog.vaults[n])
+                       for n in selected}
+            out, skipped = merged_search(entries, query,
+                                         limit=SEARCH_LIMIT,
+                                         partial_limit=SEARCH_PARTIAL_LIMIT)
+            out = dict(out, all=[search_hit(h) for h in out["all"]],
+                       partial=[search_hit(h) for h in out["partial"]])
+        return render(
+            "search.html",
+            title=f"{query} - Search" if query else "Search",
+            q=query,
+            vaults=list(catalog.vaults),
+            selected=selected,
+            out=out,
+            skipped=skipped,
         )
 
     # Registered before the page view, which would otherwise catch

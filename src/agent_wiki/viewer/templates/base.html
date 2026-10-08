@@ -8,6 +8,12 @@
 <body>
 <header>
 <nav><a href="/">Vaults</a></nav>
+{% block search_form %}
+<form method="get" action="/search" role="search">
+<input type="search" name="q" aria-label="Search all vaults">
+<button type="submit">Search</button>
+</form>
+{% endblock %}
 </header>
 <main>
 {% block content %}{% endblock %}
