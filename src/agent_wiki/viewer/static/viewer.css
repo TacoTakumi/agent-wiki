@@ -176,6 +176,7 @@ h1.page-title { font-size: 26px; line-height: 1.25; font-weight: 600; margin: 12
   .layout { grid-template-columns: minmax(0, 1fr); }
   .layout > aside { order: -1; }
 }
+.crumbs + .layout { margin-top: 16px; }
 aside .side-section { padding: 0 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border-muted); }
 aside .side-section:last-child { border-bottom: 0; }
 aside h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; }

@@ -1,25 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ name }}</h1>
-<form method="get" action="/search">
-<input type="hidden" name="vault" value="{{ name }}">
-<input type="search" name="q" aria-label="Search this vault">
-<button type="submit">Search</button>
-</form>
-<h2>Topics</h2>
-<ul class="topics">
-{% for topic, records in topics.items() %}
-<li><a href="/vaults/{{ name | urlencode }}/{{ topic | urlencode }}/">{{ topic }}</a> ({{ records | length }})</li>
-{% endfor %}
-</ul>
-<h2>Recently updated</h2>
+<div class="layout">
+<div class="box">
+<div class="box-head">Recently updated</div>
 {% if recent %}
-<ul class="pages">
+<ul class="rows">
 {% for rec in recent %}
-<li><a href="{{ page_url(name, rec.url_path) }}">{{ rec.title }}</a>{% if rec.updated or rec.created %} <small>{{ rec.updated or rec.created }}</small>{% endif %}</li>
+<li><a class="title" href="{{ page_url(name, rec.url_path) }}">{{ rec.title }}</a><span class="topic-tag">{{ rec.topic }}</span>{% if rec.updated or rec.created %}<time>{{ rec.updated or rec.created }}</time>{% endif %}</li>
 {% endfor %}
 </ul>
 {% else %}
-<p>No pages yet.</p>
+<p class="notice body-pad">No pages yet.</p>
 {% endif %}
+</div>
+<aside>
+<div class="side-section">
+<h2>Search this vault</h2>
+<form class="side-search" method="get" action="/search" role="search">
+<input type="hidden" name="vault" value="{{ name }}">
+<input type="search" name="q" aria-label="Search {{ name }}">
+<button type="submit" class="btn">Search</button>
+</form>
+</div>
+<div class="side-section">
+<h2>About</h2>
+<dl>
+<dt>Pages</dt>
+<dd>{{ "{:,}".format(page_count) }}</dd>
+<dt>Topics</dt>
+<dd>{{ "{:,}".format(topic_count) }}</dd>
+{% if newest %}
+<dt>Updated</dt>
+<dd>{{ newest }}</dd>
+{% endif %}
+</dl>
+</div>
+</aside>
+</div>
 {% endblock %}

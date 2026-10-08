@@ -212,14 +212,20 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     def vault_home(request: Request, name: str):
         index = index_vault(served_vault(catalog, name))
         every_page = [rec for recs in index.topics.values() for rec in recs]
+        # The topic count is the tab row's: every wiki.yaml topic the index
+        # lists (its folder exists), empty ones too. The newest date is the
+        # latest date a row shows (updated, else created).
         return render(
             request,
             "vault.html",
             title=name,
             name=name,
             header_vault=name,
-            topics=index.topics,
             recent=by_recency(every_page)[:RECENT_PAGES],
+            page_count=len(every_page),
+            topic_count=len(index.topics),
+            newest=max((rec.updated or rec.created for rec in every_page),
+                       default=""),
             page_url=page_url,
             **vault_nav(name, index, OVERVIEW, [("Vaults", "/"),
                                                 (name, None)]),
