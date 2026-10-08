@@ -263,7 +263,13 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
 
     @r.get("/", response_class=HTMLResponse)
     def vault_list(request: Request):
-        return render(request, "vaults.html", title="Vaults", catalog=catalog)
+        # Each count is the vault home's About count: every topic's records.
+        counts = {
+            name: sum(len(recs) for recs in index_vault(path).topics.values())
+            for name, path in catalog.vaults.items()
+        }
+        return render(request, "vaults.html", title="Vaults", catalog=catalog,
+                      counts=counts)
 
     @r.get("/vaults/{name}/", response_class=HTMLResponse)
     def vault_home(request: Request, name: str):

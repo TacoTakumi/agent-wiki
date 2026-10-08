@@ -1,25 +1,29 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Vaults</h1>
+<h1 class="page-title">Vaults</h1>
+<p class="page-sub">Local vaults served read-only on this machine.</p>
 {% if catalog.vaults %}
-<ul>
+<div class="box narrow">
+<ul class="rows">
 {% for name in catalog.vaults %}
-<li><a href="/vaults/{{ name | urlencode }}/">{{ name }}</a></li>
+{% set n = counts[name] %}
+<li><a class="title" href="/vaults/{{ name | urlencode }}/">{{ name }}</a><span class="meta">{{ "{:,}".format(n) }} page{{ "s" if n != 1 }}</span></li>
 {% endfor %}
 </ul>
+</div>
 {% else %}
-<p>No local vaults to serve.</p>
+<p class="notice">No local vaults to serve.</p>
 {% endif %}
 {% if catalog.unavailable %}
-<h2>Unavailable</h2>
-<p>These local vaults have no directory on disk:</p>
-<ul>
+<h2 class="tier">Unavailable</h2>
+<p class="notice">These local vaults have no directory on disk:</p>
+<ul class="notice">
 {% for name in catalog.unavailable %}
 <li>{{ name }} (unavailable)</li>
 {% endfor %}
 </ul>
 {% endif %}
 {% if catalog.skipped_remote %}
-<p>{{ catalog.skipped_remote }} remote vault{{ "s" if catalog.skipped_remote != 1 }} skipped: the viewer serves local vaults only.</p>
+<p class="notice">{{ catalog.skipped_remote }} remote vault{{ "s" if catalog.skipped_remote != 1 }} skipped: the viewer serves local vaults only.</p>
 {% endif %}
 {% endblock %}

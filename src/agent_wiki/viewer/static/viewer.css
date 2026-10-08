@@ -151,6 +151,8 @@ main > h1.page-title:first-child { margin-top: 24px; }
 
 /* ---------- Box with rows (listings) ---------- */
 .box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+/* A short listing, such as the vault list, keeps to a readable width. */
+.box.narrow { max-width: 720px; }
 .box-head { display: flex; align-items: center; justify-content: space-between; gap: 12px;
   padding: 10px 16px; background: var(--bg-muted); border-bottom: 1px solid var(--border);
   border-radius: var(--radius) var(--radius) 0 0; font-weight: 600; }
