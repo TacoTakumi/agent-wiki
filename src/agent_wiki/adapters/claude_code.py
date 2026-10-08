@@ -163,7 +163,7 @@ def convert_jsonl(path: Path) -> Conversation:
     elif path.parent != path:
         project = _friendly_project(path.parent.name)
 
-    title = custom_title or _derive_title(sections) or (project or session_id)
+    title = custom_title or derive_title(sections) or (project or session_id)
 
     body = "\n\n".join(sections).rstrip() + "\n"
 
@@ -272,12 +272,52 @@ def _truncate(text: str, max_chars: int) -> str:
     return text[:max_chars].rstrip() + f"\n… [truncated {len(text)-max_chars} chars]"
 
 
-def _derive_title(sections: list[str]) -> str | None:
-    # First user message, first line, trimmed.
+# Claude Code writes these as user turns, though the user did not type them:
+# the local-command caveat, a slash command and its output, reminders, shell
+# mode, and background-task notices. A turn made only of them is no prompt.
+_HARNESS_TAGS = (
+    "local-command-caveat", "local-command-stdout", "local-command-stderr",
+    "command-name", "command-message", "command-args", "system-reminder",
+    "bash-input", "bash-stdout", "bash-stderr", "task-notification",
+)
+_HARNESS_TURN_RE = re.compile(
+    r"\s*(?:<(%s)>.*?</\1>\s*)+" % "|".join(map(re.escape, _HARNESS_TAGS)),
+    re.S,
+)
+# A line that is only an opening or closing tag, such as a prompt expansion's
+# <objective> wrapper.
+_TAG_LINE_RE = re.compile(r"</?[A-Za-z][\w.:-]*(?:\s[^<>]*)?>")
+_COMMAND_NAME_RE = re.compile(r"<command-name>(.*?)</command-name>", re.S)
+_COMMAND_ARGS_RE = re.compile(r"<command-args>(.*?)</command-args>", re.S)
+_TITLE_MAX = 80
+
+
+def derive_title(sections: list[str]) -> str | None:
+    """Title a session from its rendered sections: the first line of real text
+    in the first user turn the user typed, else its first slash command as
+    '/name args', else None.
+
+    Works on rendered sections, so it serves a live transcript and a bundle
+    body read back from raw/sessions alike."""
+    command: str | None = None
     for s in sections:
-        if s.startswith("## ") and " user" in s.splitlines()[0]:
-            lines = [l for l in s.splitlines()[1:] if l.strip()]
-            if lines:
-                first = lines[0].lstrip("#").strip()
-                return first[:80] if first else None
-    return None
+        head, _, text = s.partition("\n")
+        if not (s.startswith("## ") and " user" in head):
+            continue
+        text = text.strip()
+        if text.startswith("**tool_result:**"):
+            continue
+        if _HARNESS_TURN_RE.fullmatch(text):
+            name = _COMMAND_NAME_RE.search(text)
+            if command is None and name:
+                args = _COMMAND_ARGS_RE.search(text)
+                command = f"{name.group(1).strip()} {args.group(1).strip() if args else ''}".strip()
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or _TAG_LINE_RE.fullmatch(line):
+                continue
+            first = line.lstrip("#").strip()
+            if first:
+                return first[:_TITLE_MAX]
+    return command[:_TITLE_MAX] if command else None
