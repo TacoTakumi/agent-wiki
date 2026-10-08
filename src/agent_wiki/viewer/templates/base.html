@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ title }}{% endblock %} - Agent Wiki</title>
+{# Inlined, not linked: pages load no external CSS. #}
+<style>
+{% include "simple.css" %}
+{% include "github-markdown.css" %}
+{% include "viewer.css" %}
+</style>
 </head>
 <body>
 <header>

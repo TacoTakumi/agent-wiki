@@ -11,7 +11,7 @@
 </dl>
 </header>
 {# The body is sanitised by render_markdown; nothing else here is trusted. #}
-{{ body | safe }}
+<div class="markdown-body">{{ body | safe }}</div>
 {% if sources %}
 <footer>
 <h2>Sources</h2>

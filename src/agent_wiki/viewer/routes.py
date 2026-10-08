@@ -8,7 +8,7 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse
-from jinja2 import Environment, PackageLoader, select_autoescape
+from jinja2 import ChoiceLoader, Environment, PackageLoader, select_autoescape
 
 from agent_wiki.multisearch import merged_search
 from agent_wiki.page import parse_page
@@ -17,8 +17,11 @@ from agent_wiki.viewer.catalog import VaultCatalog, index_vault, resolve_page
 from agent_wiki.viewer.render import render_markdown
 
 
+# The static folder is on the search path so base.html can include the
+# stylesheets inline: pages load no external CSS.
 templates = Environment(
-    loader=PackageLoader("agent_wiki.viewer", "templates"),
+    loader=ChoiceLoader([PackageLoader("agent_wiki.viewer", "templates"),
+                         PackageLoader("agent_wiki.viewer", "static")]),
     autoescape=select_autoescape(["html"]),
 )
 

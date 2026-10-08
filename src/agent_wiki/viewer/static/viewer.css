@@ -1,0 +1,117 @@
+/* Viewer rules on top of Simple.css (the page frame) and github-markdown-css
+   (the rendered body). System fonts only; both themes follow the browser's
+   prefers-color-scheme through the variables the two vendored sheets set. */
+
+/* The body takes the frame's background and text size, so it blends in. */
+.markdown-body {
+  background-color: transparent;
+  font-size: 1rem;
+}
+
+/* Wide tables scroll sideways inside the body instead of widening the page. */
+.markdown-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+/* Long code lines scroll too. */
+.markdown-body pre {
+  overflow-x: auto;
+}
+
+/* A wikilink whose target page does not exist. */
+span.missing {
+  color: var(--text-light);
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+/* Page metadata: compact term and value rows. */
+article > header dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 1rem;
+  font-size: 0.95rem;
+}
+
+article > header dd {
+  margin: 0;
+}
+
+/* Tags as a row of small links. */
+ul.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+ul.tags a {
+  display: inline-block;
+  padding: 0 0.6rem;
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--standard-border-radius);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+/* Dates in page listings, and the page count after each topic link (the
+   item's own text; the link keeps its colour). */
+ul.pages small,
+ul.topics li {
+  color: var(--text-light);
+}
+
+ul.topics a {
+  color: var(--accent);
+}
+
+/* Search results: the vault as a label, then the title, then match lines. */
+ul.results {
+  list-style: none;
+  padding: 0;
+}
+
+ul.results > li {
+  margin-bottom: 1rem;
+}
+
+span.vault {
+  display: inline-block;
+  padding: 0 0.5rem;
+  border-radius: var(--standard-border-radius);
+  background-color: var(--accent-bg);
+  color: var(--text-light);
+  font-size: 0.85rem;
+}
+
+ul.matches {
+  list-style: none;
+  margin: 0.25rem 0 0 0;
+  padding-left: 1rem;
+  border-left: var(--border-width) solid var(--border);
+}
+
+ul.matches code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.85rem;
+}
+
+/* Previous and next links around the page number. */
+nav.pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+/* The vault checkboxes on the search page sit on one wrapping row. */
+fieldset label {
+  display: inline-block;
+  margin-right: 1rem;
+}

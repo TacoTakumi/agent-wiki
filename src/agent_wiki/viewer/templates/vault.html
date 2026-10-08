@@ -7,7 +7,7 @@
 <button type="submit">Search</button>
 </form>
 <h2>Topics</h2>
-<ul>
+<ul class="topics">
 {% for topic, records in topics.items() %}
 <li><a href="/vaults/{{ name | urlencode }}/{{ topic | urlencode }}/">{{ topic }}</a> ({{ records | length }})</li>
 {% endfor %}
