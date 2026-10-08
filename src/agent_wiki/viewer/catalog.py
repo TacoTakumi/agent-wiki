@@ -7,7 +7,8 @@ optional override entry alone, so tests drive it without any config.
 
 `index_vault` lists one vault's pages per topic plus its title-to-URL map, and
 `resolve_page` maps a URL path back to a page file, admitting only files under
-a wiki.yaml topic folder. A page's URL path is its vault-relative path without
+a wiki.yaml topic folder. The conversations topic is not served: its session
+pages are not listed and do not resolve. A page's URL path is its vault-relative path without
 `.md` (`research/foo`, `research/sub/bar`); the routes serve it under
 `/vaults/<name>/`.
 """
@@ -121,6 +122,15 @@ def is_utf8(text: str) -> bool:
     return True
 
 
+def served_topics(vault_dir: Path) -> list:
+    """The wiki.yaml topics the viewer serves, in wiki.yaml order: every topic
+    except the conversations topic, read with the default conversation ingest
+    uses ('sessions')."""
+    config = load_vault_config(vault_dir)
+    sessions = (config.get("conversations") or {}).get("topic", "sessions")
+    return [topic for topic in config.get("topics", []) if topic != sessions]
+
+
 def index_vault(vault_dir: Path) -> VaultIndex:
     """Index one vault's topic pages. The page rule is rebuild_index's (a .md
     file with frontmatter anywhere under a wiki.yaml topic folder, title
@@ -130,7 +140,7 @@ def index_vault(vault_dir: Path) -> VaultIndex:
     root = vault_dir.resolve()
     topics = {}
     titles = {}
-    for topic in load_vault_config(vault_dir).get("topics", []):
+    for topic in served_topics(vault_dir):
         topic_dir = vault_dir / topic
         if not topic_dir.is_dir():
             continue
@@ -168,7 +178,7 @@ def index_vault(vault_dir: Path) -> VaultIndex:
 
 def resolve_page(vault_dir: Path, url_path: str) -> "Path | None":
     """The page file a URL path names, or None when the viewer must not serve
-    it. The first segment must be a wiki.yaml topic and at least one segment
+    it. The first segment must be a served topic and at least one segment
     must follow; empty, '.' and '..' segments and NUL bytes are refused; the
     file is `<url_path>.md` and must stay under that topic folder with
     symlinks followed. So raw/, wiki.yaml, log.md, index.md, non-topic
@@ -181,7 +191,7 @@ def resolve_page(vault_dir: Path, url_path: str) -> "Path | None":
             or any(part in ("", ".", "..") for part in parts)):
         return None
     topic = parts[0]
-    if topic not in load_vault_config(vault_dir).get("topics", []):
+    if topic not in served_topics(vault_dir):
         return None
     candidate = vault_dir.joinpath(*parts[:-1], parts[-1] + ".md")
     if not _inside(candidate, vault_dir.resolve() / topic):

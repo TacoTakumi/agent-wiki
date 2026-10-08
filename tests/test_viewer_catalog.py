@@ -341,3 +341,50 @@ def test_index_skips_page_it_cannot_read(tmp_vault):
     finally:
         locked.chmod(0o644)
     assert [rec.title for rec in index.topics["research"]] == ["Good"]
+
+
+def _with_conversations_topic(vault, topic, block=True):
+    """Add `topic` to wiki.yaml's topics, with a conversations block naming
+    it when `block` is True, and make its folder."""
+    import yaml
+    config = yaml.safe_load((vault / "wiki.yaml").read_text())
+    config["topics"].append(topic)
+    if block:
+        config["conversations"] = {"topic": topic, "include_live": False}
+    (vault / "wiki.yaml").write_text(yaml.dump(config))
+    (vault / topic).mkdir()
+
+
+@pytest.mark.parametrize("topic,block", [("chats", True), ("sessions", False)])
+def test_index_leaves_out_the_conversations_topic(tmp_vault, topic, block):
+    from agent_wiki.viewer.catalog import index_vault
+
+    _with_conversations_topic(tmp_vault, topic, block)
+    _write_page(tmp_vault / topic / "s.md", "Session", tags=["x"])
+    _write_page(tmp_vault / "research" / "a.md", "Alpha", tags=["x"])
+
+    index = index_vault(tmp_vault)
+
+    assert topic not in index.topics
+    assert index.titles == {"Alpha": "research/a"}
+
+
+def test_resolve_page_refuses_conversations_topic_pages(tmp_vault):
+    from agent_wiki.viewer.catalog import resolve_page
+
+    _with_conversations_topic(tmp_vault, "sessions")
+    _write_page(tmp_vault / "sessions" / "s.md", "Session")
+
+    assert resolve_page(tmp_vault, "sessions/s") is None
+
+
+def test_conversations_topic_name_not_in_topics_hides_nothing(tmp_vault):
+    from agent_wiki.viewer.catalog import index_vault
+    import yaml
+
+    config = yaml.safe_load((tmp_vault / "wiki.yaml").read_text())
+    config["conversations"] = {"topic": "sessions"}
+    (tmp_vault / "wiki.yaml").write_text(yaml.dump(config))
+
+    assert list(index_vault(tmp_vault).topics) == [
+        "projects", "decisions", "research", "tools"]
