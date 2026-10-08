@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Vaults</h1>
+{% if catalog.vaults %}
+<ul>
+{% for name in catalog.vaults %}
+<li><a href="/vaults/{{ name | urlencode }}/">{{ name }}</a></li>
+{% endfor %}
+</ul>
+{% else %}
+<p>No local vaults to serve.</p>
+{% endif %}
+{% if catalog.unavailable %}
+<h2>Unavailable</h2>
+<p>These local vaults have no directory on disk:</p>
+<ul>
+{% for name in catalog.unavailable %}
+<li>{{ name }} (unavailable)</li>
+{% endfor %}
+</ul>
+{% endif %}
+{% if catalog.skipped_remote %}
+<p>{{ catalog.skipped_remote }} remote vault{{ "s" if catalog.skipped_remote != 1 }} skipped: the viewer serves local vaults only.</p>
+{% endif %}
+{% endblock %}

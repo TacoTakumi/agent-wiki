@@ -1613,7 +1613,9 @@ def tag_fix(path, topic, write):
 @cli.command()
 @click.option("--bind", default=None, help="Bind address (default from server.yaml or 127.0.0.1).")
 @click.option("--port", default=None, type=int, help="Port (default from server.yaml or 8731).")
-def serve(bind, port):
+@click.option("--viewer", is_flag=True,
+              help="Also serve a read-only HTML viewer of the local registry vaults at /.")
+def serve(bind, port, viewer):
     """Run the agent-wiki HTTP server for the LOCAL vault (server host)."""
     import uvicorn
     from agent_wiki.server_config import load_server_config
@@ -1626,6 +1628,10 @@ def serve(bind, port):
     if not server_config["tokens"]:
         click.echo("WARNING: no tokens configured; all requests will be rejected. "
                    "Run 'awiki token add ...' first.", err=True)
-    app = create_app(vault_path, server_config)
+    catalog = None
+    if viewer:
+        from agent_wiki.viewer.catalog import load_vault_catalog
+        catalog = load_vault_catalog()
+    app = create_app(vault_path, server_config, viewer=catalog)
     click.echo(f"Serving vault {vault_path} on http://{host}:{bind_port}")
     uvicorn.run(app, host=host, port=bind_port)
