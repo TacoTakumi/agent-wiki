@@ -928,3 +928,87 @@ def test_breadcrumb_on_page_view_links_both_parts(nav_viewer):
 @pytest.mark.parametrize("url", ["/", "/search"])
 def test_no_breadcrumb_on_the_vault_list_or_search(nav_viewer, url):
     assert 'class="crumbs"' not in nav_viewer.get(url).text
+
+
+def listing_box(html):
+    """A topic or tag listing's row box, as its markup."""
+    box = re.search(r'<div class="box">(.*?)</div>', html, re.S)
+    assert box, "no row box"
+    return box.group(1)
+
+
+def listing_rows(html):
+    """A listing's rows as (href, title, date), in order."""
+    rows = re.search(r'<ul class="rows">(.*?)</ul>', listing_box(html), re.S)
+    assert rows, "no rows in the box"
+    return re.findall(r'<li><a class="title" href="([^"]*)">([^<]*)</a>'
+                      r'<time>([^<]*)</time></li>', rows.group(1))
+
+
+def test_topic_listing_lays_out_a_row_box_newest_first(nav_viewer):
+    assert listing_rows(nav_viewer.get("/vaults/main/research/").text) == [
+        ("/vaults/main/research/bar", "Bar", "2026-01-02"),
+        ("/vaults/main/research/foo", "Foo", "2026-01-01"),
+    ]
+
+
+def test_tag_listing_lays_out_a_row_box_newest_first(nav_viewer):
+    assert listing_rows(nav_viewer.get("/vaults/main/-/tags/alpha").text) == [
+        ("/vaults/main/tools/hammer", "Hammer", "2026-01-03"),
+        ("/vaults/main/research/foo", "Foo", "2026-01-01"),
+    ]
+
+
+def test_topic_listing_subtitle_counts_pages_newest_first(nav_viewer):
+    html = nav_viewer.get("/vaults/main/research/").text
+    assert '<p class="page-sub">2 pages, newest first</p>' in html
+    html = nav_viewer.get("/vaults/main/tools/").text
+    assert '<p class="page-sub">1 page, newest first</p>' in html
+
+
+def test_tag_listing_subtitle_names_the_tag(nav_viewer):
+    html = nav_viewer.get("/vaults/main/-/tags/alpha").text
+    assert '<p class="page-sub">Pages tagged alpha, newest first</p>' in html
+
+
+@pytest.mark.parametrize("url", ["/vaults/main/research/",
+                                 "/vaults/main/-/tags/alpha"])
+def test_listing_has_no_old_list_markup(nav_viewer, url):
+    html = nav_viewer.get(url).text
+    assert '<ul class="pages">' not in html
+    assert "<small>" not in html
+
+
+def test_topic_listing_pager_sits_under_the_box_on_51_pages(viewer, catalog):
+    main = catalog.vaults["main"]
+    for n in range(51):
+        (main / "research" / f"p{n:02d}.md").write_text(dated_page(
+            f"Page {n:02d}", "research",
+            updated=f"2026-{n // 28 + 1:02d}-{n % 28 + 1:02d}"))
+    html = viewer.get("/vaults/main/research/").text
+    rows = listing_rows(html)
+    assert len(rows) == 50
+    assert rows[0][0] == "/vaults/main/research/p50"
+    pager = re.search(r'<nav class="pager" aria-label="Pages">(.*?)</nav>',
+                      html, re.S)
+    assert pager, "no pager"
+    assert "<span>Page 1 of 2</span>" in pager.group(1)
+    assert 'rel="next" href="?page=2"' in pager.group(1)
+    assert html.index('<div class="box">') < pager.start()
+    assert re.search(r"</ul>\s*</div>", html).end() < pager.start()
+
+
+def test_topic_listing_without_a_pager_under_51_pages(nav_viewer):
+    assert 'class="pager"' not in nav_viewer.get("/vaults/main/research/").text
+
+
+def test_empty_topic_listing_keeps_its_text_in_the_box(viewer):
+    box = listing_box(viewer.get("/vaults/main/projects/").text)
+    assert "No pages in this topic." in box
+    assert '<ul class="rows">' not in box
+
+
+def test_empty_tag_listing_keeps_its_text_in_the_box(viewer):
+    box = listing_box(viewer.get("/vaults/main/-/tags/nosuchtag").text)
+    assert "No pages have this tag." in box
+    assert '<ul class="rows">' not in box

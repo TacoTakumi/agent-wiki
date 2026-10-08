@@ -1,14 +1,18 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Tag: {{ tag }}</h1>
 {% if pages %}
-<ul class="pages">
+<p class="page-sub">Pages tagged {{ tag }}, newest first</p>
+{% endif %}
+<div class="box">
+{% if pages %}
+<ul class="rows">
 {% for rec in pages %}
-<li><a href="{{ page_url(name, rec.url_path) }}">{{ rec.title }}</a>{% if rec.updated or rec.created %} <small>{{ rec.updated or rec.created }}</small>{% endif %}</li>
+<li><a class="title" href="{{ page_url(name, rec.url_path) }}">{{ rec.title }}</a>{% if rec.updated or rec.created %}<time>{{ rec.updated or rec.created }}</time>{% endif %}</li>
 {% endfor %}
 </ul>
 {% else %}
-<p>No pages have this tag.</p>
+<p class="notice body-pad">No pages have this tag.</p>
 {% endif %}
+</div>
 {% include "_pager.html" %}
 {% endblock %}
