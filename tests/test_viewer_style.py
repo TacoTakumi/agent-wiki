@@ -367,3 +367,168 @@ def test_search_query_is_escaped(viewer):
     assert resp.status_code == 200
     assert "&lt;b&gt;x&lt;/b&gt;" in resp.text
     assert "<b>x</b>" not in resp.text
+
+
+# ---------- The vendored body stylesheet follows the viewer's theme ----------
+
+# The colour variables github-markdown-css 5.9.0 sets in both its
+# prefers-color-scheme blocks, as (light value, dark value). Every one is in
+# both blocks upstream.
+UPSTREAM_COLOUR_SETS = {
+    "--bgColor-attention-muted": ("#fff8c5", "#bb800926"),
+    "--bgColor-default": ("#ffffff", "#0d1117"),
+    "--bgColor-muted": ("#f6f8fa", "#151b23"),
+    "--bgColor-neutral-muted": ("#818b981f", "#656c7633"),
+    "--borderColor-accent-emphasis": ("#0969da", "#1f6feb"),
+    "--borderColor-attention-emphasis": ("#9a6700", "#9e6a03"),
+    "--borderColor-danger-emphasis": ("#cf222e", "#da3633"),
+    "--borderColor-default": ("#d1d9e0", "#3d444d"),
+    "--borderColor-done-emphasis": ("#8250df", "#8957e5"),
+    "--borderColor-muted": ("#d1d9e0b3", "#3d444db3"),
+    "--borderColor-neutral-muted": ("var(--borderColor-muted)", "var(--borderColor-muted)"),
+    "--borderColor-success-emphasis": ("#1a7f37", "#238636"),
+    "--color-prettylights-syntax-brackethighlighter-angle": ("#59636e", "#9198a1"),
+    "--color-prettylights-syntax-brackethighlighter-unmatched": ("#82071e", "#f85149"),
+    "--color-prettylights-syntax-carriage-return-bg": ("#cf222e", "#b62324"),
+    "--color-prettylights-syntax-carriage-return-text": ("#f6f8fa", "#f0f6fc"),
+    "--color-prettylights-syntax-comment": ("#59636e", "#9198a1"),
+    "--color-prettylights-syntax-constant": ("#0550ae", "#79c0ff"),
+    "--color-prettylights-syntax-constant-other-reference-link": ("#0a3069", "#a5d6ff"),
+    "--color-prettylights-syntax-entity": ("#6639ba", "#d2a8ff"),
+    "--color-prettylights-syntax-entity-tag": ("#0550ae", "#7ee787"),
+    "--color-prettylights-syntax-invalid-illegal-bg": ("var(--bgColor-danger-muted)", "var(--bgColor-danger-muted)"),
+    "--color-prettylights-syntax-invalid-illegal-text": ("var(--fgColor-danger)", "var(--fgColor-danger)"),
+    "--color-prettylights-syntax-keyword": ("#cf222e", "#ff7b72"),
+    "--color-prettylights-syntax-markup-bold": ("#1f2328", "#f0f6fc"),
+    "--color-prettylights-syntax-markup-changed-bg": ("#ffd8b5", "#5a1e02"),
+    "--color-prettylights-syntax-markup-changed-text": ("#953800", "#ffdfb6"),
+    "--color-prettylights-syntax-markup-deleted-bg": ("#ffebe9", "#67060c"),
+    "--color-prettylights-syntax-markup-deleted-text": ("#82071e", "#ffdcd7"),
+    "--color-prettylights-syntax-markup-heading": ("#0550ae", "#1f6feb"),
+    "--color-prettylights-syntax-markup-ignored-bg": ("#0550ae", "#1158c7"),
+    "--color-prettylights-syntax-markup-ignored-text": ("#d1d9e0", "#f0f6fc"),
+    "--color-prettylights-syntax-markup-inserted-bg": ("#dafbe1", "#033a16"),
+    "--color-prettylights-syntax-markup-inserted-text": ("#116329", "#aff5b4"),
+    "--color-prettylights-syntax-markup-italic": ("#1f2328", "#f0f6fc"),
+    "--color-prettylights-syntax-markup-list": ("#3b2300", "#f2cc60"),
+    "--color-prettylights-syntax-meta-diff-range": ("#8250df", "#d2a8ff"),
+    "--color-prettylights-syntax-storage-modifier-import": ("#1f2328", "#f0f6fc"),
+    "--color-prettylights-syntax-string": ("#0a3069", "#a5d6ff"),
+    "--color-prettylights-syntax-string-regexp": ("#116329", "#7ee787"),
+    "--color-prettylights-syntax-sublimelinter-gutter-mark": ("#818b98", "#3d444d"),
+    "--color-prettylights-syntax-variable": ("#953800", "#ffa657"),
+    "--fgColor-accent": ("#0969da", "#4493f8"),
+    "--fgColor-attention": ("#9a6700", "#d29922"),
+    "--fgColor-danger": ("#d1242f", "#f85149"),
+    "--fgColor-default": ("#1f2328", "#f0f6fc"),
+    "--fgColor-done": ("#8250df", "#ab7df8"),
+    "--fgColor-muted": ("#59636e", "#9198a1"),
+    "--fgColor-success": ("#1a7f37", "#3fb950"),
+    "--focus-outlineColor": ("var(--borderColor-accent-emphasis)", "var(--borderColor-accent-emphasis)"),
+}
+
+# The core colours point at the viewer's own tokens instead.
+CORE_COLOURS = {
+    "--fgColor-default": "var(--fg)",
+    "--fgColor-muted": "var(--fg-muted)",
+    "--fgColor-accent": "var(--accent)",
+    "--bgColor-default": "var(--bg)",
+    "--bgColor-muted": "var(--bg-muted)",
+    "--borderColor-default": "var(--border)",
+    "--borderColor-muted": "var(--border-muted)",
+}
+
+
+def expected_markdown_colours() -> dict[str, str]:
+    """What each upstream two-set variable becomes after the merge: a core
+    colour is its viewer token, a value equal in both sets stays that value,
+    any other is light-dark(light, dark)."""
+    out = {}
+    for name, (light, dark) in UPSTREAM_COLOUR_SETS.items():
+        if name in CORE_COLOURS:
+            out[name] = CORE_COLOURS[name]
+        elif light == dark:
+            out[name] = light
+        else:
+            out[name] = f"light-dark({light}, {dark})"
+    return out
+
+
+def markdown_rules():
+    return css_rules(css("github-markdown.css"))
+
+
+def markdown_colour_block() -> dict[str, str]:
+    """The one .markdown-body rule, outside any media query, that holds the
+    merged colour set."""
+    blocks = [declarations(body) for media, selector, body in markdown_rules()
+              if media is None and selector == ".markdown-body"
+              and "light-dark(" in body]
+    assert len(blocks) == 1
+    return blocks[0]
+
+
+def test_markdown_css_has_no_prefers_color_scheme_query():
+    assert "prefers-color-scheme" not in css("github-markdown.css")
+    for media, selector, body in markdown_rules():
+        assert media is None, (media, selector)
+
+
+def test_markdown_colour_sets_merge_into_one_light_dark_set():
+    block = markdown_colour_block()
+    colours = {name: value for name, value in block.items()
+               if name.startswith("--")}
+    assert colours == expected_markdown_colours()
+    assert len(colours) == len(UPSTREAM_COLOUR_SETS) == 50
+
+
+@pytest.mark.parametrize("name", [
+    "--bgColor-attention-muted", "--borderColor-danger-emphasis",
+    "--color-prettylights-syntax-keyword", "--color-prettylights-syntax-string",
+    "--fgColor-danger", "--fgColor-success",
+])
+def test_markdown_colours_keep_the_upstream_pair(name):
+    light, dark = UPSTREAM_COLOUR_SETS[name]
+    assert markdown_colour_block()[name] == f"light-dark({light}, {dark})"
+
+
+def test_markdown_merged_values_are_pairs_or_viewer_tokens():
+    upstream_same = {light for light, dark in UPSTREAM_COLOUR_SETS.values()
+                     if light == dark}
+    for name, value in markdown_colour_block().items():
+        if not name.startswith("--"):
+            continue
+        assert (value.startswith("light-dark(")
+                or value == CORE_COLOURS.get(name)
+                or value in upstream_same), (name, value)
+
+
+@pytest.mark.parametrize("name", sorted(CORE_COLOURS))
+def test_markdown_core_colours_use_the_viewer_tokens(name):
+    assert markdown_colour_block()[name] == CORE_COLOURS[name]
+
+
+def test_markdown_colour_variables_are_defined_once():
+    for name in UPSTREAM_COLOUR_SETS:
+        count = sum(name in declarations(body)
+                    for media, selector, body in markdown_rules())
+        assert count == 1, (name, count)
+
+
+def test_markdown_body_forces_no_color_scheme():
+    for media, selector, body in markdown_rules():
+        assert "color-scheme" not in declarations(body), (media, selector)
+    assert "color-scheme" not in css("github-markdown.css")
+
+
+def test_markdown_header_says_the_file_is_modified():
+    header = css("github-markdown.css").splitlines()[0]
+    assert "github-markdown-css v5.9.0" in header and "MIT" in header
+    assert "modified" in header and "light-dark()" in header
+
+
+def test_licences_record_the_markdown_colour_merge():
+    notices = css("LICENSES.md")
+    assert "light-dark()" in notices
+    assert "two colour sets" in notices and "merged" in notices
+    assert "viewer tokens" in notices
