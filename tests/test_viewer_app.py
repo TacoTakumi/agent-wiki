@@ -245,13 +245,6 @@ def home_pages(catalog):
     return main
 
 
-def test_vault_home_shows_topics_with_page_counts(viewer, home_pages):
-    html = viewer.get("/vaults/main/").text
-    assert '<a href="/vaults/main/research/">research</a> (20)' in html
-    assert '<a href="/vaults/main/tools/">tools</a> (5)' in html
-    assert '<a href="/vaults/main/projects/">projects</a> (0)' in html
-
-
 def test_vault_home_lists_the_20_most_recent_pages(viewer, home_pages):
     links = page_links(viewer.get("/vaults/main/").text)
     expected = []
@@ -262,10 +255,14 @@ def test_vault_home_lists_the_20_most_recent_pages(viewer, home_pages):
 
 
 def test_vault_home_has_a_search_form_for_this_vault(viewer, home_pages):
-    html = viewer.get("/vaults/main/").text
-    assert '<form method="get" action="/search">' in html
-    assert 'name="q"' in html
-    assert '<input type="hidden" name="vault" value="main">' in html
+    side = sidebar(viewer.get("/vaults/main/").text)
+    form = re.search(r'<form class="side-search" method="get" '
+                     r'action="/search" role="search">(.*?)</form>', side,
+                     re.S)
+    assert form, "no sidebar search form"
+    assert 'name="q"' in form.group(1)
+    assert ('<input type="hidden" name="vault" value="main">'
+            in form.group(1))
 
 
 def record(title, updated="", created=""):
@@ -841,6 +838,66 @@ def test_breadcrumb_on_vault_home(nav_viewer):
         ("Vaults", "/", False),
         ("main", None, True),
     ]
+
+
+def recent_box(html):
+    """The Recently updated box's rows as (href, title, topic, date)."""
+    box = re.search(r'<div class="box">\s*<div class="box-head">Recently '
+                    r'updated</div>\s*<ul class="rows">(.*?)</ul>', html,
+                    re.S)
+    assert box, "no Recently updated box"
+    return re.findall(r'<li><a class="title" href="([^"]*)">([^<]*)</a>'
+                      r'<span class="topic-tag">([^<]*)</span>'
+                      r'<time>([^<]*)</time></li>', box.group(1))
+
+
+def sidebar(html):
+    """The vault home's sidebar markup, beside the main column."""
+    side = re.search(r'<div class="layout">.*?<aside>(.*?)</aside>', html,
+                     re.S)
+    assert side, "no sidebar in a .layout grid"
+    return side.group(1)
+
+
+def about_block(html):
+    """The sidebar About block as {term: value}."""
+    about = re.search(r'<div class="side-section">\s*<h2>About</h2>\s*'
+                      r'<dl>(.*?)</dl>', sidebar(html), re.S)
+    assert about, "no About block"
+    return dict(re.findall(r"<dt>([^<]*)</dt>\s*<dd>([^<]*)</dd>",
+                           about.group(1)))
+
+
+def test_vault_home_lists_recently_updated_rows_newest_first(nav_viewer):
+    assert recent_box(nav_viewer.get("/vaults/main/").text) == [
+        ("/vaults/main/tools/hammer", "Hammer", "tools", "2026-01-03"),
+        ("/vaults/main/research/bar", "Bar", "research", "2026-01-02"),
+        ("/vaults/main/research/foo", "Foo", "research", "2026-01-01"),
+    ]
+
+
+def test_vault_home_about_block_counts_pages_topics_and_newest_date(
+        nav_viewer):
+    assert about_block(nav_viewer.get("/vaults/main/").text) == {
+        "Pages": "3", "Topics": "2", "Updated": "2026-01-03"}
+
+
+def test_vault_home_topic_count_includes_empty_topics_like_the_tabs(viewer):
+    # make_vault lists four topics, all present as (empty) folders; the tab
+    # row shows all four, so About counts four too.
+    html = viewer.get("/vaults/main/").text
+    assert about_block(html) == {"Pages": "0", "Topics": "4"}
+    assert "No pages yet." in html
+
+
+def test_vault_home_has_no_topics_list_outside_the_tab_row(nav_viewer):
+    html = nav_viewer.get("/vaults/main/").text
+    rest = re.sub(r'<nav class="tabs" aria-label="Topics">.*?</nav>', "",
+                  html, flags=re.S)
+    assert '<nav class="tabs"' in html
+    assert 'href="/vaults/main/research/"' not in rest
+    assert 'href="/vaults/main/tools/"' not in rest
+    assert '<ul class="topics">' not in rest
 
 
 def test_breadcrumb_on_topic_listing(nav_viewer):
