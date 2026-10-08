@@ -2,6 +2,8 @@ import subprocess
 import shutil
 from pathlib import Path
 
+import yaml
+
 from agent_wiki.page import parse_page
 
 # Files/dirs that are never search results.
@@ -84,7 +86,12 @@ def _search_python(
         if _skip(rel):
             continue
 
-        content = md_file.read_text()
+        # Undecodable bytes are replaced, as ripgrep matches such a file
+        # too; a file that cannot be read at all is passed over.
+        try:
+            content = md_file.read_text(errors="replace")
+        except OSError:
+            continue
         matching = [
             line.strip()
             for line in content.splitlines()
@@ -94,6 +101,19 @@ def _search_python(
             file_matches[str(md_file)] = matching
 
     return file_matches
+
+
+def _title(path: Path) -> str:
+    """A hit's title from its frontmatter, or the file stem when the
+    frontmatter cannot be read: the text still matched, so one broken page
+    is listed rather than failing the whole search."""
+    try:
+        meta = parse_page(path)["meta"]
+    except (yaml.YAMLError, UnicodeDecodeError, OSError):
+        return path.stem
+    if not isinstance(meta, dict):
+        return path.stem
+    return meta.get("title", path.stem)
 
 
 def _rank(
@@ -125,8 +145,7 @@ def _rank(
         if coverage == 0:
             continue
 
-        page = parse_page(path)
-        title = page["meta"].get("title", path.stem)
+        title = _title(path)
         results.append({
             "title": title,
             "path": str(rel),

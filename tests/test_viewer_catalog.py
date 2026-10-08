@@ -290,3 +290,18 @@ def test_index_skips_page_with_unreadable_frontmatter(tmp_vault, filename):
     index = index_vault(tmp_vault)
     assert [rec.title for rec in index.topics["research"]] == ["Good"]
     assert index.titles == {"Good": "research/good"}
+
+
+def test_index_skips_page_it_cannot_read(tmp_vault):
+    import os
+    from agent_wiki.viewer.catalog import index_vault
+    _write_page(tmp_vault / "research" / "good.md", "Good")
+    locked = _write_page(tmp_vault / "research" / "locked.md", "Locked")
+    locked.chmod(0)
+    try:
+        if os.access(locked, os.R_OK):
+            pytest.skip("running with permission to read any file")
+        index = index_vault(tmp_vault)
+    finally:
+        locked.chmod(0o644)
+    assert [rec.title for rec in index.topics["research"]] == ["Good"]
