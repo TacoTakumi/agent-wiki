@@ -1,6 +1,7 @@
 """Viewer catalog: which vaults the viewer serves, built from the registry or
 a vault override, with remote entries skipped and missing paths unavailable."""
 
+import pytest
 from pathlib import Path
 
 from agent_wiki.registry import VaultEntry
@@ -269,3 +270,23 @@ def test_resolve_page_refuses_everything_outside_topic_folders(tmp_vault,
         "research/al\0pha",
     ]:
         assert resolve_page(tmp_vault, url_path) is None, url_path
+
+
+# A page whose frontmatter cannot be read is left out, so one bad file never
+# takes the rest of the vault down with it.
+BAD_FRONTMATTER = {
+    "malformed.md": b"---\ntitle: [unclosed\n---\nbody\n",
+    "listblock.md": b"---\n- a\n- b\n---\nbody\n",
+    "stringblock.md": b"---\njust a string\n---\nbody\n",
+    "latin1.md": "---\ntitle: Caf\xe9\n---\nbody\n".encode("latin-1"),
+}
+
+
+@pytest.mark.parametrize("filename", sorted(BAD_FRONTMATTER))
+def test_index_skips_page_with_unreadable_frontmatter(tmp_vault, filename):
+    from agent_wiki.viewer.catalog import index_vault
+    _write_page(tmp_vault / "research" / "good.md", "Good")
+    (tmp_vault / "research" / filename).write_bytes(BAD_FRONTMATTER[filename])
+    index = index_vault(tmp_vault)
+    assert [rec.title for rec in index.topics["research"]] == ["Good"]
+    assert index.titles == {"Good": "research/good"}

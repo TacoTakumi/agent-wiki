@@ -15,6 +15,8 @@ a wiki.yaml topic folder. A page's URL path is its vault-relative path without
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import yaml
+
 from agent_wiki.config import load_vault_config
 from agent_wiki.page import parse_page
 
@@ -121,8 +123,14 @@ def index_vault(vault_dir: Path) -> VaultIndex:
         for md_file in sorted(topic_dir.rglob("*.md")):
             if not _inside(md_file, root / topic):
                 continue
-            meta = parse_page(md_file)["meta"]
-            if not meta:
+            # A page whose frontmatter cannot be read (bad YAML, a block that
+            # is not a mapping, not UTF-8) is left out, so one broken file
+            # does not take every listing and page view down with it.
+            try:
+                meta = parse_page(md_file)["meta"]
+            except (yaml.YAMLError, UnicodeDecodeError):
+                continue
+            if not meta or not isinstance(meta, dict):
                 continue
             tags = meta.get("tags") or []
             record = PageRecord(
