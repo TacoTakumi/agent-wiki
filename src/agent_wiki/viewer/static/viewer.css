@@ -89,7 +89,6 @@ main.container { padding-bottom: 48px; }
   border-bottom: 1px solid var(--border); }
 .site-header .container { display: flex; align-items: center; gap: 16px; min-height: 56px;
   flex-wrap: wrap; padding-block: 8px; }
-.site-header nav a { color: var(--fg); font-weight: 600; }
 .site-header form[role=search] { margin-left: auto; display: flex; gap: 6px; flex: 0 1 340px; }
 .site-header form[role=search] input { flex: 1; min-width: 0; }
 .brand { display: flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600;
@@ -106,6 +105,8 @@ main.container { padding-bottom: 48px; }
   border: 0; border-radius: 0; padding: 4px 9px; min-height: 0; cursor: pointer; }
 .theme button + button { border-left: 1px solid var(--border); }
 .theme button[aria-pressed=true] { color: var(--fg); background: var(--bg-muted); font-weight: 600; }
+/* The switch clips its overflow, so the focus ring sits inside the button. */
+.theme button:focus-visible { outline-offset: -2px; border-radius: 0; }
 @media (max-width: 767px) {
   .header-search,
   .site-header form[role=search] { order: 3; flex: 1 0 100%; margin-left: 0; }
