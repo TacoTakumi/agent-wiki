@@ -13,7 +13,9 @@ from agent_wiki.server.auth import make_require
 from agent_wiki.server.routes import build_router
 
 
-def create_app(vault_path: Path, server_config: dict) -> FastAPI:
+def create_app(vault_path: Path, server_config: dict, viewer=None) -> FastAPI:
+    """Build the API app for one vault. `viewer` is a VaultCatalog: given one,
+    the HTML viewer routes are mounted too; without it they do not exist."""
     app = FastAPI(title="Agent Wiki", version="1")
     svc = LocalVaultService(vault_path)
     require = make_require(server_config)
@@ -49,4 +51,7 @@ def create_app(vault_path: Path, server_config: dict) -> FastAPI:
         return JSONResponse(status_code=500, content={"detail": "internal error"})
 
     app.include_router(build_router(svc, require))
+    if viewer is not None:
+        from agent_wiki.viewer.routes import build_viewer_router
+        app.include_router(build_viewer_router(viewer))
     return app
