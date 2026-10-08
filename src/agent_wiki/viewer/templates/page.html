@@ -1,26 +1,42 @@
 {% extends "base.html" %}
 {% block content %}
-<article>
-<header>
-<h1>{{ page.title }}</h1>
-<dl>
-<dt>Topic</dt><dd>{{ page.topic }}</dd>
-{% if page.created %}<dt>Created</dt><dd>{{ page.created }}</dd>{% endif %}
-{% if page.updated %}<dt>Updated</dt><dd>{{ page.updated }}</dd>{% endif %}
-{% if page.tags %}<dt>Tags</dt><dd><ul class="tags">{% for tag in page.tags %}<li><a href="{{ tag_url(name, tag) }}">{{ tag }}</a></li>{% endfor %}</ul></dd>{% endif %}
-</dl>
-</header>
+<h1 class="page-title">{{ page.title }}</h1>
+{% if page.updated %}
+<p class="page-sub">Updated {{ page.updated }}</p>
+{% endif %}
+<div class="page-layout">
+<article class="box">
+<div class="box-head"><span class="file-head">{{ page.url_path }}.md</span></div>
 {# The body is sanitised by render_markdown; nothing else here is trusted. #}
-<div class="markdown-body">{{ body | safe }}</div>
+<div class="markdown-body body-pad">{{ body | safe }}</div>
+</article>
+<aside class="meta">
+<div class="side-section">
+<h2>About</h2>
+<dl>
+<div><dt>Topic</dt><dd><a href="{{ topic_url(name, page.topic) }}">{{ page.topic }}</a></dd></div>
+{% if page.created %}<div><dt>Created</dt><dd>{{ page.created }}</dd></div>{% endif %}
+{% if page.updated %}<div><dt>Updated</dt><dd>{{ page.updated }}</dd></div>{% endif %}
+</dl>
+</div>
+{% if page.tags %}
+<div class="side-section">
+<h2>Tags</h2>
+<ul class="tags">{% for tag in page.tags %}<li><a href="{{ tag_url(name, tag) }}">{{ tag }}</a></li>{% endfor %}</ul>
+</div>
+{% endif %}
+</aside>
 {% if sources %}
-<footer>
+<aside class="src">
+<div class="side-section">
 <h2>Sources</h2>
-<ul>
+<ul class="sources">
 {% for text, is_link in sources %}
 <li>{% if is_link %}<a href="{{ text }}">{{ text }}</a>{% else %}{{ text }}{% endif %}</li>
 {% endfor %}
 </ul>
-</footer>
+</div>
+</aside>
 {% endif %}
-</article>
+</div>
 {% endblock %}

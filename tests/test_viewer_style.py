@@ -348,11 +348,13 @@ def test_frame_carries_the_mockup_classes(selector):
 
 def test_page_body_sits_inside_markdown_body(viewer):
     html = viewer.get("/vaults/main/research/foo").text
-    start = html.index('<div class="markdown-body">')
-    assert start < html.index("Body text here.") < html.index("<footer>")
-    assert start < html.index("<table>") < html.index("<footer>")
-    # The page header (title and metadata) stays outside the body wrapper.
-    assert html.index("<h1>Foo Page</h1>") < start
+    start = html.index('<div class="markdown-body body-pad">')
+    end = html.index("</article>")
+    assert start < html.index("Body text here.") < end
+    assert start < html.index("<table>") < end
+    # The title and the sidebar metadata stay outside the body wrapper.
+    assert html.index('<h1 class="page-title">Foo Page</h1>') < start
+    assert end < html.index('<aside class="meta">')
 
 
 def test_frontmatter_title_is_escaped(viewer):

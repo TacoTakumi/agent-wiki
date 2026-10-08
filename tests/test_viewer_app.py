@@ -212,6 +212,76 @@ def test_unservable_paths_return_404(viewer, pages, path):
     assert viewer.get(f"/vaults/main/{path}").status_code == 404
 
 
+def page_part(html, pattern):
+    """The inner markup of the first match of `pattern` (one group)."""
+    found = re.search(pattern, html, re.S)
+    assert found, f"no match for {pattern}"
+    return found.group(1)
+
+
+def side_section(html, heading):
+    """A page view sidebar section's markup under its h2 heading; `html` is
+    one aside's inner markup, so a section ends where the next one starts or
+    at the end."""
+    return page_part(html, r'<div class="side-section">\s*<h2>'
+                     + re.escape(heading) + r'</h2>(.*?)</div>\s*'
+                     r'(?=<div class="side-section">|\Z)')
+
+
+def test_page_view_lays_out_path_box_about_tags_and_sources(viewer, pages):
+    html = viewer.get("/vaults/main/research/foo").text
+    # The title once, with the Updated line under it.
+    assert re.search(r'<h1 class="page-title">Foo Page</h1>\s*'
+                     r'<p class="page-sub">Updated 2026-03-04</p>', html)
+    assert len(re.findall(r"<h1[\s>]", html)) == 1
+    layout = page_part(html, r'<div class="page-layout">(.*)</main>')
+    # The body sits in a box headed by the vault-relative path.
+    article = page_part(layout, r'<article class="box">(.*?)</article>')
+    assert page_part(article, r'<div class="box-head">'
+                     r'<span class="file-head">([^<]*)</span></div>') \
+        == "research/foo.md"
+    body = article.index('<div class="markdown-body body-pad">')
+    assert body < article.index("<table>")
+    # About and Tags in the meta area.
+    meta = page_part(layout, r'<aside class="meta">(.*?)</aside>')
+    about = page_part(side_section(meta, "About"), r"<dl>(.*?)</dl>")
+    assert re.findall(r"<div><dt>([^<]*)</dt><dd>(.*?)</dd></div>",
+                      about) == [
+        ("Topic", '<a href="/vaults/main/research/">research</a>'),
+        ("Created", "2026-01-02"),
+        ("Updated", "2026-03-04"),
+    ]
+    tags = page_part(side_section(meta, "Tags"),
+                     r'<ul class="tags">(.*?)</ul>')
+    assert re.findall(r'<li><a href="([^"]*)">([^<]*)</a></li>', tags) == [
+        ("/vaults/main/-/tags/alpha", "alpha"),
+        ("/vaults/main/-/tags/beta", "beta"),
+    ]
+    # Sources in their own area: web sources as links, raw paths as text.
+    src = page_part(layout, r'<aside class="src">(.*?)</aside>')
+    sources = page_part(side_section(src, "Sources"),
+                        r'<ul class="sources">(.*?)</ul>')
+    assert re.findall(r"<li>(.*?)</li>", sources) == [
+        "raw/x.md",
+        '<a href="https://example.com/a">https://example.com/a</a>',
+    ]
+    assert layout.index("</article>") < layout.index('<aside class="meta">') \
+        < layout.index('<aside class="src">')
+
+
+def test_page_view_without_dates_tags_or_sources_leaves_them_out(viewer,
+                                                                pages):
+    html = viewer.get("/vaults/main/research/sub/bar").text
+    assert 'class="page-sub"' not in html
+    assert page_part(html, r'<span class="file-head">([^<]*)</span>') \
+        == "research/sub/bar.md"
+    meta = page_part(html, r'<aside class="meta">(.*?)</aside>')
+    about = page_part(side_section(meta, "About"), r"<dl>(.*?)</dl>")
+    assert re.findall(r"<dt>([^<]*)</dt>", about) == ["Topic"]
+    assert "<h2>Tags</h2>" not in html
+    assert '<aside class="src">' not in html
+
+
 def test_page_in_an_unserved_vault_returns_404(viewer, pages):
     assert viewer.get("/vaults/team/research/foo").status_code == 404
     assert viewer.get("/vaults/gone/research/foo").status_code == 404
@@ -922,7 +992,8 @@ def test_breadcrumb_on_page_view_links_both_parts(nav_viewer):
         ("main", "/vaults/main/", False),
         ("tools", "/vaults/main/tools/", False),
     ]
-    assert html.index('class="crumbs"') < html.index("<h1>Hammer</h1>")
+    assert html.index('class="crumbs"') < html.index(
+        '<h1 class="page-title">Hammer</h1>')
 
 
 @pytest.mark.parametrize("url", ["/", "/search"])
