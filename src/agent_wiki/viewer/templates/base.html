@@ -37,8 +37,16 @@ Agent Wiki
 {% endfor %}
 </form>
 </div>
+{% if tabs %}
+<div class="container tabs-row">
+<nav class="tabs" aria-label="Topics">{% for tab in tabs %}<a href="{{ tab.url }}"{% if tab.current %} aria-current="page"{% endif %}>{{ tab.label }}{% if tab.count is not none %}<span class="count">{{ tab.count }}</span>{% endif %}</a>{% endfor %}</nav>
+</div>
+{% endif %}
 </header>
 <main class="container">
+{% if crumbs %}
+<nav class="crumbs" aria-label="Breadcrumb">{% for part in crumbs %}{% if not loop.first %}<span class="sep">/</span>{% endif %}{% if part.url %}<a href="{{ part.url }}">{{ part.label }}</a>{% elif part.current %}<span aria-current="page">{{ part.label }}</span>{% else %}<span>{{ part.label }}</span>{% endif %}{% endfor %}</nav>
+{% endif %}
 {% block content %}{% endblock %}
 </main>
 </body>

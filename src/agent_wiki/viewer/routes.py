@@ -60,22 +60,57 @@ def same_site_path(target: str | None) -> str:
 
 
 def render(request: Request, template: str, *, header_vault: str | None = None,
-           header_search: bool = True, **context) -> HTMLResponse:
+           header_search: bool = True, tabs: list | None = None,
+           crumbs: list | None = None, **context) -> HTMLResponse:
     """Render a template from the viewer's templates folder as an HTML
     response. Every page gets the theme context here; the page depends on the
     theme cookie, so the response varies on Cookie.
 
     The header context is built here too: a vault view passes `header_vault`,
     so the header links that vault's home and searches only that vault; any
-    other page gets a search over all vaults unless `header_search` is False."""
-    header_vault_url = (f"/vaults/{quote(header_vault, safe='')}/"
-                        if header_vault else None)
+    other page gets a search over all vaults unless `header_search` is False.
+    A vault view also passes its topic `tabs` and `crumbs` (see vault_nav);
+    base.html shows each only when it is given."""
+    header_vault_url = vault_url(header_vault) if header_vault else None
     html = templates.get_template(template).render(
         theme=current_theme(request), themes=THEMES,
         theme_next=request_target(request), header_vault=header_vault,
         header_vault_url=header_vault_url, header_search=header_search,
-        **context)
+        tabs=tabs, crumbs=crumbs, **context)
     return HTMLResponse(html, headers={"Vary": "Cookie"})
+
+
+def vault_url(name: str) -> str:
+    """The viewer URL of a served vault's home."""
+    return f"/vaults/{quote(name, safe='')}/"
+
+
+def topic_url(name: str, topic: str) -> str:
+    """The viewer URL of a topic listing, the topic quoted whole."""
+    return f"{vault_url(name)}{quote(topic, safe='')}/"
+
+
+# The tab that marks the vault home, as `current` for vault_nav.
+OVERVIEW = object()
+
+
+def vault_nav(name: str, index, current, crumbs: list) -> dict:
+    """The topic tabs and breadcrumb of a vault view, as render() keywords.
+
+    The tabs are Overview (the vault home), then each topic of `index` in
+    wiki.yaml order with its page count, the same records its listing
+    serves. `current` is OVERVIEW, a topic name, or None for no current tab.
+    `crumbs` is a list of (label, url or None); the last part is the current
+    one unless it has a URL, as on a page view, where the title follows."""
+    tabs = [{"label": "Overview", "count": None, "url": vault_url(name),
+             "current": current is OVERVIEW}]
+    tabs += [{"label": topic, "count": len(records),
+              "url": topic_url(name, topic), "current": topic == current}
+             for topic, records in index.topics.items()]
+    parts = [{"label": label, "url": url,
+              "current": url is None and n == len(crumbs) - 1}
+             for n, (label, url) in enumerate(crumbs)]
+    return {"tabs": tabs, "crumbs": parts}
 
 
 def served_vault(catalog: VaultCatalog, name: str):
@@ -186,6 +221,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             topics=index.topics,
             recent=by_recency(every_page)[:RECENT_PAGES],
             page_url=page_url,
+            **vault_nav(name, index, OVERVIEW, [("Vaults", "/"),
+                                                (name, None)]),
         )
 
     @r.get("/search", response_class=HTMLResponse)
@@ -241,6 +278,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             page=page,
             last_page=last,
             page_url=page_url,
+            **vault_nav(name, index, topic, [(name, vault_url(name)),
+                                             (topic, None)]),
         )
 
     # Registered before the page view, which would 404 it: "-" is not a
@@ -263,6 +302,9 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             page=page,
             last_page=last,
             page_url=page_url,
+            # There is no tags index view, so 'tags' links nowhere.
+            **vault_nav(name, index, None, [(name, vault_url(name)),
+                                            ("tags", None), (tag, None)]),
         )
 
     # Registered after the vault home, topic and tag routes, so those keep
@@ -294,6 +336,9 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             tag_url=tag_url,
             body=render_markdown(page["body"], links),
             sources=source_entries(page["meta"].get("sources")),
+            **vault_nav(name, index, topic,
+                        [(name, vault_url(name)),
+                         (topic, topic_url(name, topic))]),
         )
 
     return r
