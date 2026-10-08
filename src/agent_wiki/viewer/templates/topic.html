@@ -1,14 +1,20 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ topic }}</h1>
+{# The topic's page count is its tab's count, the same records listed here. #}
+{% set count = (tabs | selectattr("current") | first).count %}
 {% if pages %}
-<ul class="pages">
+<p class="page-sub">{{ "{:,}".format(count) }} page{{ "" if count == 1 else "s" }}, newest first</p>
+{% endif %}
+<div class="box">
+{% if pages %}
+<ul class="rows">
 {% for rec in pages %}
-<li><a href="{{ page_url(name, rec.url_path) }}">{{ rec.title }}</a>{% if rec.updated or rec.created %} <small>{{ rec.updated or rec.created }}</small>{% endif %}</li>
+<li><a class="title" href="{{ page_url(name, rec.url_path) }}">{{ rec.title }}</a>{% if rec.updated or rec.created %}<time>{{ rec.updated or rec.created }}</time>{% endif %}</li>
 {% endfor %}
 </ul>
 {% else %}
-<p>No pages in this topic.</p>
+<p class="notice body-pad">No pages in this topic.</p>
 {% endif %}
+</div>
 {% include "_pager.html" %}
 {% endblock %}
