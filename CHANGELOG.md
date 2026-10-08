@@ -32,6 +32,18 @@ below are reconstructed from the commits that bumped `__version__`.
 - `awiki search` across several vaults now ranks through one shared function,
   which the viewer search also uses. Its output is unchanged.
 
+### Fixed
+- **Claude Code session titles.** A session page was titled from the first
+  user turn, which Claude Code often fills with its local-command caveat or a
+  slash command, so most titles read `<local-command-caveat>Caveat: ...`. Sync
+  now skips those harness turns and lines that hold only a tag, and with no
+  typed prompt uses the first slash command (`/name args`). The new `awiki
+  doctor` check `session-titles` retitles existing sessions: it derives the
+  title again from the turns in each `raw/sessions/` bundle and rewrites the
+  bundle's title field and the session page's title and heading. It touches
+  only claude-code bundles whose stored title starts with a tag, and it runs
+  under a plain `--fix` and from a remote client.
+
 ## [0.10.0]
 
 ### Added

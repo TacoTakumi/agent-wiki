@@ -382,6 +382,14 @@ the canonical page is a deliberate, **server-local** operation: run
 from a blanket `--fix`, prompts before overwriting (default No), and **cannot be
 triggered by a remote client** - there is no HTTP path for it.
 
+`doctor` also reports **session titles taken from harness text** (check
+`session-titles`): Claude Code sessions synced before the title fix, whose title
+starts with a tag such as `<local-command-caveat>`. Its fix derives the title
+again from the turns kept in the `raw/sessions/` bundle and writes it to the
+bundle's `title` field and to the session page's title and heading. This is a
+sanctioned `raw/` write limited to that one field. The new title comes only from
+the bundle itself, so the fix runs under a plain `--fix` and from a remote client.
+
 ### Getting knowledge in
 
 #### `awiki ingest <files-or-urls>`
@@ -662,7 +670,9 @@ Sync is state-tracked in `<vault>/.awiki-sync-state.json`, so reruns are
 idempotent. A changed session (mtime or content hash) gets re-ingested; unchanged
 sessions are skipped without being parsed. Session pages are pointers to their
 transcript, so `awiki doctor` leaves them out of its raw-drift and render-hash
-checks and `--reconcile-raw` never touches `raw/sessions/`.
+checks and `--reconcile-raw` never touches `raw/sessions/`. The one doctor fix
+that writes there is `session-titles`, which changes only a bundle's `title`
+field.
 
 ### Writing bundles directly (for external agents)
 
