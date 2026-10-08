@@ -14,11 +14,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+import re
 from typing import Any
 
 import yaml
 
+from agent_wiki.adapters.claude_code import derive_title
 from agent_wiki.config import load_vault_config
+from agent_wiki.conversation import read_bundle
 from agent_wiki.page import (
     parse_page, page_body_for_raw, page_raw_diverged,
     load_sidecar, save_sidecar, sha256_bytes,
@@ -434,6 +437,61 @@ class RenderHashDivergent(Check):
 # ---------------------------------------------------------------------------
 
 
+# A turn header in a conversation bundle body, as the adapters write it:
+# "## [HH:MM:SS] role" or "## role".
+_TURN_HEADER_RE = re.compile(r"^## (?:\[[^\]\n]*\] )?(?:user|assistant)[ \t]*$", re.M)
+# A stored title that starts with a tag came from harness text, not a prompt.
+_TAG_TITLE_RE = re.compile(r"<[A-Za-z]")
+
+
+def _bundle_sections(body: str) -> list[str]:
+    """Split a bundle body back into the per-turn sections it was joined from."""
+    starts = [m.start() for m in _TURN_HEADER_RE.finditer(body)]
+    return [body[a:b].strip("\n") for a, b in zip(starts, starts[1:] + [len(body)])]
+
+
+class SessionTitles(Check):
+    """Retitle Claude Code sessions that were titled from harness text.
+
+    Older syncs titled a session from its first user turn, which Claude Code
+    often fills with the local-command caveat or a slash command. The title is
+    derived again from the turns kept in the bundle, so no content from outside
+    raw/ reaches it, and only bundles whose stored title starts with a tag are
+    touched: a custom or prompt-derived title is left alone."""
+
+    name = "session-titles"
+    description = "Retitle Claude Code sessions from the first prompt the user typed"
+
+    def _retitles(self, vault_path: Path) -> list[tuple[Path, str]]:
+        sessions_dir = vault_path / "raw" / "sessions"
+        if not sessions_dir.is_dir():
+            return []
+        out: list[tuple[Path, str]] = []
+        for bundle_path in sorted(sessions_dir.glob("*.md")):
+            try:
+                conv = read_bundle(bundle_path)
+            except (OSError, UnicodeDecodeError, ValueError, yaml.YAMLError):
+                continue
+            if conv.agent != "claude-code" or not _TAG_TITLE_RE.match(conv.title):
+                continue
+            title = derive_title(_bundle_sections(conv.body))
+            if title and title != conv.title:
+                out.append((bundle_path, title))
+        return out
+
+    def detect(self, vault_path: Path) -> Finding | None:
+        retitles = self._retitles(vault_path)
+        if not retitles:
+            return None
+        return Finding(
+            self,
+            f"{len(retitles)} Claude Code session title(s) taken from harness text",
+        )
+
+    def fix(self, vault_path: Path) -> str:
+        raise NotImplementedError
+
+
 ALL_CHECKS: tuple[Check, ...] = (
     MissingSessionsTopic(),
     MissingConversationsBlock(),
@@ -446,6 +504,7 @@ ALL_CHECKS: tuple[Check, ...] = (
     RawContentDrift(),
     RenderHashUnstamped(),
     RenderHashDivergent(),
+    SessionTitles(),
 )
 
 
