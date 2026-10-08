@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<article>
+<header>
+<h1>{{ page.title }}</h1>
+<dl>
+<dt>Topic</dt><dd>{{ page.topic }}</dd>
+{% if page.created %}<dt>Created</dt><dd>{{ page.created }}</dd>{% endif %}
+{% if page.updated %}<dt>Updated</dt><dd>{{ page.updated }}</dd>{% endif %}
+{% if page.tags %}<dt>Tags</dt><dd><ul class="tags">{% for tag in page.tags %}<li>{{ tag }}</li>{% endfor %}</ul></dd>{% endif %}
+</dl>
+</header>
+{# The body is sanitised by render_markdown; nothing else here is trusted. #}
+{{ body | safe }}
+{% if sources %}
+<footer>
+<h2>Sources</h2>
+<ul>
+{% for text, is_link in sources %}
+<li>{% if is_link %}<a href="{{ text }}">{{ text }}</a>{% else %}{{ text }}{% endif %}</li>
+{% endfor %}
+</ul>
+</footer>
+{% endif %}
+</article>
+{% endblock %}

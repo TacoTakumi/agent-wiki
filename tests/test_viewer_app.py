@@ -95,3 +95,119 @@ def test_serve_help_lists_viewer_flag():
     result = CliRunner().invoke(cli, ["serve", "--help"])
     assert result.exit_code == 0
     assert "--viewer" in result.output
+
+
+PAGE = """---
+title: Foo Page
+topic: research
+tags: [alpha, beta]
+created: 2026-01-02
+updated: 2026-03-04
+sources:
+- raw/x.md
+- https://example.com/a
+---
+
+# Foo Page
+
+See [[Bar Page]] and [[Nowhere]].
+
+| a | b |
+|---|---|
+| 1 | 2 |
+
+```python
+print("hi")
+```
+"""
+
+NESTED = """---
+title: Bar Page
+topic: research
+---
+
+Nested body.
+"""
+
+
+@pytest.fixture
+def pages(catalog):
+    """Pages in the main vault: one with everything the view shows, one nested
+    under a topic, and files the viewer must not serve."""
+    main = catalog.vaults["main"]
+    (main / "research" / "foo.md").write_text(PAGE)
+    (main / "research" / "sub").mkdir()
+    (main / "research" / "sub" / "bar.md").write_text(NESTED)
+    (main / "raw" / "x.md").write_text("# Raw\n")
+    (main / "notes").mkdir()
+    (main / "notes" / "loose.md").write_text(NESTED)
+    (main / "research" / "plain.txt").write_text("text\n")
+    (main / "research" / "nofm.md").write_text("# No frontmatter\n")
+    outside = main.parent / "outside.md"
+    outside.write_text(NESTED)
+    (main / "research" / "escape.md").symlink_to(outside)
+    return main
+
+
+def test_page_view_shows_metadata(viewer, pages):
+    resp = viewer.get("/vaults/main/research/foo")
+    assert resp.status_code == 200
+    html = resp.text
+    assert "<title>Foo Page - Agent Wiki</title>" in html
+    assert "research" in html
+    assert "2026-01-02" in html
+    assert "2026-03-04" in html
+    assert "alpha" in html
+    assert "beta" in html
+
+
+def test_page_view_renders_table_and_code(viewer, pages):
+    html = viewer.get("/vaults/main/research/foo").text
+    assert "<table>" in html
+    assert "<pre><code" in html
+    assert "print(&quot;hi&quot;)" in html or 'print("hi")' in html
+
+
+def test_page_view_resolves_wikilinks_in_the_same_vault(viewer, pages):
+    html = viewer.get("/vaults/main/research/foo").text
+    assert '<a href="/vaults/main/research/sub/bar"' in html
+    assert ">Bar Page</a>" in html
+    assert '<span class="missing">Nowhere</span>' in html
+
+
+def test_page_view_links_web_sources_and_not_raw_ones(viewer, pages):
+    html = viewer.get("/vaults/main/research/foo").text
+    assert '<a href="https://example.com/a">https://example.com/a</a>' in html
+    assert "raw/x.md" in html
+    assert 'href="raw/x.md"' not in html
+    assert ">raw/x.md</a>" not in html
+
+
+def test_nested_page_is_reachable(viewer, pages):
+    resp = viewer.get("/vaults/main/research/sub/bar")
+    assert resp.status_code == 200
+    assert "Nested body." in resp.text
+
+
+@pytest.mark.parametrize("path", [
+    "raw/x",
+    "raw/x.md",
+    "wiki.yaml",
+    "log",
+    "index",
+    "notes/loose",
+    "research/plain.txt",
+    "research/plain",
+    "research/nosuch",
+    "research/nofm",
+    "research/escape",
+    "research/..%2F..%2Fetc%2Fpasswd",
+    "research/%2E%2E/%2E%2E/outside",
+])
+def test_unservable_paths_return_404(viewer, pages, path):
+    assert viewer.get(f"/vaults/main/{path}").status_code == 404
+
+
+def test_page_in_an_unserved_vault_returns_404(viewer, pages):
+    assert viewer.get("/vaults/team/research/foo").status_code == 404
+    assert viewer.get("/vaults/gone/research/foo").status_code == 404
