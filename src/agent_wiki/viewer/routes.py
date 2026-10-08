@@ -59,13 +59,22 @@ def same_site_path(target: str | None) -> str:
     return target
 
 
-def render(request: Request, template: str, **context) -> HTMLResponse:
+def render(request: Request, template: str, *, header_vault: str | None = None,
+           header_search: bool = True, **context) -> HTMLResponse:
     """Render a template from the viewer's templates folder as an HTML
     response. Every page gets the theme context here; the page depends on the
-    theme cookie, so the response varies on Cookie."""
+    theme cookie, so the response varies on Cookie.
+
+    The header context is built here too: a vault view passes `header_vault`,
+    so the header links that vault's home and searches only that vault; any
+    other page gets a search over all vaults unless `header_search` is False."""
+    header_vault_url = (f"/vaults/{quote(header_vault, safe='')}/"
+                        if header_vault else None)
     html = templates.get_template(template).render(
         theme=current_theme(request), themes=THEMES,
-        theme_next=request_target(request), **context)
+        theme_next=request_target(request), header_vault=header_vault,
+        header_vault_url=header_vault_url, header_search=header_search,
+        **context)
     return HTMLResponse(html, headers={"Vary": "Cookie"})
 
 
@@ -173,6 +182,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             "vault.html",
             title=name,
             name=name,
+            header_vault=name,
             topics=index.topics,
             recent=by_recency(every_page)[:RECENT_PAGES],
             page_url=page_url,
@@ -203,6 +213,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
         return render(
             request,
             "search.html",
+            header_search=False,
             title=f"{query} - Search" if query else "Search",
             q=query,
             vaults=list(catalog.vaults),
@@ -224,6 +235,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             "topic.html",
             title=f"{topic} - {name}",
             name=name,
+            header_vault=name,
             topic=topic,
             pages=pages,
             page=page,
@@ -245,6 +257,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             "tag.html",
             title=f"{tag} - {name}",
             name=name,
+            header_vault=name,
             tag=tag,
             pages=pages,
             page=page,
@@ -276,6 +289,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             "page.html",
             title=record.title,
             name=name,
+            header_vault=name,
             page=record,
             tag_url=tag_url,
             body=render_markdown(page["body"], links),

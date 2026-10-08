@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% block search_form %}{% endblock %}
 {% macro result(hit, show_coverage=False) %}
 <li><span class="vault">{{ hit.vault }}</span> <a class="result" href="{{ hit.url }}">{{ hit.title }}</a>{% if show_coverage %} <small>({{ hit.coverage }}/{{ hit.term_count }} terms)</small>{% endif %}
 {% if hit.lines %}
