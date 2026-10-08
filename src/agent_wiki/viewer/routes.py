@@ -16,6 +16,7 @@ from agent_wiki.page import parse_page
 from agent_wiki.registry import VaultEntry
 from agent_wiki.viewer.catalog import (VaultCatalog, index_vault,
                                        resolve_page)
+from agent_wiki.viewer.highlight import highlight
 from agent_wiki.viewer.render import render_markdown
 
 
@@ -26,6 +27,9 @@ templates = Environment(
                          PackageLoader("agent_wiki.viewer", "static")]),
     autoescape=select_autoescape(["html"]),
 )
+# {{ text | highlight(query) }} marks the query terms; it escapes the text
+# itself and returns Markup, so autoescape leaves the result alone.
+templates.filters["highlight"] = highlight
 
 
 # The header theme switch: the choice lives in this cookie for a year.
@@ -200,7 +204,8 @@ def served_search(vaults: dict, query: str) -> tuple[dict, list]:
     The tiers are then ranked across vaults as merged_search ranks them and
     capped at the CLI search's limits.
 
-    Returns (result, skipped) in merged_search's shape: every hit path is
+    Returns (result, skipped) in merged_search's shape, plus "all_total",
+    the all-terms hit count before the cap: every hit path is
     vault-qualified with its vault name under "vault", and skipped lists
     (vault name, reason) for each vault whose search raised."""
     all_pool, partial_pool, skipped = [], [], []
@@ -235,6 +240,7 @@ def served_search(vaults: dict, query: str) -> tuple[dict, list]:
     return {
         "all": shown_all,
         "partial": shown_partial,
+        "all_total": len(all_pool),
         "total": total,
         "shown": shown,
         "truncated": shown < total,

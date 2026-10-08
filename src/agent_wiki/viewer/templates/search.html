@@ -1,48 +1,48 @@
 {% extends "base.html" %}
-{% macro result(hit, show_coverage=False) %}
-<li><span class="vault">{{ hit.vault }}</span> <a class="result" href="{{ hit.url }}">{{ hit.title }}</a>{% if show_coverage %} <small>({{ hit.coverage }}/{{ hit.term_count }} terms)</small>{% endif %}
-{% if hit.lines %}
-<ul class="matches">
-{% for line in hit.lines %}
-<li><code>{{ line }}</code></li>
-{% endfor %}
-</ul>
-{% endif %}
-</li>
-{% endmacro %}
+{% macro result(hit) -%}
+<div class="box result"><div class="box-head"><span class="vault-label">{{ hit.vault }}</span><a href="{{ hit.url }}">{{ hit.title | highlight(q) }}</a>{% if hit.coverage < hit.term_count %}<span class="terms">{{ hit.coverage }} of {{ hit.term_count }} terms</span>{% endif %}</div><ul class="snippets">{% for line in hit.lines %}<li>{{ line | highlight(q) }}</li>{% endfor %}</ul></div>
+{%- endmacro %}
 {% block content %}
-<h1>Search</h1>
-<form method="get" action="/search" role="search">
-<input type="search" name="q" value="{{ q }}" aria-label="Search">
-<button type="submit">Search</button>
-<fieldset>
-<legend>Vaults</legend>
-{% for name in vaults %}
-<label><input type="checkbox" name="vault" value="{{ name }}"{% if name in selected %} checked{% endif %}> {{ name }}</label>
-{% endfor %}
-</fieldset>
-</form>
+<h1 class="page-title">Search</h1>
+<div class="layout">
+<div>
+<form id="search-form" class="search-row" method="get" action="/search" role="search"><input type="search" name="q" value="{{ q }}" aria-label="Search"><button class="btn btn-accent" type="submit">Search</button></form>
 {% for name, reason in skipped %}
-<p>Skipped vault {{ name }}: {{ reason }}</p>
+<p class="notice">Skipped vault {{ name }}: {{ reason }}</p>
 {% endfor %}
 {% if out %}
 {% if out.total == 0 %}
-<p>No results found.</p>
+<p class="notice">No results found.</p>
 {% else %}
-{% if out.all %}
-<ul class="results">
-{% for hit in out.all %}{{ result(hit) }}{% endfor %}
-</ul>
+{% if out.all_total == 0 %}
+<p class="notice">No page matches every term</p>
+{% elif out.all_total == 1 %}
+<p class="notice">1 page matches every term</p>
+{% else %}
+<p class="notice">{{ out.all_total }} pages match every term</p>
 {% endif %}
+{% for hit in out.all %}
+{{ result(hit) }}
+{% endfor %}
 {% if out.partial %}
-<h2>Partial matches (some terms only)</h2>
-<ul class="results">
-{% for hit in out.partial %}{{ result(hit, show_coverage=True) }}{% endfor %}
-</ul>
+<h2 class="tier">Partial matches</h2>
+{% for hit in out.partial %}
+{{ result(hit) }}
+{% endfor %}
 {% endif %}
 {% if out.truncated %}
-<p>Showing {{ out.shown }} of {{ out.total }} matches - narrow your query or search fewer vaults.</p>
+<p class="notice">Showing {{ out.shown }} of {{ out.total }} matches - narrow your query or search fewer vaults.</p>
 {% endif %}
 {% endif %}
 {% endif %}
+</div>
+<aside>
+<div class="side-section filters">
+<h2>Vaults</h2>
+{% for name in vaults %}
+<label><input type="checkbox" form="search-form" name="vault" value="{{ name }}"{% if name in selected %} checked{% endif %}> {{ name }}</label>
+{% endfor %}
+</div>
+</aside>
+</div>
 {% endblock %}

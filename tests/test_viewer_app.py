@@ -497,12 +497,28 @@ def search_page(title, topic, body):
 def checked_vaults(html):
     """The vault names whose search checkbox is checked."""
     return re.findall(
-        r'<input type="checkbox" name="vault" value="([^"]+)" checked>', html)
+        r'<input type="checkbox" form="search-form" name="vault" '
+        r'value="([^"]+)" checked>', html)
+
+
+RESULT_BOX = re.compile(
+    r'<div class="box result"><div class="box-head">'
+    r'<span class="vault-label">(.*?)</span><a href="([^"]+)">(.*?)</a>'
+    r'(?:<span class="terms">(.*?)</span>)?</div>'
+    r'<ul class="snippets">(.*?)</ul></div>', re.S)
+
+
+def result_boxes(html):
+    """Each search result box as (vault label, link, title markup, terms
+    note or None, [snippet line markup]), in order."""
+    return [(vault, url, title, terms or None,
+             re.findall(r"<li>(.*?)</li>", snippets, re.S))
+            for vault, url, title, terms, snippets in RESULT_BOX.findall(html)]
 
 
 def result_links(html):
     """The page links in the search results, in order."""
-    return re.findall(r'<a class="result" href="([^"]+)"', html)
+    return [box[1] for box in result_boxes(html)]
 
 
 @pytest.fixture
@@ -525,8 +541,7 @@ def test_search_spans_all_vaults_with_every_checkbox_checked(viewer,
         "/vaults/main/research/mainpage", "/vaults/work/tools/workpage"]
     assert ">Main Zebra</a>" in html
     assert ">Work Zebra</a>" in html
-    assert '<span class="vault">main</span>' in html
-    assert '<span class="vault">work</span>' in html
+    assert sorted(box[0] for box in result_boxes(html)) == ["main", "work"]
     assert checked_vaults(html) == ["main", "work"]
 
 
@@ -579,7 +594,8 @@ def test_search_caps_tiers_and_notes_truncation(viewer, catalog):
             search_page(f"One {n:02d}", "tools", "zebraquux only"))
     html = viewer.get("/search?q=zebraquux+okapi").text
     assert len(result_links(html)) == 25
-    assert "Partial matches (some terms only)" in html
+    assert '<h2 class="tier">Partial matches</h2>' in html
+    assert '<p class="notice">25 pages match every term</p>' in html
     assert "Showing 25 of 33 matches" in html
 
 
@@ -664,6 +680,114 @@ def test_empty_query_shows_the_form_only(viewer, search_pages):
 def test_search_with_no_hits_says_so(viewer, search_pages):
     html = viewer.get("/search?q=nothingmatchesthis").text
     assert "No results found." in html
+
+
+@pytest.fixture
+def tier_hits(catalog):
+    """For 'zebraquux okapi': a page in main with both terms and a page in
+    work with only the first."""
+    main, work = catalog.vaults["main"], catalog.vaults["work"]
+    (main / "research" / "full.md").write_text(
+        search_page("Zebraquux Okapi Guide", "research",
+                    "zebraquux meets okapi"))
+    (work / "tools" / "part.md").write_text(
+        search_page("Zebraquux Notes", "tools", "zebraquux alone"))
+    return catalog
+
+
+def search_layout(html):
+    """The search page's main column and sidebar markup."""
+    found = re.search(r'<div class="layout">\s*<div>(.*?)</div>\s*'
+                      r'<aside>(.*?)</aside>\s*</div>', html, re.S)
+    assert found, "no search layout"
+    return found.group(1), found.group(2)
+
+
+def test_search_page_shows_the_query_box_in_the_main_column(viewer,
+                                                           tier_hits):
+    html = viewer.get("/search?q=zebraquux+okapi").text
+    assert '<h1 class="page-title">Search</h1>' in html
+    column, _ = search_layout(html)
+    form = re.search(r'<form id="search-form" class="search-row" '
+                     r'method="get" action="/search" role="search">(.*?)'
+                     r'</form>', column, re.S)
+    assert form, "no search-row form"
+    assert ('<input type="search" name="q" value="zebraquux okapi" '
+            'aria-label="Search">') in form.group(1)
+    assert '<button class="btn btn-accent" type="submit">Search</button>' \
+        in form.group(1)
+
+
+def test_search_page_counts_the_all_terms_tier(viewer, tier_hits,
+                                               search_pages):
+    one = viewer.get("/search?q=zebraquux+okapi").text
+    assert '<p class="notice">1 page matches every term</p>' in one
+    # search_pages adds one page per vault holding zebraquux alone.
+    many = viewer.get("/search?q=zebraquux").text
+    assert '<p class="notice">4 pages match every term</p>' in many
+
+
+def test_search_page_counts_no_all_terms_hit(viewer, tier_hits):
+    html = viewer.get("/search?q=zebraquux+nothingelse").text
+    assert '<p class="notice">No page matches every term</p>' in html
+    assert len(result_boxes(html)) == 2
+
+
+def test_search_page_lays_out_a_box_per_hit(viewer, tier_hits):
+    html = viewer.get("/search?q=zebraquux+okapi").text
+    column, _ = search_layout(html)
+    boxes = result_boxes(column)
+    assert [(b[0], b[1]) for b in boxes] == [
+        ("main", "/vaults/main/research/full"),
+        ("work", "/vaults/work/tools/part")]
+    vault, url, title, terms, lines = boxes[0]
+    assert title == "<mark>Zebraquux</mark> <mark>Okapi</mark> Guide"
+    assert terms is None
+    assert "<mark>zebraquux</mark> meets <mark>okapi</mark>" in lines
+    assert boxes[1][2] == "<mark>Zebraquux</mark> Notes"
+    assert "<mark>zebraquux</mark> alone" in boxes[1][4]
+
+
+def test_search_page_shows_the_partial_tier_with_term_counts(viewer,
+                                                             tier_hits):
+    html = viewer.get("/search?q=zebraquux+okapi").text
+    column, _ = search_layout(html)
+    heading = column.index('<h2 class="tier">Partial matches</h2>')
+    full = column.index('href="/vaults/main/research/full"')
+    part = column.index('href="/vaults/work/tools/part"')
+    assert full < heading < part
+    terms = [box[3] for box in result_boxes(column)]
+    assert terms == [None, "1 of 2 terms"]
+
+
+def test_search_page_escapes_html_around_marks(viewer, catalog):
+    main = catalog.vaults["main"]
+    (main / "research" / "amp.md").write_text(
+        search_page("Ampersand <b>Page</b>", "research",
+                    "x <i>tag</i> a&b y"))
+    html = viewer.get("/search?q=a%26b").text
+    boxes = result_boxes(html)
+    assert len(boxes) == 1
+    assert boxes[0][2] == "Ampersand &lt;b&gt;Page&lt;/b&gt;"
+    assert "x &lt;i&gt;tag&lt;/i&gt; <mark>a&amp;b</mark> y" in boxes[0][4]
+    assert "<i>tag</i>" not in html
+    assert "<b>Page</b>" not in html
+
+
+def test_search_page_puts_the_vault_checkboxes_in_the_sidebar(viewer,
+                                                             tier_hits):
+    html = viewer.get("/search?q=zebraquux+okapi&vault=main").text
+    column, side = search_layout(html)
+    assert 'type="checkbox"' not in column
+    filters = re.search(r'<div class="side-section filters">\s*'
+                        r'<h2>Vaults</h2>(.*?)</div>', side, re.S)
+    assert filters, "no vault filters in the sidebar"
+    assert re.findall(r'<label><input type="checkbox" form="search-form" '
+                      r'name="vault" value="([^"]+)"( checked)?> \1</label>',
+                      filters.group(1)) == [("main", " checked"),
+                                            ("work", "")]
+    # The checkboxes submit with the query box's form.
+    assert html.count('id="search-form"') == 1
 
 
 VAULT_VIEWS = ("/vaults/main/", "/vaults/main/research/",
