@@ -258,6 +258,21 @@ def test_resolve_page_refuses_a_symlink_loop(tmp_vault):
     assert resolve_page(tmp_vault, "research/loop") is None
 
 
+def test_index_skips_a_page_whose_name_is_not_utf8(tmp_vault):
+    import os
+    from agent_wiki.viewer.catalog import index_vault
+
+    _write_page(tmp_vault / "research" / "good.md", "Good")
+    bad_name = os.fsencode(tmp_vault / "research") + b"/caf\xe9.md"
+    with open(bad_name, "wb") as f:
+        f.write(b"---\ntitle: Cafe\n---\nbody\n")
+
+    index = index_vault(tmp_vault)
+
+    assert [rec.title for rec in index.topics["research"]] == ["Good"]
+    assert index.titles == {"Good": "research/good"}
+
+
 def test_resolve_page_finds_topic_pages(tmp_vault):
     from agent_wiki.viewer.catalog import resolve_page
 

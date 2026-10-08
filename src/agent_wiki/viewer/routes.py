@@ -13,7 +13,8 @@ from jinja2 import ChoiceLoader, Environment, PackageLoader, select_autoescape
 from agent_wiki.multisearch import merged_search
 from agent_wiki.page import parse_page
 from agent_wiki.registry import VaultEntry
-from agent_wiki.viewer.catalog import VaultCatalog, index_vault, resolve_page
+from agent_wiki.viewer.catalog import (VaultCatalog, index_vault, is_utf8,
+                                       resolve_page)
 from agent_wiki.viewer.render import render_markdown
 
 
@@ -143,8 +144,13 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             out, skipped = merged_search(entries, query,
                                          limit=SEARCH_LIMIT,
                                          partial_limit=SEARCH_PARTIAL_LIMIT)
-            out = dict(out, all=[search_hit(h) for h in out["all"]],
-                       partial=[search_hit(h) for h in out["partial"]])
+            # A hit whose file name is not UTF-8 has no page view URL, as
+            # the listings leave that page out, so it is dropped.
+            out = dict(out,
+                       all=[search_hit(h) for h in out["all"]
+                            if is_utf8(h["path"])],
+                       partial=[search_hit(h) for h in out["partial"]
+                                if is_utf8(h["path"])])
         return render(
             "search.html",
             title=f"{query} - Search" if query else "Search",
