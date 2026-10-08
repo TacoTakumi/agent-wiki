@@ -1,11 +1,53 @@
-/* Viewer rules on top of Simple.css (the page frame) and github-markdown-css
-   (the rendered body). System fonts only; both themes follow the browser's
-   prefers-color-scheme through the variables the two vendored sheets set. */
+/* Agent Wiki viewer frame stylesheet. This project's own file.
 
-/* The body takes the frame's background and text size, so it blends in. */
-.markdown-body {
-  background-color: transparent;
-  font-size: 1rem;
+   Every colour is a token on :root, written once as light-dark(<light>,
+   <dark>). color-scheme on :root picks the side: "light dark" follows the
+   browser; a rule that sets color-scheme to light or dark alone forces one
+   theme without touching the tokens. Tints are mixed from the tokens with
+   color-mix(), so the accent changes in one place. System fonts only.
+   github-markdown-css styles the rendered page body. */
+
+/* ---------- Colour tokens (the only place a colour literal may sit) ---------- */
+:root {
+  color-scheme: light dark;
+  --bg:           light-dark(#ffffff, #17191c);
+  --bg-muted:     light-dark(#f6f7f9, #1f2226);
+  --bg-header:    light-dark(#fbfbfc, #1b1d20);
+  --bg-hover:     light-dark(#f0f2f5, #24282d);
+  --fg:           light-dark(#1f2329, #dde0e5);
+  --fg-muted:     light-dark(#5c6570, #9aa1ab);
+  --border:       light-dark(#d5d9de, #353a41);
+  --border-muted: light-dark(#e4e7eb, #2b2f35);
+  --accent:       light-dark(#5b4fd6, #a99fff);
+  --on-accent:    light-dark(#ffffff, #111417);
+  --mark:         light-dark(#fff1a6, #5a4a0c);
+}
+
+/* ---------- Derived tints, sizes and fonts ---------- */
+:root {
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --accent-soft-hover: color-mix(in srgb, var(--accent) 20%, transparent);
+  --neutral-soft: color-mix(in srgb, var(--fg-muted) 16%, transparent);
+  --radius: 6px;
+  --gutter: 32px;
+  --ui: system-ui, -apple-system, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* ---------- The rendered body follows the tokens ---------- */
+html .markdown-body {
+  --fgColor-default: var(--fg);
+  --fgColor-muted: var(--fg-muted);
+  --fgColor-accent: var(--accent);
+  --bgColor-default: var(--bg);
+  --bgColor-muted: var(--bg-muted);
+  --bgColor-neutral-muted: var(--neutral-soft);
+  --borderColor-default: var(--border);
+  --borderColor-muted: var(--border-muted);
+  --focus-outlineColor: var(--accent);
+  color-scheme: inherit;
+  background: transparent;
+  font-size: 16px;
 }
 
 /* Wide tables scroll sideways inside the body instead of widening the page. */
@@ -20,98 +62,198 @@
   overflow-x: auto;
 }
 
+/* ---------- Frame ---------- */
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.5 var(--ui); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+h1 { font-size: 26px; line-height: 1.25; font-weight: 600; margin: 24px 0 12px; letter-spacing: -0.01em; }
+h2 { font-size: 16px; font-weight: 600; margin: 24px 0 12px; }
+code, pre { font-family: var(--mono); }
+small { color: var(--fg-muted); }
+
+.container { max-width: 1280px; margin: 0 auto; padding: 0 var(--gutter); }
+@media (max-width: 1200px) { :root { --gutter: 16px; } }
+@media (max-width: 767px) { :root { --gutter: 8px; } }
+main.container { padding-bottom: 48px; }
+
+/* ---------- Header ---------- */
+.site-header { background: var(--bg-header); border-top: 3px solid var(--accent);
+  border-bottom: 1px solid var(--border); }
+.site-header .container { display: flex; align-items: center; gap: 16px; min-height: 56px;
+  flex-wrap: wrap; padding-block: 8px; }
+.site-header nav a { color: var(--fg); font-weight: 600; }
+.site-header form[role=search] { margin-left: auto; display: flex; gap: 6px; flex: 0 1 340px; }
+.site-header form[role=search] input { flex: 1; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600;
+  font-size: 16px; letter-spacing: -0.01em; }
+.brand:hover { text-decoration: none; }
+.brand svg { width: 30px; height: 22px; color: var(--accent); flex: none; }
+.vault-pick { color: var(--fg-muted); font-size: 14px; padding-left: 12px;
+  border-left: 1px solid var(--border); }
+.vault-pick a { color: var(--fg); font-weight: 600; }
+.header-search { margin-left: auto; display: flex; flex: 0 1 340px; }
+.header-search input { width: 100%; }
+.theme { display: flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.theme button { font: inherit; font-size: 12px; color: var(--fg-muted); background: var(--bg);
+  border: 0; border-radius: 0; padding: 4px 9px; min-height: 0; cursor: pointer; }
+.theme button + button { border-left: 1px solid var(--border); }
+.theme button[aria-pressed=true] { color: var(--fg); background: var(--bg-muted); font-weight: 600; }
+@media (max-width: 767px) {
+  .header-search,
+  .site-header form[role=search] { order: 3; flex: 1 0 100%; margin-left: 0; }
+  .theme { margin-left: auto; }
+  .vault-pick { display: none; }
+}
+
+/* ---------- Form controls ---------- */
+input[type=search] { font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 10px; min-height: 32px; }
+input[type=search]::placeholder { color: var(--fg-muted); }
+input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+input[type=checkbox] { accent-color: var(--accent); }
+button,
+.btn { font: inherit; color: var(--fg); background: var(--bg-muted); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 5px 14px; min-height: 32px; cursor: pointer; font-weight: 500; }
+button:hover,
+.btn:hover { background: var(--bg-hover); }
+.btn-accent,
+.btn-accent:hover { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+fieldset { border: 1px solid var(--border); border-radius: var(--radius); margin: 12px 0; padding: 8px 12px; }
+legend { color: var(--fg-muted); padding: 0 4px; }
+fieldset label { display: inline-block; margin-right: 16px; }
+
+/* ---------- Topic tabs ---------- */
+.tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: thin; margin-bottom: -1px; }
+.tabs a { display: flex; align-items: center; gap: 6px; padding: 8px 10px 9px; color: var(--fg);
+  white-space: nowrap; border-bottom: 2px solid transparent; border-radius: var(--radius) var(--radius) 0 0; }
+.tabs a:hover { text-decoration: none; background: var(--bg-hover); }
+.tabs a[aria-current] { font-weight: 600; border-bottom-color: var(--accent); }
+.site-header .tabs-row { padding-block: 0; min-height: 0; }
+.count { display: inline-block; min-width: 22px; padding: 0 7px; font-size: 12px; line-height: 18px;
+  font-weight: 500; text-align: center; color: var(--fg); background: var(--neutral-soft); border-radius: 999px; }
+
+/* ---------- Breadcrumb and page heading ---------- */
+.crumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin: 20px 0 4px;
+  font-size: 16px; color: var(--fg-muted); }
+.crumbs a { color: var(--accent); }
+.crumbs .sep { color: var(--fg-muted); }
+.crumbs [aria-current] { color: var(--fg); font-weight: 600; }
+h1.page-title { font-size: 26px; line-height: 1.25; font-weight: 600; margin: 12px 0 6px; letter-spacing: -0.01em; }
+.page-sub { color: var(--fg-muted); margin: 0 0 20px; }
+
+/* ---------- Box with rows (listings) ---------- */
+.box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.box-head { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 16px; background: var(--bg-muted); border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0; font-weight: 600; }
+.box-head small { font-weight: 400; color: var(--fg-muted); font-size: 13px; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { display: flex; align-items: baseline; gap: 16px; padding: 8px 16px; border-top: 1px solid var(--border-muted); }
+.rows li:first-child { border-top: 0; }
+.rows li:hover { background: var(--bg-hover); }
+.rows .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.rows .title:hover { color: var(--accent); }
+.rows time,
+.rows .meta { color: var(--fg-muted); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@media (max-width: 767px) {
+  .rows .title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .rows .topic-tag { display: none; }
+}
+.topic-tag { font-size: 12px; color: var(--fg-muted); border: 1px solid var(--border); border-radius: 999px;
+  padding: 0 8px; white-space: nowrap; }
+
+/* ---------- Two-column layout: content and a 296px sidebar ---------- */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 296px; gap: 24px; align-items: start; margin-bottom: 48px; }
+@media (max-width: 1011px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  .layout > aside { order: -1; }
+}
+aside .side-section { padding: 0 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--border-muted); }
+aside .side-section:last-child { border-bottom: 0; }
+aside h2 { font-size: 14px; font-weight: 600; margin: 0 0 10px; }
+aside dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+aside dt { color: var(--fg-muted); }
+aside dd { margin: 0; font-variant-numeric: tabular-nums; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.tags a { display: inline-block; font-size: 12px; font-weight: 500; line-height: 22px; padding: 0 10px;
+  border-radius: 999px; color: var(--accent); background: var(--accent-soft); }
+.tags a:hover { text-decoration: none; background: var(--accent-soft-hover); }
+.sources { list-style: none; margin: 0; padding: 0; font-family: var(--mono); font-size: 12px;
+  color: var(--fg-muted); word-break: break-all; }
+.topic-list { list-style: none; margin: 0; padding: 0; }
+.topic-list li a { display: flex; justify-content: space-between; align-items: center; padding: 5px 8px;
+  margin: 0 -8px; border-radius: var(--radius); color: var(--fg); }
+.topic-list li a:hover { background: var(--bg-hover); text-decoration: none; }
+.side-search { display: flex; gap: 6px; }
+.side-search input { flex: 1; min-width: 0; }
+
+/* ---------- Page view: body left; About and Tags, then Sources, right.
+   Narrow: About and Tags above the body, Sources below it. ---------- */
+.page-layout { display: grid; grid-template-columns: minmax(0, 1fr) 296px; grid-template-rows: auto 1fr;
+  grid-template-areas: "body meta" "body src"; gap: 0 24px; align-items: start; margin-bottom: 48px; }
+.page-layout > article { grid-area: body; }
+.page-layout > .meta { grid-area: meta; }
+.page-layout > .src { grid-area: src; }
+.page-layout dl > div { display: contents; }
+@media (max-width: 1011px) {
+  .page-layout { grid-template-columns: minmax(0, 1fr); grid-template-rows: none;
+    grid-template-areas: "meta" "body" "src"; }
+  .page-layout .meta { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center; margin-bottom: 16px; }
+  .page-layout .meta .side-section { padding: 0; margin: 0; border: 0; }
+  .page-layout .meta h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .page-layout .meta dl { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+  .page-layout .meta dl > div { display: flex; gap: 6px; }
+  .page-layout .src { margin-top: 16px; }
+}
+
+/* Page view body box */
+.file-head { font-family: var(--mono); font-size: 12px; font-weight: 400; color: var(--fg-muted); }
+.body-pad { padding: 24px 32px 32px; }
+@media (max-width: 767px) { .body-pad { padding: 16px; } }
+
 /* A wikilink whose target page does not exist. */
-span.missing {
-  color: var(--text-light);
-  text-decoration: underline dotted;
-  cursor: help;
-}
+.missing { color: var(--fg-muted); text-decoration: underline dotted; cursor: help; }
 
-/* Page metadata: compact term and value rows. */
-article > header dl {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0.25rem 1rem;
-  font-size: 0.95rem;
-}
+/* Page metadata as compact term and value rows (until the page view moves
+   to the sidebar layout). */
+article > header dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 24px; }
+article > header dt { color: var(--fg-muted); }
+article > header dd { margin: 0; }
+article > footer { margin-top: 32px; padding-top: 8px; border-top: 1px solid var(--border-muted); }
 
-article > header dd {
-  margin: 0;
-}
+/* ---------- Pager ---------- */
+.pager { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 16px 0 48px; color: var(--fg-muted); }
+.pager a { padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius); }
 
-/* Tags as a row of small links. */
-ul.tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-ul.tags a {
-  display: inline-block;
-  padding: 0 0.6rem;
-  border: var(--border-width) solid var(--border);
-  border-radius: var(--standard-border-radius);
-  font-size: 0.9rem;
-  text-decoration: none;
-}
-
-/* Dates in page listings, and the page count after each topic link (the
-   item's own text; the link keeps its colour). */
+/* ---------- Listings (until each view moves to boxes and rows) ---------- */
 ul.pages small,
-ul.topics li {
-  color: var(--text-light);
-}
+ul.topics li { color: var(--fg-muted); }
+ul.topics a { color: var(--accent); }
 
-ul.topics a {
-  color: var(--accent);
-}
+/* ---------- Search ---------- */
+.search-row { display: flex; gap: 8px; margin: 20px 0 16px; }
+.search-row input { flex: 1; font-size: 16px; min-height: 38px; }
+.filters label { display: flex; gap: 8px; align-items: center; padding: 4px 0; }
+.filters input { accent-color: var(--accent); }
+.result { margin-bottom: 16px; }
+.result .box-head { font-weight: 400; justify-content: flex-start; flex-wrap: wrap; }
+.result .box-head a { font-weight: 600; }
+.vault-label,
+span.vault { display: inline-block; font-size: 12px; padding: 0 8px; line-height: 20px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--fg-muted); background: var(--bg); }
+.result .box-head .terms { margin-left: auto; font-size: 12px; color: var(--fg-muted); }
+.snippets { margin: 0; padding: 8px 0; list-style: none; font-family: var(--mono); font-size: 12.5px; }
+.snippets li { padding: 1px 16px; white-space: pre-wrap; word-break: break-word; color: var(--fg); }
+.snippets li::before { content: "\2026"; color: var(--fg-muted); margin-right: 8px; }
+mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+h2.tier { font-size: 16px; font-weight: 600; margin: 28px 0 12px; }
+.notice { color: var(--fg-muted); }
 
-/* Search results: the vault as a label, then the title, then match lines. */
-ul.results {
-  list-style: none;
-  padding: 0;
-}
-
-ul.results > li {
-  margin-bottom: 1rem;
-}
-
-span.vault {
-  display: inline-block;
-  padding: 0 0.5rem;
-  border-radius: var(--standard-border-radius);
-  background-color: var(--accent-bg);
-  color: var(--text-light);
-  font-size: 0.85rem;
-}
-
-ul.matches {
-  list-style: none;
-  margin: 0.25rem 0 0 0;
-  padding-left: 1rem;
-  border-left: var(--border-width) solid var(--border);
-}
-
-ul.matches code {
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 0.85rem;
-}
-
-/* Previous and next links around the page number. */
-nav.pager {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1rem;
-  margin: 1.5rem 0;
-}
-
-/* The vault checkboxes on the search page sit on one wrapping row. */
-fieldset label {
-  display: inline-block;
-  margin-right: 1rem;
-}
+/* The current search results list (until it moves to result boxes). */
+ul.results { list-style: none; padding: 0; }
+ul.results > li { margin-bottom: 16px; }
+ul.matches { list-style: none; margin: 4px 0 0 0; padding-left: 16px; border-left: 1px solid var(--border); }
+ul.matches code { white-space: pre-wrap; word-break: break-word; font-size: 12.5px; }

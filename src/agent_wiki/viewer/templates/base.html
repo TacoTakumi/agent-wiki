@@ -6,13 +6,13 @@
 <title>{% block title %}{{ title }}{% endblock %} - Agent Wiki</title>
 {# Inlined, not linked: pages load no external CSS. #}
 <style>
-{% include "simple.css" %}
 {% include "github-markdown.css" %}
 {% include "viewer.css" %}
 </style>
 </head>
 <body>
-<header>
+<header class="site-header">
+<div class="container">
 <nav><a href="/">Vaults</a></nav>
 {% block search_form %}
 <form method="get" action="/search" role="search">
@@ -20,8 +20,9 @@
 <button type="submit">Search</button>
 </form>
 {% endblock %}
+</div>
 </header>
-<main>
+<main class="container">
 {% block content %}{% endblock %}
 </main>
 </body>
