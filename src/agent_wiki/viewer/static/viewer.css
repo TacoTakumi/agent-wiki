@@ -23,6 +23,11 @@
   --mark:         light-dark(#fff1a6, #5a4a0c);
 }
 
+/* ---------- Theme switch: data-theme on <html> picks the side ---------- */
+[data-theme="auto"] { color-scheme: light dark; }
+[data-theme="light"] { color-scheme: light; }
+[data-theme="dark"] { color-scheme: dark; }
+
 /* ---------- Derived tints, sizes and fonts ---------- */
 :root {
   --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
