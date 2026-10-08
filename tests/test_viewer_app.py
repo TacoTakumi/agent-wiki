@@ -591,6 +591,44 @@ def test_symlink_loop_page_returns_404(viewer, loop_page):
     assert viewer.get("/vaults/main/research/loop").status_code == 404
 
 
+@pytest.fixture
+def non_utf8_name(tag_pages):
+    """A page beside the tagged ones whose file name is not UTF-8."""
+    import os
+    bad_name = os.fsencode(tag_pages / "research") + b"/caf\xe9.md"
+    with open(bad_name, "wb") as f:
+        f.write(tagged_page("Cafe", ["foo"], "2026-05-01").encode()
+                + b"zebra cafe\n")
+    (tag_pages / "research" / "good.md").write_text(
+        tagged_page("Good", [], "2026-01-01") + "zebra good\n")
+    return tag_pages
+
+
+@pytest.mark.parametrize("url", [
+    "/vaults/main/",
+    "/vaults/main/research/",
+    "/vaults/main/-/tags/foo",
+    "/vaults/main/research/newer",
+])
+def test_non_utf8_name_leaves_other_views_working(viewer, non_utf8_name, url):
+    resp = viewer.get(url)
+    assert resp.status_code == 200
+    assert "Cafe" not in resp.text
+
+
+@pytest.mark.parametrize("ripgrep", [True, False])
+def test_search_with_non_utf8_name_lists_good_page(viewer, non_utf8_name,
+                                                   monkeypatch, ripgrep):
+    import shutil
+    if ripgrep and not shutil.which("rg"):
+        pytest.skip("ripgrep not installed")
+    if not ripgrep:
+        monkeypatch.setattr("agent_wiki.search.shutil.which", lambda _: None)
+    resp = viewer.get("/search?q=zebra&vault=main")
+    assert resp.status_code == 200
+    assert "/vaults/main/research/good" in resp.text
+
+
 def test_search_lists_good_page_beside_unreadable_one(viewer, catalog):
     main = catalog.vaults["main"]
     (main / "research" / "good.md").write_text(

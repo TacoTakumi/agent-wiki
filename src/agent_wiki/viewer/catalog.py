@@ -110,6 +110,17 @@ def _inside(path: Path, topic_root: Path) -> bool:
     return real.is_file() and real.is_relative_to(topic_root)
 
 
+def is_utf8(text: str) -> bool:
+    """Whether `text` encodes as UTF-8. A file name that is not UTF-8 reaches
+    Python with surrogate escapes, and the viewer cannot put it in a URL or a
+    page."""
+    try:
+        text.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def index_vault(vault_dir: Path) -> VaultIndex:
     """Index one vault's topic pages. The page rule is rebuild_index's (a .md
     file with frontmatter anywhere under a wiki.yaml topic folder, title
@@ -125,7 +136,8 @@ def index_vault(vault_dir: Path) -> VaultIndex:
             continue
         records = []
         for md_file in sorted(topic_dir.rglob("*.md")):
-            if not _inside(md_file, root / topic):
+            url_path = md_file.relative_to(vault_dir).as_posix()[:-3]
+            if not is_utf8(url_path) or not _inside(md_file, root / topic):
                 continue
             # A page whose frontmatter cannot be read (bad YAML, a block that
             # is not a mapping, not UTF-8, no read permission) is left out,
@@ -145,7 +157,7 @@ def index_vault(vault_dir: Path) -> VaultIndex:
                       if isinstance(tags, list) else ()),
                 created=str(meta.get("created", "")),
                 updated=str(meta.get("updated", "")),
-                url_path=md_file.relative_to(vault_dir).as_posix()[:-3],
+                url_path=url_path,
                 path=md_file,
             )
             records.append(record)
