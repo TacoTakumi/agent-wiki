@@ -583,6 +583,70 @@ def test_search_caps_tiers_and_notes_truncation(viewer, catalog):
     assert "Showing 25 of 33 matches" in html
 
 
+@pytest.fixture
+def unserved_hits(catalog):
+    """Matches for 'zebraquux' in main: a research page, a note in journals/
+    (not a wiki.yaml topic) and a research file with no frontmatter."""
+    main = catalog.vaults["main"]
+    (main / "research" / "served.md").write_text(
+        search_page("Served Zebra", "research", "zebraquux served"))
+    (main / "journals").mkdir()
+    (main / "journals" / "note.md").write_text(
+        search_page("Journal Zebra", "journals", "zebraquux journal"))
+    (main / "research" / "nofm.md").write_text(
+        "# No frontmatter\n\nzebraquux bare\n")
+    return catalog
+
+
+def test_search_shows_only_hits_the_page_view_serves(viewer, unserved_hits):
+    html = viewer.get("/search?q=zebraquux").text
+    assert result_links(html) == ["/vaults/main/research/served"]
+    assert "Journal Zebra" not in html
+    assert "/vaults/main/journals/note" not in html
+    assert "/vaults/main/research/nofm" not in html
+    assert "zebraquux bare" not in html
+    for link in result_links(html):
+        assert viewer.get(link).status_code == 200
+
+
+def test_search_left_out_hits_do_not_change_the_cli_search(unserved_hits,
+                                                         monkeypatch):
+    monkeypatch.setenv("AWIKI_VAULT", str(unserved_hits.vaults["main"]))
+    out = CliRunner().invoke(cli, ["search", "zebraquux"]).output
+    assert "research/served.md" in out
+    assert "journals/note.md" in out
+    assert "research/nofm.md" in out
+
+
+def test_search_left_out_hits_do_not_crowd_out_served_ones(viewer, catalog):
+    """Unserved notes that rank above every served page still leave the
+    served pages in the shown tiers, and the count line counts served hits
+    only."""
+    main = catalog.vaults["main"]
+    (main / "journals").mkdir()
+    busy = "\n\n".join(["zebraquux okapi"] * 5)
+    for n in range(30):
+        (main / "journals" / f"j{n:02d}.md").write_text(
+            search_page(f"Journal {n:02d}", "journals", busy))
+    for n in range(8):
+        (main / "research" / f"bare{n:02d}.md").write_text(
+            f"# Bare {n:02d}\n\nzebraquux\n")
+    for n in range(25):
+        (main / "research" / f"both{n:02d}.md").write_text(
+            search_page(f"Both {n:02d}", "research", "zebraquux okapi"))
+    for n in range(7):
+        (main / "tools" / f"one{n:02d}.md").write_text(
+            search_page(f"One {n:02d}", "tools", "zebraquux only"))
+    html = viewer.get("/search?q=zebraquux+okapi").text
+    links = result_links(html)
+    assert len(links) == 25
+    assert all("/journals/" not in link and "/bare" not in link
+               for link in links)
+    assert sum("/tools/one" in link for link in links) == 5
+    assert sum("/research/both" in link for link in links) == 20
+    assert "Showing 25 of 32 matches" in html
+
+
 def test_search_without_truncation_has_no_notice(viewer, search_pages):
     assert "Showing" not in viewer.get("/search?q=zebraquux").text
 

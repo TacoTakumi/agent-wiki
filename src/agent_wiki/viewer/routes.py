@@ -4,16 +4,17 @@ config). The routes need no token: the viewer is read-only, and the /v1 API
 keeps its own auth."""
 from __future__ import annotations
 
+import sys
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from jinja2 import ChoiceLoader, Environment, PackageLoader, select_autoescape
 
-from agent_wiki.multisearch import merged_search
+from agent_wiki.config import backend_for_entry
 from agent_wiki.page import parse_page
 from agent_wiki.registry import VaultEntry
-from agent_wiki.viewer.catalog import (VaultCatalog, index_vault, is_utf8,
+from agent_wiki.viewer.catalog import (VaultCatalog, index_vault,
                                        resolve_page)
 from agent_wiki.viewer.render import render_markdown
 
@@ -190,6 +191,56 @@ def search_hit(hit: dict) -> dict:
     }
 
 
+def served_search(vaults: dict, query: str) -> tuple[dict, list]:
+    """Search each vault ({name: path}) and keep only the hits the page view
+    serves: pages in the vault's index, so a hit outside the wiki.yaml topic
+    folders, without frontmatter or with a file name that is not UTF-8 is
+    left out. Each vault is searched in full before that cut, so left-out
+    hits neither crowd served ones out of the tiers nor count in the total.
+    The tiers are then ranked across vaults as merged_search ranks them and
+    capped at the CLI search's limits.
+
+    Returns (result, skipped) in merged_search's shape: every hit path is
+    vault-qualified with its vault name under "vault", and skipped lists
+    (vault name, reason) for each vault whose search raised."""
+    all_pool, partial_pool, skipped = [], [], []
+    for name in sorted(vaults):
+        try:
+            backend = backend_for_entry(VaultEntry(name=name,
+                                                   path=vaults[name]))
+            out = backend.search(query, limit=sys.maxsize,
+                                 partial_limit=sys.maxsize)
+            index = index_vault(vaults[name])
+        except Exception as e:
+            skipped.append((name, str(e)))
+            continue
+        served = {rec.url_path for recs in index.topics.values()
+                  for rec in recs}
+        for hits, pool in ((out["all"], all_pool),
+                           (out["partial"], partial_pool)):
+            pool.extend(dict(hit, vault=name, path=f"{name}:{hit['path']}")
+                        for hit in hits
+                        if hit["path"].endswith(".md")
+                        and hit["path"][:-3] in served)
+
+    def rank_key(hit):
+        return (-hit["coverage"], -len(hit["matches"]), hit["title"])
+
+    all_pool.sort(key=rank_key)
+    partial_pool.sort(key=rank_key)
+    shown_all = all_pool[:SEARCH_LIMIT]
+    shown_partial = partial_pool[:SEARCH_PARTIAL_LIMIT]
+    total = len(all_pool) + len(partial_pool)
+    shown = len(shown_all) + len(shown_partial)
+    return {
+        "all": shown_all,
+        "partial": shown_partial,
+        "total": total,
+        "shown": shown,
+        "truncated": shown < total,
+    }, skipped
+
+
 def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Kept out of the OpenAPI schema: the schema documents the /v1 API only.
     r = APIRouter(include_in_schema=False)
@@ -241,18 +292,11 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
         query = q.strip()
         out, skipped = None, []
         if query:
-            entries = {n: VaultEntry(name=n, path=catalog.vaults[n])
-                       for n in selected}
-            out, skipped = merged_search(entries, query,
-                                         limit=SEARCH_LIMIT,
-                                         partial_limit=SEARCH_PARTIAL_LIMIT)
-            # A hit whose file name is not UTF-8 has no page view URL, as
-            # the listings leave that page out, so it is dropped.
+            out, skipped = served_search(
+                {n: catalog.vaults[n] for n in selected}, query)
             out = dict(out,
-                       all=[search_hit(h) for h in out["all"]
-                            if is_utf8(h["path"])],
-                       partial=[search_hit(h) for h in out["partial"]
-                                if is_utf8(h["path"])])
+                       all=[search_hit(h) for h in out["all"]],
+                       partial=[search_hit(h) for h in out["partial"]])
         return render(
             request,
             "search.html",
