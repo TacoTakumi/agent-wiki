@@ -188,3 +188,40 @@ def test_python_search_reads_past_a_non_utf8_file(tmp_vault, monkeypatch):
     (tmp_vault / "research" / "other.md").write_bytes(b"caf\xe9 only\n")
     assert [r["title"] for r in search_vault(tmp_vault, "zebra")] == [
         "Good Page"]
+
+
+needs_rg = pytest.mark.skipif(__import__("shutil").which("rg") is None,
+                              reason="ripgrep not installed")
+
+
+@needs_rg
+def test_ripgrep_search_lists_page_with_undecodable_matched_line(tmp_vault):
+    _create_page(tmp_vault, "research", "good", "Good Page", "zebra good\n")
+    (tmp_vault / "research" / "latin.md").write_bytes(
+        b"---\ntitle: Latin\n---\nzebra caf\xe9\n")
+    titles = sorted(r["title"] for r in search_vault(tmp_vault, "zebra"))
+    # The frontmatter is not UTF-8 either, so the page goes under its stem.
+    assert titles == ["Good Page", "latin"]
+
+
+@needs_rg
+@pytest.mark.parametrize("kind", ["file", "dir"])
+def test_ripgrep_search_keeps_results_past_an_unreadable_entry(tmp_vault,
+                                                               kind):
+    import os
+    _create_page(tmp_vault, "research", "good", "Good Page", "zebra good\n")
+    if kind == "file":
+        locked = tmp_vault / "research" / "locked.md"
+        locked.write_text("zebra locked\n")
+    else:
+        locked = tmp_vault / "research" / "locked"
+        locked.mkdir()
+        (locked / "inner.md").write_text("zebra inner\n")
+    locked.chmod(0)
+    try:
+        if os.access(locked, os.R_OK):
+            pytest.skip("running with permission to read any file")
+        titles = [r["title"] for r in search_vault(tmp_vault, "zebra")]
+    finally:
+        locked.chmod(0o755)
+    assert titles == ["Good Page"]
