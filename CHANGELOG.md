@@ -15,22 +15,32 @@ below are reconstructed from the commits that bumped `__version__`.
 - **Read-only web viewer.** `awiki serve --viewer` also serves an HTML viewer
   beside the JSON API, for every local vault in the registry (or only the
   `--vault` / `AWIKI_VAULT` override, served as `local` when it is a bare
-  path). `/` lists the vaults and counts the skipped remote ones. Each vault
-  has a home page with its topics, page counts and the 20 most recent pages;
-  topic and tag pages list 50 pages per screen; a page view shows the
-  frontmatter, the rendered markdown and the sources. `[[Title]]` links
-  resolve by frontmatter title, the same rule lint uses, and an unknown title
-  is marked missing. `/search` searches the chosen vaults through the same
-  merge and ranking as `awiki search`. Page bodies are sanitised, pages use
-  no JavaScript and carry their CSS inline (vendored Simple.css and
-  github-markdown-css, MIT), and only topic-folder pages are served: `raw/`,
-  config files and paths outside the vault return 404. The viewer needs no
-  token, so `serve` warns when it is on and the bind address is not loopback.
-  The `/v1` API is unchanged.
+  path). `/` lists the vaults and counts the skipped remote ones. Every page
+  has a header with the Agent Wiki mark and, on a vault's pages, the vault
+  name and a search box for that vault. A vault's pages show topic tabs with
+  page counts and a breadcrumb. The vault home lists the 20 most recent pages
+  beside a search and About sidebar; topic and tag pages list 50 pages per
+  screen; a page view shows the rendered markdown in a box headed by the
+  page's path, with About, Tags and Sources in a sidebar, and leaves out a
+  first body heading that repeats the title. `[[Title]]` links resolve by
+  frontmatter title, the same rule lint uses, and an unknown title is marked
+  missing. `/search` searches the chosen vaults with the same ranking as
+  `awiki search`, marks the query terms in titles and snippets, and shows
+  only pages the viewer serves, so no result leads to a 404.
+- **Viewer theme.** The viewer has its own token stylesheet: every colour is
+  one light and dark pair, with an indigo accent, and the rendered body
+  (github-markdown-css, MIT, with its two colour sets merged onto the same
+  tokens) follows it. A theme switch in the header picks Auto, Light or Dark;
+  the choice is kept for a year in the `awiki_theme` cookie, and Auto follows
+  the browser. Page bodies are sanitised, pages use no JavaScript and carry
+  their CSS inline, and only topic-folder pages are served: `raw/`, config
+  files and paths outside the vault return 404. The viewer needs no token,
+  so `serve` warns when it is on and the bind address is not loopback. The
+  `/v1` API is unchanged.
 
 ### Changed
-- `awiki search` across several vaults now ranks through one shared function,
-  which the viewer search also uses. Its output is unchanged.
+- `awiki search` across several vaults now ranks through one shared function.
+  Its output is unchanged.
 
 ### Fixed
 - **Claude Code session titles.** A session page was titled from the first
