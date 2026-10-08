@@ -291,3 +291,30 @@ def test_title_from_a_plain_first_prompt_is_unchanged(tmp_path):
         _user("# Refactor the parser\nand its tests", "2026-04-18T10:00:00Z"),
     ])
     assert convert_jsonl(jsonl).title == "Refactor the parser"
+
+
+REMINDERS = "<system-reminder>\nnote\n</system-reminder>\n" * 40
+
+
+def test_title_is_fast_on_many_harness_blocks_before_a_prompt(tmp_path):
+    from agent_wiki.adapters.claude_code import derive_title
+
+    start = time.monotonic()
+    title = derive_title([f"## [10:00:00] user\n\n{REMINDERS}Fix the login bug"])
+    assert time.monotonic() - start < 0.5
+    assert title is not None
+
+    jsonl = tmp_path / "session.jsonl"
+    _write_jsonl(jsonl, [_user(REMINDERS + "Fix the login bug", "2026-04-18T10:00:00Z")])
+    start = time.monotonic()
+    convert_jsonl(jsonl)
+    assert time.monotonic() - start < 0.5
+
+
+def test_title_is_fast_on_a_turn_of_harness_blocks_only():
+    from agent_wiki.adapters.claude_code import derive_title
+
+    start = time.monotonic()
+    title = derive_title([f"## [10:00:00] user\n\n{REMINDERS}"])
+    assert time.monotonic() - start < 0.5
+    assert title is None
