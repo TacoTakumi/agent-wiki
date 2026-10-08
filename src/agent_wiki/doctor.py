@@ -25,7 +25,7 @@ from agent_wiki.conversation import read_bundle
 from agent_wiki.page import (
     parse_page, page_body_for_raw, page_raw_diverged,
     load_sidecar, save_sidecar, sha256_bytes,
-    stamp_render_hash,
+    stamp_render_hash, update_frontmatter,
 )
 from agent_wiki.vault import DEFAULT_TOPICS, _default_sources_config
 
@@ -489,7 +489,36 @@ class SessionTitles(Check):
         )
 
     def fix(self, vault_path: Path) -> str:
-        raise NotImplementedError
+        from agent_wiki.index import rebuild_index
+        from agent_wiki.redact import make_redactor
+
+        config = load_vault_config(vault_path)
+        redactor = make_redactor(config.get("redaction") or {})
+        topic = (config.get("conversations") or {}).get("topic", "sessions")
+        retitled = skipped = 0
+        for bundle_path, title in self._retitles(vault_path):
+            bundle = parse_page(bundle_path)
+            page_path = vault_path / topic / bundle_path.name
+            try:
+                page = parse_page(page_path)
+            except (OSError, UnicodeDecodeError, yaml.YAMLError):
+                page = None
+            if not page or not page["meta"]:
+                skipped += 1
+                continue
+            update_frontmatter(bundle_path, {**bundle["meta"], "title": title})
+            page_title = redactor.redact(title)
+            update_frontmatter(page_path, {**page["meta"], "title": page_title})
+            # The page body opens with the title as its heading; swap that one
+            # line and keep every other byte of the body.
+            text = page_path.read_text()
+            body = page["body"]
+            new_body = re.sub(r"^# .*$", lambda _: f"# {page_title}", body, count=1, flags=re.M)
+            page_path.write_text(text[: len(text) - len(body)] + new_body)
+            retitled += 1
+        if retitled:
+            rebuild_index(vault_path)
+        return f"retitled {retitled} session(s), skipped {skipped} with no session page"
 
 
 ALL_CHECKS: tuple[Check, ...] = (
