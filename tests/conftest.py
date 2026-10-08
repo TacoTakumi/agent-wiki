@@ -143,13 +143,21 @@ def server_tokens():
     ]
 
 
-@pytest.fixture
-def server_app(tmp_vault, server_tokens, tmp_path, monkeypatch):
+@pytest.fixture(params=[False, True], ids=["viewer-off", "viewer-on"])
+def server_app(request, tmp_vault, server_tokens, tmp_path, monkeypatch):
+    """The API app, built once without and once with the HTML viewer mounted:
+    every API test runs against both, proving the viewer leaves /v1 unchanged."""
     monkeypatch.setenv("AGENT_WIKI_STATE_DIR", str(tmp_path / "state"))
     from agent_wiki.server.app import create_app
     _tokens_map, token_entries = server_tokens
     cfg = {"bind": "127.0.0.1", "port": 8731, "tokens": token_entries}
-    return create_app(tmp_vault, cfg)
+    catalog = None
+    if request.param:
+        from agent_wiki.registry import VaultEntry
+        from agent_wiki.viewer.catalog import build_vault_catalog
+        catalog = build_vault_catalog(
+            {"main": VaultEntry(name="main", path=tmp_vault)})
+    return create_app(tmp_vault, cfg, viewer=catalog)
 
 
 @pytest.fixture
