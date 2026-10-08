@@ -1,12 +1,22 @@
-"""The viewer's catalog: which vaults are served.
+"""The viewer's catalog: which vaults are served, and each vault's pages.
 
 `build_vault_catalog` is pure: it decides from a parsed registry and an
 optional override entry alone, so tests drive it without any config.
 `load_vault_catalog` feeds it the real registry and override readers from
 `agent_wiki.config`.
+
+`index_vault` lists one vault's pages per topic plus its title-to-URL map, and
+`resolve_page` maps a URL path back to a page file, admitting only files under
+a wiki.yaml topic folder. A page's URL path is its vault-relative path without
+`.md` (`research/foo`, `research/sub/bar`); the routes serve it under
+`/vaults/<name>/`.
 """
 
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from agent_wiki.config import load_vault_config
+from agent_wiki.page import parse_page
 
 
 # The name a bare-path override is served under: it has no registry name.
@@ -59,3 +69,96 @@ def load_vault_catalog() -> VaultCatalog:
     (--vault or AWIKI_VAULT), read once at startup."""
     from agent_wiki.config import load_registry, resolve_vault_override
     return build_vault_catalog(load_registry(), resolve_vault_override())
+
+
+@dataclass(frozen=True)
+class PageRecord:
+    """One page as the listings show it. Dates are strings ('' when absent);
+    `url_path` is vault-relative without .md, `path` the file on disk."""
+
+    title: str
+    topic: str
+    tags: tuple
+    created: str
+    updated: str
+    url_path: str
+    path: Path
+
+
+@dataclass(frozen=True)
+class VaultIndex:
+    """A vault's pages: {topic: (PageRecord, ...)} for each wiki.yaml topic
+    that exists as a folder, in wiki.yaml order, pages sorted by path; and
+    {title: url_path}, where the first page in that order wins a shared
+    title."""
+
+    topics: dict = field(default_factory=dict)
+    titles: dict = field(default_factory=dict)
+
+
+def _inside(path: Path, topic_root: Path) -> bool:
+    """Whether `path`, with symlinks followed, is a file under `topic_root`.
+    `topic_root` is the resolved vault joined with the topic name, so a topic
+    folder that is itself a symlink out of the vault admits nothing."""
+    real = path.resolve()
+    return real.is_file() and real.is_relative_to(topic_root)
+
+
+def index_vault(vault_dir: Path) -> VaultIndex:
+    """Index one vault's topic pages. The page rule is rebuild_index's (a .md
+    file with frontmatter anywhere under a wiki.yaml topic folder, title
+    falling back to the file stem), plus the safety rule `resolve_page`
+    applies, so every listed page is one the viewer will serve."""
+    vault_dir = Path(vault_dir)
+    root = vault_dir.resolve()
+    topics = {}
+    titles = {}
+    for topic in load_vault_config(vault_dir).get("topics", []):
+        topic_dir = vault_dir / topic
+        if not topic_dir.is_dir():
+            continue
+        records = []
+        for md_file in sorted(topic_dir.rglob("*.md")):
+            if not _inside(md_file, root / topic):
+                continue
+            meta = parse_page(md_file)["meta"]
+            if not meta:
+                continue
+            tags = meta.get("tags") or []
+            record = PageRecord(
+                title=str(meta.get("title", md_file.stem)),
+                topic=topic,
+                tags=(tuple(str(t) for t in tags)
+                      if isinstance(tags, list) else ()),
+                created=str(meta.get("created", "")),
+                updated=str(meta.get("updated", "")),
+                url_path=md_file.relative_to(vault_dir).as_posix()[:-3],
+                path=md_file,
+            )
+            records.append(record)
+            titles.setdefault(record.title, record.url_path)
+        topics[topic] = tuple(records)
+    return VaultIndex(topics=topics, titles=titles)
+
+
+def resolve_page(vault_dir: Path, url_path: str) -> "Path | None":
+    """The page file a URL path names, or None when the viewer must not serve
+    it. The first segment must be a wiki.yaml topic and at least one segment
+    must follow; empty, '.' and '..' segments and NUL bytes are refused; the
+    file is `<url_path>.md` and must stay under that topic folder with
+    symlinks followed. So raw/, wiki.yaml, log.md, index.md, non-topic
+    folders and non-.md files are never reachable. Frontmatter is not checked
+    here."""
+    vault_dir = Path(vault_dir)
+    parts = url_path.split("/")
+    # A NUL byte would make path resolution raise rather than miss.
+    if ("\0" in url_path or len(parts) < 2
+            or any(part in ("", ".", "..") for part in parts)):
+        return None
+    topic = parts[0]
+    if topic not in load_vault_config(vault_dir).get("topics", []):
+        return None
+    candidate = vault_dir.joinpath(*parts[:-1], parts[-1] + ".md")
+    if not _inside(candidate, vault_dir.resolve() / topic):
+        return None
+    return candidate

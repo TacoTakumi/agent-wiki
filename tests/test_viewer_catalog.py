@@ -140,3 +140,132 @@ def test_load_vault_catalog_reads_registry_and_override(tmp_config, tmp_vault,
     scratch.mkdir()
     monkeypatch.setenv("AWIKI_VAULT", str(scratch))
     assert load_vault_catalog().vaults == {"local": scratch}
+
+
+# --- per-vault page index and safe URL resolution ---
+
+def _write_page(path, title, **meta):
+    from agent_wiki.page import render_page
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_page({"title": title, **meta}, f"# {title}\n"))
+    return path
+
+
+def test_index_lists_topic_pages_with_metadata(tmp_vault):
+    from agent_wiki.viewer.catalog import index_vault
+
+    page = _write_page(tmp_vault / "research" / "alpha.md", "Alpha",
+                       topic="research", tags=["x", "y"],
+                       created="2026-01-01", updated="2026-02-01")
+
+    index = index_vault(tmp_vault)
+
+    [record] = index.topics["research"]
+    assert record.title == "Alpha"
+    assert record.topic == "research"
+    assert record.tags == ("x", "y")
+    assert record.created == "2026-01-01"
+    assert record.updated == "2026-02-01"
+    assert record.url_path == "research/alpha"
+    assert record.path == page
+
+
+def test_index_keeps_wiki_yaml_topic_order_and_empty_topic_folders(tmp_vault):
+    from agent_wiki.viewer.catalog import index_vault
+
+    _write_page(tmp_vault / "tools" / "t.md", "T")
+    (tmp_vault / "projects").rmdir()  # a topic with no folder is not listed
+
+    index = index_vault(tmp_vault)
+
+    assert list(index.topics) == ["decisions", "research", "tools"]
+    assert index.topics["decisions"] == ()
+
+
+def test_index_uses_the_rebuild_index_page_rule(tmp_vault):
+    from agent_wiki.viewer.catalog import index_vault
+
+    _write_page(tmp_vault / "research" / "nested" / "deep.md", "Deep")
+    (tmp_vault / "research" / "bare.md").write_text("# no frontmatter\n")
+    (tmp_vault / "research" / "notes.txt").write_text("---\ntitle: Txt\n---\n")
+    _write_page(tmp_vault / "elsewhere" / "stray.md", "Stray")
+    _write_page(tmp_vault / "raw" / "r.md", "Raw")
+    (tmp_vault / "research" / "untitled.md").write_text("---\ntags: [a]\n---\n")
+
+    index = index_vault(tmp_vault)
+
+    assert [r.url_path for r in index.topics["research"]] == [
+        "research/nested/deep", "research/untitled"]
+    # A page with frontmatter but no title falls back to its file stem.
+    assert index.topics["research"][1].title == "untitled"
+    assert index.topics["research"][1].created == ""
+
+
+def test_index_normalises_yaml_dates_to_strings(tmp_vault):
+    from agent_wiki.viewer.catalog import index_vault
+
+    (tmp_vault / "research" / "d.md").write_text(
+        "---\ntitle: D\ncreated: 2026-03-04\nupdated: 2026-03-05\n---\n")
+
+    [record] = index_vault(tmp_vault).topics["research"]
+
+    assert (record.created, record.updated) == ("2026-03-04", "2026-03-05")
+
+
+def test_index_builds_title_to_url_map(tmp_vault):
+    from agent_wiki.viewer.catalog import index_vault
+
+    _write_page(tmp_vault / "research" / "a.md", "Alpha")
+    _write_page(tmp_vault / "tools" / "sub" / "b.md", "Beta")
+
+    assert index_vault(tmp_vault).titles == {
+        "Alpha": "research/a",
+        "Beta": "tools/sub/b",
+    }
+
+
+def test_index_skips_a_page_symlinked_out_of_the_vault(tmp_vault, tmp_path):
+    from agent_wiki.viewer.catalog import index_vault
+
+    outside = _write_page(tmp_path / "outside" / "secret.md", "Secret")
+    (tmp_vault / "research" / "secret.md").symlink_to(outside)
+
+    index = index_vault(tmp_vault)
+
+    assert index.topics["research"] == ()
+    assert "Secret" not in index.titles
+
+
+def test_resolve_page_finds_topic_pages(tmp_vault):
+    from agent_wiki.viewer.catalog import resolve_page
+
+    page = _write_page(tmp_vault / "research" / "alpha.md", "Alpha")
+    nested = _write_page(tmp_vault / "research" / "sub" / "deep.md", "Deep")
+
+    assert resolve_page(tmp_vault, "research/alpha") == page
+    assert resolve_page(tmp_vault, "research/sub/deep") == nested
+
+
+def test_resolve_page_refuses_everything_outside_topic_folders(tmp_vault,
+                                                               tmp_path):
+    from agent_wiki.viewer.catalog import resolve_page
+
+    (tmp_vault / "raw" / "r.md").write_text("raw\n")
+    _write_page(tmp_vault / "elsewhere" / "stray.md", "Stray")
+    (tmp_vault / "research" / "notes.txt").write_text("text\n")
+    _write_page(tmp_vault / "research" / "alpha.md", "Alpha")
+    outside = _write_page(tmp_path / "outside" / "secret.md", "Secret")
+    (tmp_vault / "research" / "secret.md").symlink_to(outside)
+    (tmp_vault / "research" / "rawlink.md").symlink_to(
+        tmp_vault / "raw" / "r.md")
+
+    for url_path in [
+        "raw/r", "raw/r.md", "wiki.yaml", "wiki", "log", "log.md", "index",
+        "index.md", "elsewhere/stray", "research/notes.txt", "research/notes",
+        "research/alpha.md", "research", "research/", "research/missing",
+        "research/../research/alpha", "research/../../etc/passwd",
+        "../vault/research/alpha", "/research/alpha", "research//alpha",
+        "research/./alpha", "research/secret", "research/rawlink", "",
+        "research/al\0pha",
+    ]:
+        assert resolve_page(tmp_vault, url_path) is None, url_path
