@@ -567,6 +567,30 @@ def test_page_with_unreadable_frontmatter_returns_404(viewer, bad_page):
     assert viewer.get("/vaults/main/research/broken").status_code == 404
 
 
+@pytest.fixture
+def loop_page(tag_pages):
+    """A .md symlink beside the tagged pages that points to itself."""
+    loop = tag_pages / "research" / "loop.md"
+    loop.symlink_to(loop)
+    return tag_pages
+
+
+@pytest.mark.parametrize("url", [
+    "/vaults/main/",
+    "/vaults/main/research/",
+    "/vaults/main/-/tags/foo",
+    "/vaults/main/research/newer",
+])
+def test_symlink_loop_leaves_other_views_working(viewer, loop_page, url):
+    resp = viewer.get(url)
+    assert resp.status_code == 200
+    assert "/vaults/main/research/loop" not in resp.text
+
+
+def test_symlink_loop_page_returns_404(viewer, loop_page):
+    assert viewer.get("/vaults/main/research/loop").status_code == 404
+
+
 def test_search_lists_good_page_beside_unreadable_one(viewer, catalog):
     main = catalog.vaults["main"]
     (main / "research" / "good.md").write_text(
