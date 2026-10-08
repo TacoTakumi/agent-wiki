@@ -9,6 +9,11 @@ A [[...]] in the body is a wikilink. It is an inline rule, so code spans and
 fenced code keep it as literal text. The whole bracket text is looked up as an
 exact page title (no Obsidian alias or callout handling); an unknown title
 renders as <span class="missing">.
+
+The page view shows the frontmatter title as its own H1. When render_markdown
+gets that title and the body's first block is an H1 whose text, stripped of
+surrounding whitespace, equals it, that H1 is left out so the title shows once.
+Any other first H1, and any later H1, stays.
 """
 
 import copy
@@ -78,7 +83,26 @@ def sanitise(html: str) -> str:
     )
 
 
-def render_markdown(body: str, links: dict[str, str] | None = None) -> str:
+def drop_title_heading(tokens: list, title: str) -> list:
+    """Leave out the first block when it is an H1 whose raw inline text,
+    stripped, equals title (also stripped). Other tokens are kept as is."""
+    if (len(tokens) >= 3
+            and tokens[0].type == "heading_open" and tokens[0].tag == "h1"
+            and tokens[1].type == "inline"
+            and tokens[1].content.strip() == title.strip()
+            and tokens[2].type == "heading_close"):
+        return tokens[3:]
+    return tokens
+
+
+def render_markdown(body: str, links: dict[str, str] | None = None,
+                    title: str | None = None) -> str:
     """Render a markdown page body to sanitised HTML. links maps an exact page
-    title to its URL; a wikilink to a title not in it renders as missing."""
-    return sanitise(build_parser().render(body, {"wikilinks": links or {}}))
+    title to its URL; a wikilink to a title not in it renders as missing. With
+    title, a first-block H1 that repeats it is left out."""
+    md = build_parser()
+    env = {"wikilinks": links or {}}
+    tokens = md.parse(body, env)
+    if title is not None:
+        tokens = drop_title_heading(tokens, title)
+    return sanitise(md.renderer.render(tokens, md.options, env))
