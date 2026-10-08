@@ -72,6 +72,78 @@ def test_vault_list_marks_missing_vaults_unavailable(viewer):
     assert "unavailable" in html
 
 
+@pytest.fixture
+def counted_viewer(tmp_vault, tmp_path):
+    """Local vaults 'big' (1,001 pages over two topics), 'one' (1 page) and
+    'empty' (0 pages), plus one remote and one missing vault."""
+    big = make_vault(tmp_path / "big")
+    for i in range(1000):
+        (big / "research" / f"p{i}.md").write_text(
+            tagged_page(f"P{i}", [], "2026-01-01"))
+    (big / "tools" / "t.md").write_text(tagged_page("T", [], "2026-01-01"))
+    one = make_vault(tmp_path / "one")
+    (one / "research" / "a.md").write_text(tagged_page("A", [], "2026-01-01"))
+    registry = {
+        "big": VaultEntry(name="big", path=big),
+        "one": VaultEntry(name="one", path=one),
+        "empty": VaultEntry(name="empty", path=make_vault(tmp_path / "empty")),
+        "team": VaultEntry(name="team", url="https://wiki.example.com",
+                           token="tok-1"),
+        "gone": VaultEntry(name="gone", path=tmp_path / "gone"),
+    }
+    app = create_app(tmp_vault, SERVER_CONFIG,
+                     viewer=build_vault_catalog(registry))
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_vault_list_has_a_page_title_and_subtitle(counted_viewer):
+    html = counted_viewer.get("/").text
+    assert re.search(r'<main[^>]*>\s*<h1 class="page-title">Vaults</h1>', html)
+    assert ('<p class="page-sub">Local vaults served read-only on this '
+            'machine.</p>') in html
+
+
+def test_vault_list_is_one_row_box_with_page_counts(counted_viewer):
+    html = counted_viewer.get("/").text
+    boxes = re.findall(r'<div class="box[^"]*">\s*<ul class="rows">(.*?)</ul>',
+                       html, re.S)
+    assert len(boxes) == 1
+    rows = re.findall(
+        r'<li><a class="title" href="([^"]+)">([^<]+)</a>'
+        r'<span class="meta">([^<]+)</span></li>', boxes[0])
+    assert rows == [
+        ("/vaults/big/", "big", "1,001 pages"),
+        ("/vaults/empty/", "empty", "0 pages"),
+        ("/vaults/one/", "one", "1 page"),
+    ]
+
+
+def test_vault_list_box_has_no_inline_style(counted_viewer):
+    html = counted_viewer.get("/").text
+    main = re.search(r"<main.*?</main>", html, re.S).group(0)
+    assert "style=" not in main
+
+
+def test_vault_list_keeps_unavailable_and_skipped_remote_note(counted_viewer):
+    html = counted_viewer.get("/").text
+    assert re.search(r"<h2[^>]*>Unavailable</h2>", html)
+    assert "These local vaults have no directory on disk:" in html
+    assert "gone (unavailable)" in html
+    assert ("1 remote vault skipped: the viewer serves local vaults only."
+            in html)
+    assert "/vaults/team/" not in html
+    assert "/vaults/gone/" not in html
+
+
+def test_vault_list_without_local_vaults_says_so(tmp_vault, tmp_path):
+    registry = {"gone": VaultEntry(name="gone", path=tmp_path / "gone")}
+    app = create_app(tmp_vault, SERVER_CONFIG,
+                     viewer=build_vault_catalog(registry))
+    html = TestClient(app).get("/").text
+    assert "No local vaults to serve." in html
+    assert '<ul class="rows">' not in html
+
+
 def test_served_vault_route_answers(viewer):
     assert viewer.get("/vaults/main/").status_code == 200
 
