@@ -112,7 +112,7 @@ def test_every_page_inlines_its_css_and_loads_nothing(viewer, url):
     assert resp.status_code == 200
     html = resp.text
     head = html[:html.index("</head>")]
-    assert "<style>" in head
+    assert re.search(r'<style nonce="[^"]+">', head)
     assert ".markdown-body" in head
     assert "<script" not in html.lower()
     assert not STYLESHEET_LINK.search(html)
