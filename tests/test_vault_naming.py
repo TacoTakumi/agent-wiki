@@ -157,3 +157,21 @@ def test_served_name_rule(tmp_path):
     # No default to give: an empty registry, or several with no 'main'.
     assert served_name({}) == "local"
     assert served_name({"work": work, "x": main}) == "local"
+
+
+def test_create_app_names_another_path_local_not_the_configured_vault(vaults):
+    # The configured vault is 'main'; an app built for 'work' by path must not
+    # borrow main's name, or main's grants would open work's API.
+    app = create_app(vaults["work"], SERVER_CONFIG)
+    headers, _ = _user(app, "ann", {"main": "reader"})
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.get("/v1/status", headers=headers).status_code == 403
+    local_headers, _ = _user(app, "bob", {"local": "reader"})
+    assert client.get("/v1/status", headers=local_headers).status_code == 200
+
+
+def test_create_app_names_the_configured_path_by_its_served_name(vaults):
+    app = create_app(vaults["main"], SERVER_CONFIG)
+    headers, _ = _user(app, "ann", {"main": "reader"})
+    client = TestClient(app, raise_server_exceptions=False)
+    assert client.get("/v1/status", headers=headers).status_code == 200
