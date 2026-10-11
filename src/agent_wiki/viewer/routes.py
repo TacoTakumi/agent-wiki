@@ -4,6 +4,9 @@ config). Every page needs a signed-in session (see viewer.session); only the
 favicons answer without one. The /v1 API keeps its own bearer-token auth."""
 from __future__ import annotations
 
+import base64
+import hashlib
+import secrets
 import sys
 from importlib.resources import files
 from urllib.parse import quote
@@ -81,6 +84,26 @@ def same_site_path(target: str | None) -> str:
 
 SIGNED_IN_CACHE_CONTROL = "private, no-store"
 
+# The only inline style attributes a page may carry: the table alignment
+# markdown-it writes on th and td, which the sanitiser lets through.
+TABLE_ALIGN_STYLES = ("text-align:left", "text-align:center",
+                      "text-align:right")
+
+
+def _style_hash(value: str) -> str:
+    digest = hashlib.sha256(value.encode()).digest()
+    return "'sha256-" + base64.b64encode(digest).decode() + "'"
+
+
+def content_security_policy(nonce: str) -> str:
+    """The policy a viewer page is sent with. Pages run no script and load
+    no CSS: the one style block carries this response's `nonce`, and the
+    table alignment attributes are allowed by hash."""
+    styles = " ".join(_style_hash(value) for value in TABLE_ALIGN_STYLES)
+    return ("default-src 'none'; img-src 'self' data: https:; "
+            f"style-src 'nonce-{nonce}' 'unsafe-hashes' {styles}; "
+            "base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+
 
 def render(request: Request, template: str, *, header_vault: str | None = None,
            header_search: bool = True, tabs: list | None = None,
@@ -101,14 +124,17 @@ def render(request: Request, template: str, *, header_vault: str | None = None,
     that echoes the secret; any other page (the sign-in page) shows neither."""
     header_vault_url = vault_url(header_vault) if header_vault else None
     viewer = getattr(request.state, VIEWER_STATE, None)
+    nonce = secrets.token_urlsafe(16)
     html = templates.get_template(template).render(
+        csp_nonce=nonce,
         viewer=viewer.name if viewer else None,
         session=session_secret(request) if viewer else "",
         theme=current_theme(request), themes=THEMES,
         theme_next=request_target(request), header_vault=header_vault,
         header_vault_url=header_vault_url, header_search=header_search,
         tabs=tabs, crumbs=crumbs, **context)
-    headers = {"Vary": "Cookie"}
+    headers = {"Vary": "Cookie",
+               "Content-Security-Policy": content_security_policy(nonce)}
     if viewer:
         # The page carries the session secret in its forms: no cache, shared
         # or the browser's own, may keep a copy.

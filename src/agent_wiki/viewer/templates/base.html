@@ -8,7 +8,7 @@
 <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 {# Inlined, not linked: pages load no external CSS. #}
-<style>
+<style nonce="{{ csp_nonce }}">
 {% include "github-markdown.css" %}
 {% include "viewer.css" %}
 </style>

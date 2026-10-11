@@ -250,7 +250,9 @@ def test_refused_sign_ins_read_the_same_and_cost_one_scrypt_each(
         assert resp.status_code == 400, name
         assert "set-cookie" not in resp.headers, name
         assert len(verifies) == 1, name
-        bodies.append(resp.content)
+        # The style nonce is fresh on every response and says nothing about
+        # the name tried; everything else must match byte for byte.
+        bodies.append(re.sub(rb'nonce="[^"]+"', b'nonce=""', resp.content))
     assert bodies[0] == bodies[1] == bodies[2]
     assert b"That user name and password do not sign in." in bodies[0]
     assert session_count(app) == 0

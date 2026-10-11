@@ -9,6 +9,43 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.12.1]
+
+### Added
+- **Content-Security-Policy on viewer pages.** Every viewer page is sent with
+  `default-src 'none'`, `img-src 'self' data: https:`, `base-uri 'none'`,
+  `form-action 'self'` and `frame-ancestors 'none'`. The inline style block
+  carries a nonce that is new on each response, and the three `text-align`
+  attributes markdown tables use are allowed by hash. The `/v1` API is
+  unchanged.
+
+### Changed
+- **The top bar shows the user name and a Settings link.** The name is plain
+  text; a separate Settings link leads to the user page.
+- **`auth_trusted_proxies` counts with proxy sign-in off.** It now decides
+  whose `X-Forwarded-Proto: https` marks the session cookie `Secure` whether
+  or not `auth_proxy` is on, so a TLS proxy on another host gets Secure
+  cookies. `serve` checks the list whenever it is set and refuses a wildcard
+  even with `auth_proxy` off.
+
+### Fixed
+- **Login CSRF.** The sign-in form carries a token that matches a
+  short-lived `awiki_signin` cookie (SameSite=Strict); a sign-in post without
+  a matching pair is refused with 403 before any password check, so another
+  site cannot sign a browser in to an account of its choosing.
+- **Signed-in pages are not cached.** Every page that carries the session
+  secret in its forms is sent with `Cache-Control: private, no-store`.
+- **An unknown stored role grants nothing, everywhere.** A grant or scope row
+  holding a role the ladder does not know reads as `none` in one place, so
+  the viewer no longer answers 400 for it and the API and the viewer agree.
+- **A grant on `local` is not reported as stale.** Under a bare-path
+  override the served vault is `local`; `serve` and `awiki user list` now
+  count that name as known.
+- **`create_app` names a vault by its own path.** An app built for a path
+  other than the configured vault is served as `local` and no longer borrows
+  the configured vault's name and grants. The README now states the naming
+  rule: every path override is `local`, even a registered vault's path.
+
 ## [0.12.0]
 
 **Breaking:** `awiki serve` now has named users, and tokens belong to them.
