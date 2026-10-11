@@ -35,6 +35,9 @@ below are reconstructed from the commits that bumped `__version__`.
   block early: `topic`, `tags`, `sources` and the rest went into the body,
   silently, and lint reported the raw file as having no page. The block now
   closes only on a line that is exactly `---`.
+- **Docs.** The systemd unit and its README sample use `User=you` as the
+  placeholder account, and the README says the user page is reached by the
+  Settings link in the header.
 - **Login CSRF.** The sign-in form carries a token that matches a
   short-lived `awiki_signin` cookie (SameSite=Strict); a sign-in post without
   a matching pair is refused with 403 before any password check, so another

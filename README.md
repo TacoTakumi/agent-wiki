@@ -1124,7 +1124,7 @@ users who have one.
 
 #### The user page
 
-The user page at `/user` (the name link in the header) shows:
+The user page at `/user` (the Settings link in the header) shows:
 
 - the theme choice (Auto, Light or Dark);
 - your own tokens: make one with a name and an optional scope, list them, and revoke them. A new secret is shown once, on the page that made it;
@@ -1170,7 +1170,7 @@ After=network.target
 Type=simple
 ExecStart=/usr/local/bin/awiki serve --bind 127.0.0.1 --port 8731
 Restart=on-failure
-User=youruser
+User=you
 
 [Install]
 WantedBy=multi-user.target

@@ -15,9 +15,13 @@ def _isolate_awiki_config(tmp_path_factory, monkeypatch):
     write on that path (`awiki init`, stale-config repair) would clobber a live
     developer's vault_path — breaking their other sessions. This makes the real
     config unreachable from the suite. To run awiki against a scratch vault by
-    hand, prefer `AWIKI_VAULT=<dir>` (a vault override that writes no config)."""
+    hand, prefer `AWIKI_VAULT=<dir>` (a vault override that writes no config).
+
+    AWIKI_VAULT is cleared too: it outranks the config, so a value left in the
+    developer's shell would point CLI tests at that vault."""
     monkeypatch.setenv(
         "AGENT_WIKI_CONFIG_DIR", str(tmp_path_factory.mktemp("awiki-config")))
+    monkeypatch.delenv("AWIKI_VAULT", raising=False)
 
 
 # A small HTML page (real article wrapped in nav/footer boilerplate) used by the
