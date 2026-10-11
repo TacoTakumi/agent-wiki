@@ -289,9 +289,8 @@ def init(path, url, token, clear, vault_name, topics_opt):
             path = click.prompt("Vault path", default=".")
 
     if vault_name is not None:
-        from agent_wiki.page import slugify
-        from agent_wiki.registry import parse_registry
-        if not vault_name or slugify(vault_name) != vault_name:
+        from agent_wiki.registry import is_valid_vault_name, parse_registry
+        if not is_valid_vault_name(vault_name):
             raise click.UsageError(
                 f"vault name {vault_name!r} is not slug-legal; use lowercase "
                 f"letters, digits, and hyphens."
@@ -447,9 +446,9 @@ def vault_add(name, target, token):
     from agent_wiki.page import slugify
     from agent_wiki.config import (
         load_user_config, migrate_to_vaults_schema, save_user_config)
-    from agent_wiki.registry import parse_registry
+    from agent_wiki.registry import is_valid_vault_name, parse_registry
 
-    if not name or slugify(name) != name:
+    if not is_valid_vault_name(name):
         raise click.UsageError(
             f"vault name {name!r} is not slug-legal; use lowercase letters, "
             f"digits, and hyphens (e.g. {slugify(name) or 'my-vault'!r})."
