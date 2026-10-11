@@ -16,7 +16,8 @@ from agent_wiki.server import accounts
 from agent_wiki.server.store import open_store
 from agent_wiki.viewer.routes import render, request_target, same_site_path
 from agent_wiki.viewer.session import (SignInRequired, Viewer,
-                                       clear_session_cookie, current_viewer,
+                                       clear_session_cookie, csrf_refused,
+                                       current_viewer,
                                        request_is_https, resume_viewer,
                                        set_session_cookie,
                                        skip_cookie_refresh)
@@ -91,9 +92,13 @@ def build_auth_router(store_file: Path) -> APIRouter:
         return response
 
     @r.post(SIGNOUT_PATH)
-    def sign_out(request: Request, viewer: Viewer = Depends(current_viewer)):
-        # The form echoes the session secret in its `session` field; the
-        # check that the post carries it belongs here, before anything ends.
+    def sign_out(request: Request, viewer: Viewer = Depends(current_viewer),
+                 session: str | None = Form(default=None)):
+        # The form echoes the session secret in its `session` field; a post
+        # without it ends nothing.
+        refused = csrf_refused(request, session)
+        if refused is not None:
+            return refused
         with open_store(store_file) as store:
             accounts.end_session(store, viewer.secret)
         # This request may have moved the session's expiry; the response

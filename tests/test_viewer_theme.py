@@ -1,6 +1,8 @@
-"""The header theme switch: POST /theme stores the choice in a cookie and
+"""The header theme switch: POST /theme, from a signed-in session that echoes
+its secret in the form's session field, stores the choice in a cookie and
 redirects back on the same site; every viewer page writes data-theme from that
-cookie, marks the current button pressed and varies on Cookie."""
+cookie, marks the current button pressed and varies on Cookie. (The session
+field itself is tested in test_viewer_csrf.py.)"""
 
 import re
 from pathlib import Path
@@ -10,6 +12,7 @@ import pytest
 from agent_wiki.registry import VaultEntry
 from agent_wiki.server.app import create_app
 from agent_wiki.viewer.catalog import build_vault_catalog
+from agent_wiki.viewer.session import SESSION_COOKIE
 from conftest import make_vault, signed_in_client
 
 
@@ -52,6 +55,8 @@ VIEWS = [
 
 
 def post_theme(viewer, data):
+    """POST /theme as the signed-in viewer, the form echoing its session."""
+    data = {"session": viewer.cookies.get(SESSION_COOKIE), **data}
     return viewer.post("/theme", data=data, follow_redirects=False)
 
 

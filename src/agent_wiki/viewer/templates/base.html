@@ -43,12 +43,15 @@ Agent Wiki
 </form>
 </div>
 {% endif %}
+{% if viewer %}
 <form class="theme" method="post" action="/theme" aria-label="Theme">
+<input type="hidden" name="session" value="{{ session }}">
 <input type="hidden" name="next" value="{{ theme_next }}">
 {% for value in themes %}
 <button name="theme" value="{{ value }}" aria-pressed="{{ 'true' if value == theme else 'false' }}">{{ value | capitalize }}</button>
 {% endfor %}
 </form>
+{% endif %}
 </div>
 {% if tabs %}
 <div class="container tabs-row">

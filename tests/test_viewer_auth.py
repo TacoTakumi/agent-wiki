@@ -131,9 +131,9 @@ def test_sign_in_page_and_favicons_answer_without_a_session(anon):
 
 
 def test_every_page_route_runs_the_session_guard(app):
-    # Only the favicons and the theme switch may answer without a session;
-    # a page route added later without the guard fails here.
-    open_paths = {f"/{name}" for name in FAVICONS} | {"/theme"}
+    # Only the favicons may answer without a session; a page route added
+    # later without the guard fails here.
+    open_paths = {f"/{name}" for name in FAVICONS}
     catalog = build_vault_catalog({})
     for route in build_viewer_router(catalog).routes:
         guards = [d.call for d in route.dependant.dependencies]
