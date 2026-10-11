@@ -41,8 +41,11 @@ def _ask_password() -> str:
 
 
 def _registry_vault_names() -> set:
+    """The vault names a grant may name: the registry's, plus the name the
+    served vault goes by ('local' under a bare-path override)."""
     from agent_wiki.config import load_registry
-    return set(load_registry())
+    from agent_wiki.viewer.catalog import served_vault_name
+    return set(load_registry()) | {served_vault_name()}
 
 
 @click.group("user")
