@@ -103,11 +103,14 @@ def test_serve_with_proxy_on_and_defaults_starts(run_serve):
     assert calls[0][1]["proxy_headers"] is False
 
 
-def test_serve_with_proxy_off_ignores_a_bad_list(run_serve):
+def test_serve_with_proxy_off_still_refuses_a_wildcard_list(run_serve):
+    # The list also decides whose X-Forwarded-Proto counts, so it is checked
+    # with proxy sign-in off too.
     result, calls = run_serve({"auth_proxy": False,
                                "auth_trusted_proxies": ["*"]})
-    assert result.exit_code == 0, result.output
-    assert len(calls) == 1
+    assert result.exit_code != 0
+    assert "auth_trusted_proxies" in result.output
+    assert calls == []
 
 
 @pytest.mark.parametrize("trusted, fault", [

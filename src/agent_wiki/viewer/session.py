@@ -203,8 +203,8 @@ def request_is_https(request: HTTPConnection) -> bool:
     reads no forwarded header into the scheme, so behind a reverse proxy
     that ends TLS every request arrives as plain http; one from a peer
     inside the trusted networks that says ``X-Forwarded-Proto: https``
-    counts as https too. The trusted list holds whether or not proxy
-    sign-in is on: with it off, it is loopback. The header's first value
+    counts as https too. The trusted list (auth_trusted_proxies) holds
+    whether or not proxy sign-in is on. The header's first value
     is read, and from any other peer it counts for nothing, as any client
     can send it.
     """
