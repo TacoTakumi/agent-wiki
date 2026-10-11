@@ -1,11 +1,12 @@
-"""`awiki user`: manage the server's users and their per-vault grants.
+"""`awiki user`: manage the server's users, their per-vault grants and tokens.
 
 Local on the server host: every command opens the auth store in the awiki
 config dir. The rules live in :mod:`agent_wiki.server.accounts`; this
 module only asks, prints and maps a refusal to a non-zero exit.
 
 A password is only ever typed at a prompt, never given as an option value,
-so it lands neither in shell history nor in the process list.
+so it lands neither in shell history nor in the process list. A token's
+secret is printed once, when it is made, and never again.
 """
 from __future__ import annotations
 
@@ -46,7 +47,7 @@ def _registry_vault_names() -> set:
 
 @click.group("user")
 def user_group():
-    """Manage server users and their vault grants (local on the server host)."""
+    """Manage server users, their vault grants and tokens (local on the server host)."""
 
 
 @user_group.command("add")
@@ -161,3 +162,69 @@ def user_ungrant(name, vault):
         except accounts.AccountError as exc:
             _fail(str(exc))
     click.echo(f"Removed the grant of {name} on {vault}.")
+
+
+@user_group.group("token")
+def user_token_group():
+    """Manage a user's bearer tokens: add, list and revoke."""
+
+
+@user_token_group.command("add")
+@click.argument("user")
+@click.argument("name")
+@click.option("--scope", "scopes", multiple=True, metavar="VAULT=ROLE",
+              help="Narrow the token to ROLE on VAULT ('*' for every vault); "
+                   "repeat for more vaults. Without it the token acts under "
+                   "all of the owner's grants.")
+def user_token_add(user, name, scopes):
+    """Make the token NAME for USER and print its secret once."""
+    with open_store() as store:
+        try:
+            scope = accounts.parse_scope(list(scopes))
+            secret = accounts.mint_token(store, user, name, scope)
+        except accounts.AccountError as exc:
+            _fail(str(exc))
+    owner = user.lower()
+    click.echo(f"Token {name!r} for {owner} ({_describe_scope(scope)}). "
+               "Store it now, it will not be shown again:")
+    click.echo(secret)
+
+
+@user_token_group.command("list")
+@click.argument("user")
+def user_token_list(user):
+    """List USER's tokens with last 4, scope and times; never the secret."""
+    with open_store() as store:
+        try:
+            tokens = accounts.list_tokens(store, user)
+        except accounts.AccountError as exc:
+            _fail(str(exc))
+    owner = user.lower()
+    if not tokens:
+        click.echo(f"{owner} has no tokens. "
+                   f"'awiki user token add {owner} <name>' makes one.")
+        return
+    for token in tokens:
+        click.echo(f"{token.name}  ...{token.last4 or '????'}")
+        click.echo(f"  scope: {_describe_scope(token.scope)}")
+        click.echo(f"  created: {token.created}")
+        click.echo(f"  last used: {token.last_used or 'never'}")
+
+
+@user_token_group.command("revoke")
+@click.argument("user")
+@click.argument("name")
+def user_token_revoke(user, name):
+    """Delete USER's token NAME; it stops working at its next request."""
+    with open_store() as store:
+        try:
+            accounts.revoke_token(store, user, name)
+        except accounts.AccountError as exc:
+            _fail(str(exc))
+    click.echo(f"Revoked the token {name!r} of {user.lower()}.")
+
+
+def _describe_scope(scope) -> str:
+    if not scope:
+        return "all of the owner's grants"
+    return ", ".join(f"{vault}={role}" for vault, role in sorted(scope.items()))
