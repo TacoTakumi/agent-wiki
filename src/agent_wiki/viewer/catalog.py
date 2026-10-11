@@ -3,8 +3,10 @@
 `build_vault_catalog` is pure: it decides from a parsed registry and an
 optional override entry alone, so tests drive it without any config.
 `load_vault_catalog` feeds it the real registry and override readers from
-`agent_wiki.config`. `served_vault_name` names the one vault an API process
-serves: its registry name, or 'local' for a path outside the registry.
+`agent_wiki.config`. `served_name` is the one naming rule both the catalog
+and the API use for the vault an override (or the default) selects, so a
+grant names the same vault on both surfaces; `served_vault_name` applies it
+to the effective registry and override.
 
 `index_vault` lists one vault's pages per topic plus its title-to-URL map, and
 `resolve_page` maps a URL path back to a page file, admitting only files under
@@ -49,10 +51,8 @@ def build_vault_catalog(registry: dict, override=None) -> VaultCatalog:
     if override is None:
         entries = [registry[name] for name in sorted(registry)]
         names = [entry.name for entry in entries]
-    elif registry.get(override.name) == override:
-        entries, names = [override], [override.name]
     else:
-        entries, names = [override], [OVERRIDE_PATH_NAME]
+        entries, names = [override], [served_name(registry, override)]
 
     vaults = {}
     skipped_remote = 0
@@ -89,32 +89,33 @@ def load_vault_catalog() -> VaultCatalog:
     return build_vault_catalog(load_registry(), resolve_vault_override())
 
 
-def vault_name_for_path(registry: dict, vault_path) -> str:
-    """The name the vault at `vault_path` is served under: the first registry
-    name, in sorted order, whose entry has that path (both resolved), else
-    'local', the name a vault outside the registry is served under. Pure:
-    tests pass a registry ({name: VaultEntry}) directly."""
-    target = _resolved(Path(vault_path))
-    for name in sorted(registry):
-        entry = registry[name]
-        if entry.path is not None and _resolved(Path(entry.path)) == target:
-            return name
-    return OVERRIDE_PATH_NAME
-
-
-def served_vault_name(vault_path) -> str:
-    """`vault_name_for_path` against the effective registry, read once."""
-    from agent_wiki.config import load_registry
-    return vault_name_for_path(load_registry(), vault_path)
-
-
-def _resolved(path: Path) -> Path:
-    """`path` with ~ expanded and symlinks followed; as given when it cannot
-    be resolved, such as a symlink loop."""
+def served_name(registry: dict, override=None, default_vault=None) -> str:
+    """The name the selected vault is served under, by one rule for the
+    viewer catalog and the API alike. A name-matched override (the
+    registry's own entry) keeps its registry name; any other override is a
+    path, served as 'local' even when it equals a registered vault's path.
+    With no override, the default vault's registry name (an explicit
+    `default_vault`, else 'main', else the sole vault); 'local' when the
+    registry has no default to give. Pure: tests pass a registry
+    ({name: VaultEntry}) directly."""
+    if override is not None:
+        if registry.get(override.name) == override:
+            return override.name
+        return OVERRIDE_PATH_NAME
+    from click import UsageError
+    from agent_wiki.registry import resolve_default_vault
     try:
-        return path.expanduser().resolve()
-    except (RuntimeError, OSError):
-        return path.expanduser()
+        return resolve_default_vault(registry, default_vault).name
+    except UsageError:
+        return OVERRIDE_PATH_NAME
+
+
+def served_vault_name() -> str:
+    """`served_name` against the effective registry, its default_vault and
+    the active override (--vault or AWIKI_VAULT), read once."""
+    from agent_wiki.config import load_effective_config, resolve_vault_override
+    registry, default_vault = load_effective_config()
+    return served_name(registry, resolve_vault_override(), default_vault)
 
 
 @dataclass(frozen=True)
