@@ -474,6 +474,86 @@ def token_for(
     return token
 
 
+# --- server.yaml tokens ------------------------------------------------------
+#
+# Before the user store, server.yaml held a list of tokens, each a name, a
+# role and the SHA-256 of its secret. That is the same hash the store keeps,
+# so an imported entry keeps working under the same secret.
+
+SERVER_TOKEN_ROLES = ("reader", "writer", "admin")
+_HASH_PATTERN = re.compile(r"[0-9a-f]{64}")
+
+
+def migrate_server_tokens(
+    store: SqliteStore,
+    owner: str,
+    entries: list,
+    *,
+    now: str | None = None,
+) -> tuple[list[str], list[str]]:
+    """Import server.yaml token entries as tokens of ``owner``.
+
+    Each entry becomes a token with the entry's name and hash, the scope
+    ``{'*': role}`` and no last 4 characters (the secret was never kept).
+    Returns (names imported, names skipped). An entry whose hash the store
+    already holds is neither: it was imported before, so a rerun carries
+    nothing twice. An entry whose name ``owner`` already uses for another
+    token is skipped. An unknown owner, or any entry that is not a mapping
+    with a name, a role of reader, writer or admin and a 64-hex hash, is an
+    :class:`AccountError` before anything is written.
+    """
+    owner = require_user(store, owner).name
+    checked = [_check_server_token(entry) for entry in entries]
+    created = now or _now()
+    imported: list[str] = []
+    skipped: list[str] = []
+    for name, role, digest in checked:
+        if store.find_token(digest) is not None:
+            continue
+        token = Token(
+            owner=owner,
+            name=name,
+            hash=digest,
+            last4=None,
+            scope={WILDCARD: role},
+            created=created,
+        )
+        try:
+            store.add_token(token)
+        except Conflict:
+            skipped.append(name)
+            continue
+        imported.append(name)
+    return imported, skipped
+
+
+def _check_server_token(entry) -> tuple[str, str, str]:
+    """(name, role, hash) of one server.yaml token entry, or an :class:`AccountError`."""
+    if not isinstance(entry, dict):
+        raise AccountError(f"A server.yaml token entry is not a mapping: {entry!r}.")
+    name = entry.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise AccountError(f"A server.yaml token entry has no name: {_without_hash(entry)!r}.")
+    role = entry.get("role")
+    if role not in SERVER_TOKEN_ROLES:
+        raise AccountError(
+            f"The server.yaml token {name!r} has the role {role!r}: "
+            f"expected one of {', '.join(SERVER_TOKEN_ROLES)}."
+        )
+    digest = entry.get("hash")
+    digest = digest.lower() if isinstance(digest, str) else ""
+    if not _HASH_PATTERN.fullmatch(digest):
+        raise AccountError(
+            f"The server.yaml token {name!r} has no valid hash: "
+            "expected 64 hex characters."
+        )
+    return name, role, digest
+
+
+def _without_hash(entry: dict) -> dict:
+    return {key: value for key, value in entry.items() if key != "hash"}
+
+
 def _token_due(last_used: str | None, now: float) -> bool:
     """Whether a token last used at ``last_used`` should have ``now`` written."""
     if last_used is None:

@@ -1,4 +1,9 @@
-"""Server config (server.yaml) on the SERVER host: bind/port + token hashes.
+"""Server config (server.yaml) on the SERVER host: bind and port.
+
+An older server.yaml also holds a ``tokens`` list (name, role, SHA-256 of the
+secret). Tokens now live in the user store; ``awiki user token migrate``
+moves that list there and drops the key, and ``awiki serve`` will not start
+while it holds entries.
 
 Lives under the config dir (respects AGENT_WIKI_CONFIG_DIR), NOT in the vault —
 the vault may be version-controlled/synced and must never carry token hashes.
@@ -6,7 +11,6 @@ the vault may be version-controlled/synced and must never carry token hashes.
 from __future__ import annotations
 
 import hashlib
-import secrets
 from pathlib import Path
 
 import yaml
@@ -31,6 +35,33 @@ def load_server_config() -> dict:
     return data
 
 
+def read_server_yaml() -> dict:
+    """server.yaml as written, without the defaults; {} when there is none."""
+    p = server_config_path()
+    if not p.exists():
+        return {}
+    data = yaml.safe_load(p.read_text()) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"{p} is not a YAML mapping.")
+    return data
+
+
+def set_server_tokens(entries: list) -> None:
+    """Keep only ``entries`` as server.yaml's tokens; none removes the key.
+
+    Every other key stays as written. With no server.yaml and no entries,
+    nothing is written.
+    """
+    data = read_server_yaml()
+    if not entries and "tokens" not in data:
+        return
+    if entries:
+        data["tokens"] = list(entries)
+    else:
+        data.pop("tokens", None)
+    save_server_config(data)
+
+
 def save_server_config(config: dict) -> None:
     p = server_config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -51,32 +82,3 @@ def role_for_token(token: str, config: dict) -> str | None:
 
 def role_rank(role: str) -> int:
     return _ROLES.get(role, -1)
-
-
-def generate_token() -> str:
-    return secrets.token_urlsafe(32)
-
-
-def add_token(name: str, role: str) -> str:
-    if role not in _ROLES:
-        raise ValueError(f"unknown role: {role}")
-    config = load_server_config()
-    if any(t.get("name") == name for t in config["tokens"]):
-        raise ValueError(f"token named {name!r} already exists")
-    secret = generate_token()
-    config["tokens"].append({"name": name, "role": role, "hash": hash_token(secret)})
-    save_server_config(config)
-    return secret
-
-
-def list_tokens() -> list[dict]:
-    return [{"name": t.get("name"), "role": t.get("role")}
-            for t in load_server_config().get("tokens", [])]
-
-
-def revoke_token(name: str) -> bool:
-    config = load_server_config()
-    before = len(config["tokens"])
-    config["tokens"] = [t for t in config["tokens"] if t.get("name") != name]
-    save_server_config(config)
-    return len(config["tokens"]) < before
