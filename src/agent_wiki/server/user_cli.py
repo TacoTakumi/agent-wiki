@@ -166,7 +166,7 @@ def user_ungrant(name, vault):
 
 @user_group.group("token")
 def user_token_group():
-    """Manage a user's bearer tokens: add, list and revoke."""
+    """Manage a user's bearer tokens: add, list, revoke and migrate."""
 
 
 @user_token_group.command("add")
@@ -205,7 +205,10 @@ def user_token_list(user):
                    f"'awiki user token add {owner} <name>' makes one.")
         return
     for token in tokens:
-        click.echo(f"{token.name}  ...{token.last4 or '????'}")
+        # A token carried over from server.yaml has no last 4: its secret was
+        # never kept.
+        tail = f"...{token.last4}" if token.last4 else "legacy"
+        click.echo(f"{token.name}  {tail}")
         click.echo(f"  scope: {_describe_scope(token.scope)}")
         click.echo(f"  created: {token.created}")
         click.echo(f"  last used: {token.last_used or 'never'}")
@@ -222,6 +225,60 @@ def user_token_revoke(user, name):
         except accounts.AccountError as exc:
             _fail(str(exc))
     click.echo(f"Revoked the token {name!r} of {user.lower()}.")
+
+
+@user_token_group.command("migrate")
+@click.option("--to", "user", required=True, metavar="USER",
+              help="The user who will own the imported tokens.")
+def user_token_migrate(user):
+    """Move the tokens in server.yaml into the store, owned by USER.
+
+    Each keeps its name and secret and gets the scope '*' with its old role.
+    The tokens key then leaves server.yaml; its other keys stay. A token
+    whose name USER already uses is skipped and stays in server.yaml.
+    """
+    from agent_wiki.server_config import (
+        read_server_yaml, server_config_path, set_server_tokens,
+    )
+
+    path = server_config_path()
+    try:
+        entries = read_server_yaml().get("tokens")
+    except (ValueError, OSError) as exc:
+        _fail(f"Cannot read {path}: {exc}")
+    if entries is None:
+        entries = []
+    if not isinstance(entries, list):
+        _fail(f"The tokens key in {path} is not a list; fix it, then run this again.")
+    with open_store() as store:
+        try:
+            owner = accounts.require_user(store, user).name
+            if not entries:
+                set_server_tokens([])
+                click.echo(f"No tokens in {path}; nothing to import.")
+                return
+            imported, skipped = accounts.migrate_server_tokens(store, owner, entries)
+        except accounts.AccountError as exc:
+            _fail(str(exc))
+        # Keep each entry the store does not hold, so no secret is lost.
+        left = [entry for entry in entries
+                if store.find_token(entry["hash"].lower()) is None]
+    already = len(entries) - len(imported) - len(skipped)
+    if imported:
+        click.echo(f"Imported {len(imported)} token(s) for {owner}: {', '.join(imported)}.")
+    if already:
+        click.echo(f"{already} token(s) were already in the store.")
+    for name in skipped:
+        click.echo(f"Skipped {name!r}: {owner} already has a token named {name!r}.",
+                   err=True)
+    set_server_tokens(left)
+    if left:
+        click.echo(f"Kept {len(left)} token(s) in {path}; awiki serve will not start "
+                   f"until they are gone. Revoke or rename the clashing token "
+                   f"('awiki user token revoke {owner} <name>') or migrate them "
+                   "to another user, then run this again.", err=True)
+    else:
+        click.echo(f"Removed the tokens key from {path}.")
 
 
 def _describe_scope(scope) -> str:

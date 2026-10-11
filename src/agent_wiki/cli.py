@@ -1553,18 +1553,18 @@ def _is_loopback(host: str) -> bool:
 def serve(bind, port, viewer):
     """Run the agent-wiki HTTP server for the LOCAL vault (server host)."""
     import uvicorn
-    from agent_wiki.server_config import load_server_config
+    from agent_wiki.server_config import load_server_config, server_config_path
     from agent_wiki.server.app import create_app
 
-    vault_path = get_vault_path()
     server_config = load_server_config()
+    if server_config["tokens"]:
+        raise click.ClickException(
+            f"{server_config_path()} still holds tokens; tokens now live in the "
+            "user store. Move them there with 'awiki user token migrate --to <user>', "
+            "then start again.")
+    vault_path = get_vault_path()
     host = bind or server_config["bind"]
     bind_port = port or server_config["port"]
-    if not server_config["tokens"]:
-        # The viewer needs no token, so with it on only the API is shut out.
-        rejected = "all API requests" if viewer else "all requests"
-        click.echo(f"WARNING: no tokens configured; {rejected} will be rejected. "
-                   "Run 'awiki token add ...' first.", err=True)
     if viewer and not _is_loopback(host):
         click.echo(f"WARNING: the viewer is on and {host} is not a loopback "
                    "address; every served vault is readable without "
