@@ -17,6 +17,7 @@ from agent_wiki.doctor import (
 )
 from agent_wiki.fetch import FetchError, is_url
 from agent_wiki.ingest import PageDriftError, UnchangedURLSkip, resolve_raw
+from agent_wiki.server.user_cli import user_group
 from agent_wiki.vault import init_vault
 
 
@@ -1389,6 +1390,11 @@ def token_revoke(name):
     """Revoke a token by name."""
     from agent_wiki.server_config import revoke_token
     click.echo(f"Revoked '{name}'." if revoke_token(name) else f"No token named '{name}'.")
+
+
+# `awiki user add|list|passwd|remove|grant|ungrant`: the server's users and
+# their per-vault grants, kept in the auth store in the config dir.
+cli.add_command(user_group)
 
 
 @cli.group("tag")
