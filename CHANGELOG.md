@@ -39,6 +39,9 @@ below are reconstructed from the commits that bumped `__version__`.
   frontmatter cannot be read (a YAML error, a block that is not a mapping,
   bytes that are not UTF-8) is left out of index.md, as the viewer already
   leaves it out of its listings.
+- **A local `awiki doctor` fix no longer races a sync.** Each fix runs under
+  the vault's log lock, as the server's doctor already did. The lock is not
+  held while a prompt waits for an answer.
 - **`awiki lint` reports an unreadable page instead of crashing.** Such a
   page is a `META` issue that names the reason, and the audit goes on.
 - **Docs.** The systemd unit and its README sample use `User=you` as the

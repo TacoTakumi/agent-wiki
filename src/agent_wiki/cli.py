@@ -1159,7 +1159,11 @@ def doctor(fix, dry_run, reconcile_raw):
             continue
 
         try:
-            result = f.check.fix(vault_path)
+            # Locked per fix, not across the prompts: an open prompt must not
+            # hold a sync off. A sync takes log first, so log keeps it out.
+            from agent_wiki.locking import file_lock
+            with file_lock(vault_path, "log"):
+                result = f.check.fix(vault_path)
             click.echo(f"    ✓ {result}")
             applied += 1
         except Exception as e:
