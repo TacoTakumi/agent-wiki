@@ -24,6 +24,7 @@ minute. Stdlib only.
 """
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import datetime
 import functools
@@ -31,7 +32,9 @@ import hashlib
 import hmac
 import re
 import secrets
+import threading
 import time
+from collections.abc import Iterator
 
 from agent_wiki.server.access import ROLES, WILDCARD, is_role
 from agent_wiki.server.store import Conflict, Session, SqliteStore, Token, User
@@ -269,6 +272,106 @@ def _decoy_hash() -> str:
     # What a sign-in with no stored hash checks against, so it takes as long
     # as one with a hash; no password is ever its own.
     return hash_password(secrets.token_urlsafe(32))
+
+
+# --- password sign-in lockout ------------------------------------------------
+#
+# SIGNIN_MAX_FAILURES wrong passwords for one user within SIGNIN_WINDOW
+# seconds lock that user's password sign-in for SIGNIN_LOCKOUT seconds after
+# the last of them, even for the right password. The failures live in the
+# store, so a restart does not lift a lockout. A right password, or a new
+# one set with 'awiki user passwd', clears them. Only check_password reads
+# the lockout: a token and a proxy sign-in never do.
+
+SIGNIN_MAX_FAILURES = 5
+SIGNIN_WINDOW = 15 * 60
+SIGNIN_LOCKOUT = 15 * 60
+SIGNIN_LOCKED = (
+    "Too many failed sign-ins for this user. Password sign-in is locked for"
+    f" {SIGNIN_LOCKOUT // 60} minutes. Try again later."
+)
+
+
+def check_password(
+    store: SqliteStore, name: str, password: str, *, now: float | None = None
+) -> tuple[User | None, bool]:
+    """``(user, locked)`` for a password sign-in as ``name`` (in any case).
+
+    ``user`` is as :func:`authenticate_password` answers. ``locked`` is True
+    while the user is locked out: the password is then not checked and
+    nothing is recorded, so the right password is refused too. A wrong
+    password for a user who has one is recorded at ``now`` (epoch seconds),
+    and the failure that closes a run of :data:`SIGNIN_MAX_FAILURES` answers
+    locked as well. A right password clears the user's failures. An unknown
+    name records nothing, as it has no row to record against.
+    """
+    now = time.time() if now is None else now
+    # One name's attempts run one at a time, from the lockout check to the
+    # failure record, so a burst of wrong passwords cannot all be checked
+    # before the first is counted. Other names do not wait.
+    with _signin_lock(name if isinstance(name, str) else ""):
+        user = store.get_user(name.lower()) if isinstance(name, str) and name else None
+        if user is not None and _locked(store, user.name, now):
+            return None, True
+        signed_in = authenticate_password(store, name, password)
+        if signed_in is not None:
+            store.clear_signin_failures(signed_in.name)
+            return signed_in, False
+        if user is None or user.password_hash is None:
+            return None, False
+        # Failures older than the window can never count again: each check
+        # measures back from a failure no older than this one.
+        store.clear_signin_failures(user.name, before=now - SIGNIN_WINDOW)
+        try:
+            store.add_signin_failure(user.name, now)
+        except ValueError:
+            # Removed between the read and the write.
+            return None, False
+        return None, _locked(store, user.name, now)
+
+
+def _locked(store: SqliteStore, user: str, now: float) -> bool:
+    """Whether password sign-in for ``user`` is refused at ``now``.
+
+    It is while the last failure is under :data:`SIGNIN_LOCKOUT` old and
+    closes a run of :data:`SIGNIN_MAX_FAILURES` within :data:`SIGNIN_WINDOW`.
+    Nothing is recorded while a lockout holds, so the last failure is the
+    one that locked.
+    """
+    failures = store.list_signin_failures(user)
+    if not failures or now >= failures[-1] + SIGNIN_LOCKOUT:
+        return False
+    last = failures[-1]
+    recent = sum(1 for at in failures if at > last - SIGNIN_WINDOW)
+    return recent >= SIGNIN_MAX_FAILURES
+
+
+# Each name with a sign-in running or waiting: its lock and how many hold or
+# wait on it. The guard covers the dict and the counts.
+_signin_locks: dict[str, list] = {}
+_signin_locks_guard = threading.Lock()
+
+
+@contextlib.contextmanager
+def _signin_lock(name: str) -> Iterator[None]:
+    """Run the password sign-ins for ``name`` (in any case) one at a time.
+
+    The server is one process, so a lock per name is enough. A name's lock
+    lives only while a sign-in for it holds or waits on it, so names tried
+    once, known or not, leave nothing behind.
+    """
+    key = name.lower()
+    with _signin_locks_guard:
+        entry = _signin_locks.setdefault(key, [threading.Lock(), 0])
+        entry[1] += 1
+    try:
+        with entry[0]:
+            yield
+    finally:
+        with _signin_locks_guard:
+            entry[1] -= 1
+            if not entry[1]:
+                del _signin_locks[key]
 
 
 def _scrypt(password: str, salt: bytes, n: int, r: int, p: int, dklen: int) -> bytes:
