@@ -135,3 +135,63 @@ def test_serve_refuses_a_bad_proxy_header(run_serve, header, fault):
     assert result.exit_code != 0
     assert fault in result.output
     assert calls == []
+
+
+# --- startup warnings about the user store --------------------------------------
+
+def _store():
+    from agent_wiki.server.store import open_store
+    return open_store()
+
+
+def test_serve_on_an_empty_store_warns_nobody_can_sign_in(run_serve):
+    result, calls = run_serve({})
+    assert result.exit_code == 0, result.output
+    assert "nobody can sign in" in result.output
+    assert "awiki user add" in result.output
+    assert len(calls) == 1
+    with _store() as store:
+        assert store.list_users() == []
+
+
+def test_serve_with_users_does_not_warn_about_an_empty_store(run_serve):
+    from agent_wiki.server import accounts
+    with _store() as store:
+        accounts.add_user(store, "alice", None)
+        accounts.set_grant(store, "alice", "*", "reader")
+    result, calls = run_serve({})
+    assert result.exit_code == 0, result.output
+    assert "awiki user add" not in result.output
+    assert "WARNING" not in result.output
+
+
+def test_serve_warns_for_a_grant_on_a_vault_not_in_the_registry(run_serve):
+    from agent_wiki.server import accounts
+    with _store() as store:
+        accounts.add_user(store, "alice", None)
+        accounts.set_grant(store, "alice", "gone", "reader")
+    result, calls = run_serve({})
+    assert result.exit_code == 0, result.output
+    warnings = [line for line in result.output.splitlines() if "'gone'" in line]
+    assert len(warnings) == 1
+    assert "alice" in warnings[0]
+    assert "grant" in warnings[0]
+    assert len(calls) == 1
+
+
+def test_serve_warns_for_a_token_scope_on_a_vault_not_in_the_registry(run_serve):
+    from agent_wiki.server import accounts
+    from agent_wiki.server.store import Token
+    with _store() as store:
+        accounts.add_user(store, "bob", None)
+        accounts.set_grant(store, "bob", "*", "reader")
+        store.add_token(Token(
+            owner="bob", name="laptop", hash=accounts.hash_secret("s3cret"),
+            last4="cret", scope={"gone": "reader"},
+            created="2026-01-01T00:00:00Z"))
+    result, calls = run_serve({})
+    assert result.exit_code == 0, result.output
+    warnings = [line for line in result.output.splitlines() if "'gone'" in line]
+    assert len(warnings) == 1
+    assert "bob" in warnings[0]
+    assert "token laptop" in warnings[0]

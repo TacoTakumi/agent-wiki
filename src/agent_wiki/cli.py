@@ -1533,16 +1533,24 @@ def tag_fix(path, topic, write):
         click.echo(f"{changed} page(s) would change. Re-run with --write to apply.")
 
 
-def _is_loopback(host: str) -> bool:
-    """True for localhost, 127.0.0.0/8 and ::1. Any other name or address
-    may be reachable from other hosts."""
-    import ipaddress
-    if host == "localhost":
-        return True
-    try:
-        return ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
+def _warn_about_accounts() -> None:
+    """Warn on stderr when nobody can sign in yet, and for each grant or
+    token scope that names a vault the registry does not hold."""
+    from agent_wiki.config import load_registry
+    from agent_wiki.server import accounts
+    from agent_wiki.server.store import open_store
+
+    vault_names = set(load_registry())
+    with open_store() as store:
+        if not store.list_users():
+            click.echo("WARNING: the user store has no users; nobody can sign "
+                       "in or use the API yet. Add one with "
+                       "'awiki user add <name>'.", err=True)
+            return
+        stale = accounts.stale_vault_entries(store, vault_names)
+    for user, where, vault in stale:
+        click.echo(f"WARNING: user {user}: {where} names vault '{vault}', "
+                   "which is not in the registry.", err=True)
 
 
 @cli.command()
@@ -1571,10 +1579,7 @@ def serve(bind, port, viewer):
     vault_path = get_vault_path()
     host = bind or server_config["bind"]
     bind_port = port or server_config["port"]
-    if viewer and not _is_loopback(host):
-        click.echo(f"WARNING: the viewer is on and {host} is not a loopback "
-                   "address; every served vault is readable without "
-                   "authentication.", err=True)
+    _warn_about_accounts()
     catalog = None
     if viewer:
         from agent_wiki.viewer.catalog import load_vault_catalog

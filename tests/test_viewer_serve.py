@@ -1,5 +1,7 @@
 """The viewer leaves the /v1 API and FastAPI's docs paths alone, and `awiki
-serve` warns when the viewer is reachable off this host. uvicorn.run is patched out so serve returns instead of listening."""
+serve` no longer warns when the viewer is reachable off this host: every
+viewer page asks for a sign-in. uvicorn.run is patched out so serve returns
+instead of listening."""
 
 import pytest
 from click.testing import CliRunner
@@ -34,24 +36,31 @@ def serve(tmp_config, monkeypatch):
     return run
 
 
-@pytest.mark.parametrize("bind", ["0.0.0.0", "192.168.1.5", "wiki.example.com"])
-def test_viewer_on_non_loopback_bind_warns_no_auth(serve, bind):
-    result = serve("--viewer", "--bind", bind)
-    assert result.exit_code == 0, result.output
-    assert result.output.count(NO_AUTH) == 1
+@pytest.fixture
+def with_user():
+    """One user with a grant on every vault, so serve has no account warning."""
+    from agent_wiki.server import accounts
+    from agent_wiki.server.store import open_store
+    with open_store() as store:
+        accounts.add_user(store, "alice", None)
+        accounts.set_grant(store, "alice", "*", "reader")
 
 
-@pytest.mark.parametrize("bind", ["127.0.0.1", "127.8.0.3", "::1", "localhost"])
-def test_viewer_on_loopback_bind_does_not_warn(serve, bind):
+@pytest.mark.parametrize("bind", ["0.0.0.0", "192.168.1.5", "wiki.example.com",
+                                  "127.0.0.1", "::1", "localhost"])
+def test_viewer_on_any_bind_with_users_prints_no_warning(serve, with_user, bind):
     result = serve("--viewer", "--bind", bind)
     assert result.exit_code == 0, result.output
     assert NO_AUTH not in result.output
+    assert "loopback" not in result.output
+    assert "WARNING" not in result.output
 
 
-def test_non_loopback_bind_without_viewer_does_not_warn(serve):
+def test_non_loopback_bind_without_viewer_does_not_warn(serve, with_user):
     result = serve("--bind", "0.0.0.0")
     assert result.exit_code == 0, result.output
     assert NO_AUTH not in result.output
+    assert "WARNING" not in result.output
 
 
 def test_serve_with_viewer_prints_no_token_warning(serve):
