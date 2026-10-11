@@ -76,10 +76,13 @@ def build_auth_router(store_file: Path) -> APIRouter:
                 password: str = Form(default=""),
                 next: str = Form(default="/")):
         with open_store(store_file) as store:
-            user = accounts.authenticate_password(store, name.strip(),
-                                                  password)
+            user, locked = accounts.check_password(store, name.strip(),
+                                                   password)
             if user is not None:
                 secret = accounts.open_session(store, user.name, "password")
+        if locked:
+            return sign_in_form(request, next, status_code=429,
+                                error=accounts.SIGNIN_LOCKED)
         if user is None:
             return sign_in_form(request, next, status_code=400,
                                 error=SIGNIN_FAILED)
