@@ -11,7 +11,16 @@ below are reconstructed from the commits that bumped `__version__`.
 
 ## [0.11.1]
 
+### Added
+- **Viewer favicon.** Every viewer page shows the Agent Wiki icon: a bracket
+  pair around two text lines, white on an indigo tile. The viewer serves
+  `/favicon.svg`, `/favicon.ico` (16, 32 and 48 px) and
+  `/apple-touch-icon.png` (180 px) with no token. The source SVGs of the mark
+  and the tile are in `docs/brand/`.
+
 ### Changed
+- **New header mark.** The viewer header shows the bracketed page mark `[=]`
+  in place of `[[ ]]`.
 - **The web viewer hides session pages.** The conversations topic
   (`conversations.topic` in wiki.yaml, `sessions` by default) is left out of
   the viewer's topic tabs, page counts, tag pages and search, and its page and
