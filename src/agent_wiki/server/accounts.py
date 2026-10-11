@@ -88,3 +88,84 @@ def _parse(stored: str) -> tuple[int, int, int, bytes, bytes] | None:
     if n < 2 or n & (n - 1) or r < 1 or p < 1 or not salt or not digest:
         return None
     return n, r, p, salt, digest
+
+
+# --- browser sessions --------------------------------------------------------
+#
+# A session is a random cookie secret. The store keeps only its SHA-256, so a
+# copy of the store does not hand out live sessions. A session expires
+# SESSION_TTL after its last use; a use moves the expiry, but the row (and
+# so the cookie) is rewritten at most once per SESSION_WRITE_EVERY, so a
+# page that fires many requests a second writes once.
+
+import time  # noqa: E402
+
+from agent_wiki.server.store import Session, SqliteStore  # noqa: E402
+
+SESSION_TTL = 12 * 3600
+SESSION_WRITE_EVERY = 60
+
+
+def hash_secret(secret: str) -> str:
+    """The stored form of a session or token secret: its SHA-256 hex digest."""
+    return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def open_session(
+    store: SqliteStore, user: str, method: str, *, now: float | None = None
+) -> str:
+    """Start a session for ``user`` and return its cookie secret; the only copy.
+
+    The store keeps the secret's hash, the user, how the session was opened
+    (one of the store's ``SESSION_METHODS``) and an expiry
+    :data:`SESSION_TTL` after ``now``. Sessions already expired are swept
+    on the way. ValueError on an unknown method or user.
+    """
+    now = time.time() if now is None else now
+    secret = secrets.token_urlsafe(32)
+    store.remove_expired_sessions(now)
+    store.add_session(Session(
+        hash=hash_secret(secret), user=user, method=method,
+        expires=now + SESSION_TTL, written=now,
+    ))
+    return secret
+
+
+def resume_session(
+    store: SqliteStore, secret: str, *, now: float | None = None
+) -> tuple[Session | None, bool]:
+    """The live session ``secret`` opens, and whether its expiry was written.
+
+    ``(None, False)`` for an empty or unknown secret, or a session whose
+    expiry is at or before ``now``; an expired session's row is deleted on
+    sight. A live session's expiry moves to :data:`SESSION_TTL` after
+    ``now``, but only once :data:`SESSION_WRITE_EVERY` has passed since its
+    row was last written; the bool is True when that write happened, which
+    tells the caller to refresh the cookie.
+    """
+    if not secret:
+        return None, False
+    now = time.time() if now is None else now
+    digest = hash_secret(secret)
+    # The lookup is by hash: equal hashes mean equal secrets, and the
+    # secret itself is never compared, so there is no timing to leak.
+    session = store.get_session(digest)
+    if session is None:
+        return None, False
+    if session.expires <= now:
+        store.remove_session(digest)
+        return None, False
+    if now - session.written < SESSION_WRITE_EVERY:
+        return session, False
+    updated = store.update_session(digest, expires=now + SESSION_TTL, written=now)
+    if updated is None:
+        # Ended between the read and the write.
+        return None, False
+    return updated, True
+
+
+def end_session(store: SqliteStore, secret: str) -> bool:
+    """End the session ``secret`` opens; False when there was none."""
+    if not secret:
+        return False
+    return store.remove_session(hash_secret(secret))
