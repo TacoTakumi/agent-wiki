@@ -29,7 +29,7 @@ search the wiki first, read a page whole or in slices, and save what is worth ke
 - **Auto-context hook** - a `UserPromptSubmit` hook silently surfaces relevant pages to your agent on every prompt, so it knows what it already knows. See [Auto-context hook](#auto-context-hook).
 - **Tag vocabulary** - an optional, CLI-managed vocabulary canonicalizes tags (aliases to preferred), with `awiki tag fix` and a lint-based CI gate. See [`awiki tag`](#awiki-tag-addsuggestfix).
 - **Vault linting** - audit broken links, orphans, raw/page drift, stale pages, oversized pages, index gaps, and tag issues in one pass. See [`awiki lint`](#awiki-lint).
-- **Network vault** - `awiki serve` shares one vault over HTTP; remote machines use the **same `awiki` CLI** transparently, with bearer-token auth and reader/writer/admin roles. See [Network server](#network-server).
+- **Network vault** - `awiki serve` shares one vault over HTTP; remote machines use the **same `awiki` CLI** transparently. Named users hold per-vault reader/writer/admin grants, and each user's bearer tokens can be scoped down further. An optional read-only web viewer signs users in with a password or through a reverse proxy. See [Network server](#network-server).
 - **Multiple named vaults** - one config registers many vaults (local paths or remote URLs); reads span them all with `vault:`-qualified results, writes stay narrow, and a repo can carry its own trust-gated `.agent-wiki/config.yaml`. See [Multiple vaults](#multiple-vaults).
 - **Agent-first integration** - agent skills plus a self-installing `awiki guide` block that teaches any agent (via `CLAUDE.md` / `AGENTS.md`) to search the wiki first and save what is worth keeping. See [Using awiki with your agent](#using-awiki-with-your-agent).
 
@@ -188,8 +188,8 @@ commands.
 It is also a safeguard. Because the CLI is the only way in, it enforces the
 vault's invariants no matter who is driving: `raw/` sources stay immutable, pages
 are *re-rendered* from their source rather than hand-edited, drift is surfaced as
-a diff instead of a silent clobber, and remote access is gated by
-reader/writer/admin tokens. A less capable local model does not need to
+a diff instead of a silent clobber, and remote access is gated by per-user
+tokens with per-vault reader/writer/admin roles. A less capable local model does not need to
 understand the vault's layout or be trusted to edit markdown by hand - it calls a
 handful of commands and the guardrails hold, while the heavier reasoning can live
 on a bigger model or the vault host.
@@ -626,18 +626,27 @@ fixable/novel tags as **TAG** findings, and `awiki lint --strict` gates on them.
 
 ### Serving a vault
 
-#### `awiki serve [--bind HOST] [--port PORT]`
+#### `awiki serve [--bind HOST] [--port PORT] [--viewer]`
 
 Run the HTTP server for the local vault so remote machines can use it through the
 same CLI. One vault per instance: the default vault, or pick one with
-`awiki --vault NAME serve --port PORT`. See [Network server](#network-server)
-and [Multiple vaults](#multiple-vaults).
+`awiki --vault NAME serve --port PORT`. `--viewer` also serves a read-only web
+viewer of the local registry vaults at `/`, behind a sign-in. `serve` refuses to
+start while `server.yaml` still holds tokens from an older install (see
+[Upgrading from `awiki token`](#upgrading-from-awiki-token)). See
+[Network server](#network-server) and [Multiple vaults](#multiple-vaults).
 
-#### `awiki token add|list|revoke`
+#### `awiki user add|list|passwd|remove|grant|ungrant`
 
-Manage server bearer tokens. Local and admin-only; tokens live in
-`~/.config/agent-wiki/server.yaml`, never in the vault. See
-[Network server](#network-server).
+Manage the server's users and their per-vault grants. Local on the server host;
+the user store lives in the config dir, never in the vault. A password is only
+ever typed at a prompt. See [Users and grants](#users-and-grants).
+
+#### `awiki user token add|list|revoke|migrate`
+
+Manage a user's bearer tokens and their optional scopes, and move tokens from an
+older `server.yaml` into the user store. A secret is printed once, when it is
+made. See [Tokens and scopes](#tokens-and-scopes).
 
 ## Ingesting conversations
 
@@ -942,6 +951,11 @@ processes on different ports. The HTTP wire contract stays vault-implicit
 (no vault selector in the routes). A single multiplexed server that mounts
 several vaults under one port is the planned evolution of this design.
 
+User grants and token scopes name vaults by their registry name, so the same
+grant map applies to every vault you serve. A bare-path `--vault` override
+outside the registry is served under the name `local`. See
+[Users and grants](#users-and-grants).
+
 ## Network server
 
 A vault can be served over HTTP so a remote AI assistant reads from and contributes
@@ -951,25 +965,194 @@ an HTTP round-trip - every command behaves the same either way.
 
 ### Server host
 
-The HTTP server ships in the default install - no extra to install. Add a token
-and run the daemon:
+The HTTP server ships in the default install - no extra to install. Add a user,
+give them a role, make them a token and run the daemon:
 
 ```bash
-awiki token add laptop --role admin   # prints the secret ONCE; only its hash is stored
-awiki serve                           # binds 127.0.0.1:8731 by default
+awiki user add you --password            # asks for the password twice
+awiki user grant you '*' admin           # admin on every vault
+awiki user token add you laptop          # prints the secret ONCE; only its hash is stored
+awiki serve                              # binds 127.0.0.1:8731 by default
 ```
 
-Tokens live in `~/.config/agent-wiki/server.yaml` (respects
-`AGENT_WIKI_CONFIG_DIR`), **never** in the vault. Manage them with:
+There is no anonymous access: every `/v1` API request needs a bearer token, and
+every viewer page needs a signed-in session. Users, grants, tokens, sessions and
+sign-in failures live in one SQLite file, `state.db`, in the config dir
+(`~/.config/agent-wiki/`, respects `AGENT_WIKI_CONFIG_DIR`), **never** in the
+vault. The `awiki user` commands are local on the server host, and a change made
+with them applies to a running server at its next request - no restart needed.
+No API route and no viewer page can create users or change grants.
+
+`serve` warns at startup when the store has no users (nobody can sign in or use
+the API yet), and for each grant or token scope that names a vault not in the
+registry. The server does not serve `/docs`, `/redoc` or `/openapi.json`.
+
+### Users and grants
 
 ```bash
-awiki token add <name> --role reader|writer|admin
-awiki token list      # names + roles only, never secrets
-awiki token revoke <name>
+awiki user add alice --password     # password sign-in; asked twice at the prompt
+awiki user add bob                  # no password: signs in only through the reverse proxy
+awiki user list                     # password set, grants, token count; marks stale vault names
+awiki user passwd alice             # set a new password; ends alice's sessions
+awiki user passwd alice --clear     # remove the password: alice becomes proxy-only
+awiki user remove bob               # deletes bob with his grants, tokens and sessions
 ```
 
-Roles are ranked `reader < writer < admin`: readers can search/show/status/log/lint/context,
-writers can additionally ingest/index/sync/adapt, and `doctor` requires admin.
+A user name is 1 to 64 characters of `a-z 0-9 . _ - @`, starting with a letter or
+digit, and is stored lowercase. A password is never taken as an option value, so
+it stays out of shell history and the process list. `passwd` in either form ends
+all of that user's sessions and clears their failed sign-ins.
+
+Each user holds a **grant map** of vault name to role:
+
+```bash
+awiki user grant alice '*' writer       # writer on every vault, including ones added later
+awiki user grant alice personal none    # ...except personal
+awiki user grant alice work admin       # ...and admin on work
+awiki user ungrant alice work           # remove the work entry again
+```
+
+Roles are ranked `none < reader < writer < admin`. `grant` replaces any entry
+for that vault. The entry `'*'` matches every vault, including vaults registered
+later, and the most specific entry wins: a vault's own entry beats `'*'`, whether
+it is higher or lower. A vault with no entry and no `'*'` gets `none`. Quote the
+`'*'` so the shell does not expand it.
+
+What each role allows on the `/v1` API:
+
+- `reader` - search, show, status, log, lint, context; also reading the vault in the web viewer.
+- `writer` - everything a reader can, plus ingest, reingest, ingest-conversation, index, sync and adapt.
+- `admin` - everything a writer can, plus `doctor`. A vault admin manages nothing but that vault: users and grants are changed only with `awiki user` on the server host.
+- `none` - nothing; the vault does not exist for that user.
+
+A request without a token, or with an unknown one, gets `401`; a role below what
+the route needs, including `none`, gets `403`.
+
+### Tokens and scopes
+
+A token belongs to a user and acts as that user on the API. A remote client uses
+it with `awiki init --remote <url> --token <secret>` or a `token:` in its vault
+registry.
+
+```bash
+awiki user token add alice laptop                                    # all of alice's grants
+awiki user token add alice agent --scope '*=writer' --scope personal=none
+awiki user token add alice dashboard --scope '*=reader'              # read-only everywhere
+awiki user token list alice       # name, last 4 characters, scope, created, last used
+awiki user token revoke alice dashboard
+```
+
+`add` prints the secret once (`awp_` and 43 URL-safe characters); the store
+keeps only its SHA-256 hash and last 4 characters. A token name is unique per
+user. `--scope VAULT=ROLE` is repeatable and takes the same vaults, `'*'` and
+roles as a grant.
+
+A scope can only **narrow** the owner's grants, never widen them. The token's
+role on a vault is the lower of the two: the owner's grant for that vault and
+the token's scope for that vault, each resolved the same way (the vault's own
+entry, else `'*'`, else `none`). A token with no scope acts with the owner's
+grants as they are. In the examples above, if alice has `'*' writer` and
+`personal none`:
+
+- `agent` (`*=writer`, `personal=none`) can write to every vault except `personal`, where it can do nothing at all - a token for an agent that must never touch your personal notes.
+- `dashboard` (`*=reader`) can only read, even on vaults where alice is an admin.
+- A scope of `work=admin` would still give only `writer` on `work`, because the grant caps it.
+
+Nothing is cached: a grant change, a revoke or a user removal takes effect at
+the token's next request. A token's last-used time is written at most once a
+minute. A bearer token never signs in to the web viewer, so a token cannot make
+or revoke other tokens.
+
+### Web viewer and sign-in
+
+`awiki serve --viewer` also serves a read-only HTML viewer of the local registry
+vaults at `/`, beside the API on the same port. Every viewer page except the
+sign-in page and the favicons needs a signed-in session; without one it
+redirects to `/signin`. A signed-in user sees only the vaults their grants give
+them at least `reader` on, in the vault list, search and tag pages, and a vault
+they cannot read answers `404`, the same as one that does not exist. Every page
+shows "Signed in as NAME", a link to the user page and a sign-out button.
+
+Sessions are kept server-side; the browser holds only the `awiki_session`
+cookie (`HttpOnly`, `SameSite=Lax`, and `Secure` over https). A session ends 12
+hours after its last use; each use extends it. Signing out ends the session.
+Every form that changes state carries the session secret in a hidden field, and
+a post without it, or with the wrong one, is refused with `403`.
+
+A session cookie never authenticates the `/v1` API; API clients always use a
+bearer token.
+
+#### Password sign-in
+
+A user with a password signs in at `/signin` with their name and password. A
+wrong name, a proxy-only user and a wrong password all get the same answer.
+Five failed password sign-ins for one user within 15 minutes lock that user's
+password sign-in for 15 minutes, even for the right password. The lock holds
+across a server restart. A successful sign-in or `awiki user passwd` clears the
+failures. The lock does not affect that user's tokens or proxy sign-in.
+
+While the store has no users, the sign-in page says to run `awiki user add`.
+
+#### Reverse-proxy sign-in
+
+If a reverse proxy in front of `awiki serve` already signs users in (Authelia,
+oauth2-proxy, Authentik, a web server's own auth), the viewer can take the
+user's name from a header the proxy sets. Turn it on in
+`~/.config/agent-wiki/server.yaml`:
+
+```yaml
+auth_proxy: true                    # default false
+auth_proxy_header: X-WEBAUTH-USER   # the default
+auth_trusted_proxies:               # default: 127.0.0.1 and ::1
+  - 127.0.0.1
+  - ::1
+```
+
+- The header counts only when the request's **socket peer** is in `auth_trusted_proxies` (addresses or CIDR ranges). `X-Forwarded-For` and similar headers never change which peer is checked, and from any other peer the header is ignored. The header must appear exactly once.
+- The header must name an **existing** user. An unknown name gets a `403` page; no account is created. Add proxy users with `awiki user add NAME` (no `--password`) and give them grants as usual.
+- A header naming a different user than the browser's current session ends that session and signs in the named user.
+- The header **never** authenticates the `/v1` API; API clients still need a bearer token.
+- Configure the proxy to **replace** the header on every request, so a client cannot send its own value through it. Use a header name with hyphens, not underscores; `serve` refuses an underscore name.
+
+With `auth_proxy` on, `serve` refuses to start if `auth_trusted_proxies` is
+empty, contains `*`, contains a range that matches every address (such as
+`0.0.0.0/0` or `::/0`), or contains an entry that is not an address or a range.
+A proxy session has no password to change; password sign-in still works for
+users who have one.
+
+#### The user page
+
+The user page at `/user` (the name link in the header) shows:
+
+- the theme choice (Auto, Light or Dark);
+- your own tokens: make one with a name and an optional scope, list them, and revoke them. A new secret is shown once, on the page that made it;
+- for a password session only, a change-password form. It asks for the current password and the new one twice; on success your current session stays signed in, your other sessions end and failed sign-ins are cleared.
+
+The user page cannot change grants, and a token cannot reach it.
+
+### Upgrading from `awiki token`
+
+Older releases kept role-carrying tokens in `server.yaml` and managed them with
+`awiki token`. That command group is gone, and `awiki serve` refuses to start
+while `server.yaml` still holds a `tokens` list, naming the command below. Move
+the tokens into the user store once, on the server host:
+
+```bash
+awiki user add you                     # add --password to also sign in to the viewer
+awiki user grant you '*' admin
+awiki user token migrate --to you
+# then restart awiki serve (for example: sudo systemctl restart agent-wiki)
+```
+
+`migrate` imports each token with its name and secret unchanged, so remote
+clients keep working without a new `--token`. Each gets the scope `'*'` with
+its old role, so its access stays the same as long as the owner's grant is at
+least that role. Imported tokens list as `legacy` instead of their last 4
+characters, since the secret was never kept. The `tokens` key is then removed
+from `server.yaml`; its other keys stay. Running it again imports nothing
+twice. A token whose name the user already has is skipped and left in
+`server.yaml`; revoke or rename the clashing token, or migrate to another
+user, and run it again.
 
 ### Running as a service (systemd)
 
@@ -1011,6 +1194,12 @@ how you terminate TLS in front of it (see below).
 `awiki serve` speaks plain HTTP and binds to loopback by default. For remote access,
 terminate TLS at a reverse proxy (nginx/Caddy) in front of it and point clients at the
 HTTPS URL - the server itself does not manage certificates.
+
+The viewer's session cookie is marked `Secure` when the request arrived over
+https. Behind a proxy that ends TLS, every request reaches `awiki serve` as plain
+http, so the server also counts `X-Forwarded-Proto: https`, but only from a
+trusted socket peer: loopback while `auth_proxy` is off, the
+`auth_trusted_proxies` list while it is on. Have the proxy set that header.
 
 ### Remote client
 
@@ -1063,11 +1252,10 @@ A few commands act on the **server's** machine, not the client's:
 These are planned but not yet implemented:
 
 - **Smart ingestion** - use `claude -p` or a local model to extract entities, generate cross-references, and decide which existing pages to update during ingest
-- **Shared wikis** - sync topics between personal and team wikis, with per-topic or per-user read/write permissions
+- **Shared wikis** - sync topics between personal and team wikis, with per-topic read/write permissions
 - **Additional agent support** - AGENTS.md and wrappers for Cursor, Codex, and other agents
 - **Research agent** - a dedicated agent that combines wiki search with web search, filing results back into the wiki automatically
 - **Auto-capture** - agent notices high-value findings during conversations and suggests saving them (with user confirmation)
-- **Vault viewer** - lightweight web UI for browsing the vault without Obsidian
 
 ## Install from source
 
@@ -1128,8 +1316,9 @@ agent-wiki/
     summarize.py      # optional LLM summarization backends
     service.py        # VaultService facade (local or remote)
     remote.py         # HTTP client for a served vault
-    server/           # HTTP server
-    server_config.py  # server tokens and roles
+    server/           # HTTP server: API routes, users, grants, tokens, sessions (SQLite store)
+    viewer/           # read-only web viewer, sign-in and the user page
+    server_config.py  # server.yaml: bind, port and reverse-proxy sign-in
     locking.py        # per-vault file locks
     log.py            # append-only activity log
     redact.py         # secret redaction on ingest

@@ -9,9 +9,62 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
-## [0.11.1]
+## [0.12.0]
+
+**Breaking:** `awiki serve` now has named users, and tokens belong to them.
+The `awiki token` command group is removed. Tokens kept in `server.yaml` must
+be moved into the new user store with `awiki user token migrate --to <user>`,
+and `awiki serve` refuses to start until that is done. Tokens no longer carry a
+role of their own: a token acts with its owner's per-vault grants, optionally
+narrowed by a scope. The web viewer now requires sign-in, and `/docs`,
+`/redoc` and `/openapi.json` are no longer served. To upgrade, on the server
+host run `awiki user add <you>`, `awiki user grant <you> '*' admin` and
+`awiki user token migrate --to <you>`, then restart `awiki serve`. Migrated
+tokens keep their secrets, so remote clients need no change.
 
 ### Added
+- **Users and per-vault grants.** `awiki user add|list|passwd|remove` manages
+  the server's users, and `awiki user grant|ungrant` sets each user's grant
+  map of vault name to role on the ladder `none < reader < writer < admin`.
+  The entry `'*'` matches every vault, including ones registered later, and
+  a vault's own entry wins over it. A password is only ever typed at a
+  prompt; a user without one signs in only through a reverse proxy. Users,
+  grants, tokens, sessions and sign-in failures live in one SQLite file,
+  `state.db`, in the config dir, and a change made with the CLI applies to a
+  running server at its next request. `user list` and `serve` flag a grant
+  or scope that names a vault not in the registry, and `serve` warns when
+  the store has no users. No new dependency: passwords are hashed with
+  `hashlib.scrypt`.
+- **Per-user tokens with scopes.** `awiki user token add <user> <name>
+  [--scope VAULT=ROLE ...]` prints an `awp_` secret once and keeps only its
+  SHA-256 hash and last 4 characters; `user token list` and `user token
+  revoke` manage them. A scope can only narrow: the token's role on a vault
+  is the lower of its owner's grant and its scope there, so
+  `--scope '*=writer' --scope personal=none` writes everywhere except
+  `personal`, and `--scope '*=reader'` is read-only. A token with no scope
+  acts with its owner's grants.
+- **`awiki user token migrate --to <user>`** moves the tokens in
+  `server.yaml` into the user store with their names and secrets unchanged
+  and the scope `'*'` set to their old role, then removes the `tokens` key
+  and keeps the rest of the file. It imports nothing twice.
+- **Viewer sign-in.** The viewer has a password sign-in page and server-side
+  sessions in the `awiki_session` cookie (HttpOnly, SameSite=Lax, Secure over
+  https), which end 12 hours after their last use. Five failed password
+  sign-ins for one user within 15 minutes lock that user's password sign-in
+  for 15 minutes; the lock survives a restart and does not affect tokens or
+  proxy sign-in. Every page shows who is signed in, a link to the user page
+  and a sign-out button, and every form that changes state carries the
+  session secret.
+- **Reverse-proxy sign-in.** With `auth_proxy: true` in `server.yaml`, the
+  viewer signs in the user named in `auth_proxy_header` (default
+  `X-WEBAUTH-USER`) when the socket peer is in `auth_trusted_proxies`
+  (default `127.0.0.1` and `::1`). The header must name an existing user; no
+  account is created. It never authenticates the `/v1` API. `serve` refuses
+  to start on an empty trusted list, `*`, a range that holds every address,
+  or an entry that does not parse.
+- **User page.** `/user` holds the theme choice, the signed-in user's own
+  tokens (make with an optional scope, list, revoke) and, for a password
+  session, a change-password form.
 - **Viewer favicon.** Every viewer page shows the Agent Wiki icon: a bracket
   pair around two text lines, white on an indigo tile. The viewer serves
   `/favicon.svg`, `/favicon.ico` (16, 32 and 48 px) and
@@ -25,6 +78,26 @@ below are reconstructed from the commits that bumped `__version__`.
   (`conversations.topic` in wiki.yaml, `sessions` by default) is left out of
   the viewer's topic tabs, page counts, tag pages and search, and its page and
   topic URLs return 404.
+- **The API checks each vault's role.** Every `/v1` route keeps its minimum
+  role and checks it against the token's effective role on the served vault,
+  matched by its registry name (`local` for a bare-path override). No token
+  or an unknown one gets 401; too low a role, including `none`, gets 403.
+- **The viewer requires sign-in.** There is no anonymous access: every viewer
+  page except the sign-in page and the favicons redirects to `/signin`
+  without a session. A signed-in user sees only the vaults they can read; any
+  other vault answers 404 like one that does not exist.
+- **The theme choice moved** from the viewer header to the user page.
+- `serve` no longer warns when the viewer is on and the bind address is not
+  loopback, since the viewer now requires sign-in.
+- uvicorn runs with forwarded headers off, so a client cannot claim another
+  address; `X-Forwarded-Proto` is read only from a trusted proxy peer.
+
+### Removed
+- **`awiki token add|list|revoke`.** Use `awiki user token` and, for an
+  existing install, `awiki user token migrate`. `serve` refuses to start
+  while `server.yaml` still holds tokens.
+- **`/docs`, `/redoc` and `/openapi.json`.** The server no longer serves
+  FastAPI's generated API pages.
 
 ## [0.11.0]
 
