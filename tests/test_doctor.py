@@ -701,3 +701,30 @@ def test_session_titles_cli_fix_retitles_with_no_extra_flag(tmp_vault, tmp_confi
     assert "retitled 1" in result.output
     assert parse_page(bundle)["meta"]["title"] == "Fix the login bug"
     assert parse_page(page)["meta"]["title"] == "Fix the login bug"
+
+
+def test_cli_doctor_fix_holds_the_log_lock(tmp_path, monkeypatch):
+    from agent_wiki.locking import file_lock
+    vault = _legacy_vault(tmp_path)
+    cfg_dir = tmp_path / "config"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.yaml").write_text(yaml.dump({"vault_path": str(vault)}))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cfg_dir))
+
+    locked_during_fix = []
+    original = MissingSessionsTopic.fix
+
+    def fix(self, vault_path):
+        try:
+            with file_lock(vault_path, "log", timeout=0):
+                locked_during_fix.append(False)
+        except TimeoutError:
+            locked_during_fix.append(True)
+        return original(self, vault_path)
+
+    monkeypatch.setattr(MissingSessionsTopic, "fix", fix)
+    result = CliRunner().invoke(cli, ["doctor", "--fix"])
+    assert result.exit_code == 0, result.output
+    assert locked_during_fix == [True]
+    with file_lock(vault, "log", timeout=0):
+        pass
