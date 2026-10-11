@@ -9,7 +9,7 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
-## [0.12.1]
+## [0.13.0]
 
 ### Added
 - **Content-Security-Policy on viewer pages.** Every viewer page is sent with
