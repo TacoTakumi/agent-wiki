@@ -35,6 +35,10 @@ below are reconstructed from the commits that bumped `__version__`.
   block early: `topic`, `tags`, `sources` and the rest went into the body,
   silently, and lint reported the raw file as having no page. The block now
   closes only on a line that is exactly `---`.
+- **One unreadable page no longer stops `awiki index`.** A page whose
+  frontmatter cannot be read (a YAML error, a block that is not a mapping,
+  bytes that are not UTF-8) is left out of index.md, as the viewer already
+  leaves it out of its listings.
 - **Docs.** The systemd unit and its README sample use `User=you` as the
   placeholder account, and the README says the user page is reached by the
   Settings link in the header.
