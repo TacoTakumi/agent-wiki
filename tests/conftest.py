@@ -234,6 +234,22 @@ def sign_in(client, user=VIEWER_USER, role="reader"):
     return secret
 
 
+def signin_form(client, next_=None):
+    """The sign-in page's form fields as a browser would post them: GET
+    /signin leaves its pre-session cookie on `client` and the returned dict
+    carries the matching hidden field (and `next` when given)."""
+    import re
+    page = client.get("/signin", follow_redirects=False).text
+    found = re.search(r'name="signin" value="([^"]+)"', page)
+    # A signed-in client is sent on from /signin; it still holds the
+    # cookie an earlier visit left, and that is what its form carried.
+    token = found.group(1) if found else client.cookies.get("awiki_signin")
+    data = {"signin": token}
+    if next_ is not None:
+        data["next"] = next_
+    return data
+
+
 def signed_in_client(app, user=VIEWER_USER, role="reader", **kwargs):
     """A TestClient on `app`, signed in as `user` (see sign_in). Keyword
     arguments go to TestClient; server exceptions become 500s unless

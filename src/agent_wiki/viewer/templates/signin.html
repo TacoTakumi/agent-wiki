@@ -12,6 +12,7 @@
 {% endif %}
 <form method="post" action="/signin">
 <input type="hidden" name="next" value="{{ next }}">
+<input type="hidden" name="signin" value="{{ signin_token }}">
 <label>User name
 <input type="text" name="name" autocomplete="username" autocapitalize="none" spellcheck="false" required>
 </label>

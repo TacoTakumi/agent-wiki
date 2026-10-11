@@ -16,7 +16,7 @@ from agent_wiki.server import accounts
 from agent_wiki.server.app import create_app
 from agent_wiki.server.store import User, open_store
 from agent_wiki.viewer.catalog import build_vault_catalog
-from conftest import make_vault
+from conftest import make_vault, signin_form
 
 
 SERVER_CONFIG = {"bind": "127.0.0.1", "port": 8731}
@@ -60,8 +60,9 @@ def anon(app):
 
 
 def post_sign_in(client, name, password):
-    return client.post("/signin", data={"name": name, "password": password},
-                       follow_redirects=False)
+    data = signin_form(client)
+    data.update(name=name, password=password)
+    return client.post("/signin", data=data, follow_redirects=False)
 
 
 def failures(app, name=USER):

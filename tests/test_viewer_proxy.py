@@ -14,7 +14,7 @@ from agent_wiki.server.app import create_app
 from agent_wiki.server.store import User, open_store
 from agent_wiki.viewer.catalog import build_vault_catalog
 from agent_wiki.viewer.session import PROXY_METHOD, SESSION_COOKIE
-from conftest import make_vault
+from conftest import make_vault, signin_form
 
 
 HEADER = "X-WEBAUTH-USER"
@@ -229,9 +229,10 @@ def test_forwarded_proto_from_untrusted_peer_is_ignored(app):
             (user_hash,))
         store.connection.commit()
     client = client_from(app, UNTRUSTED)
-    response = client.post(
-        "/signin", data={"name": "alice", "password": "correct horse battery"},
-        headers={"X-Forwarded-Proto": "https"})
+    data = signin_form(client)
+    data.update(name="alice", password="correct horse battery")
+    response = client.post("/signin", data=data,
+                           headers={"X-Forwarded-Proto": "https"})
     assert response.status_code == 303
     assert "secure" not in session_cookie(response).lower()
 

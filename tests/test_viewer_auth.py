@@ -17,7 +17,7 @@ from agent_wiki.server.store import User, open_store
 from agent_wiki.viewer.catalog import build_vault_catalog
 from agent_wiki.viewer.routes import FAVICONS, build_viewer_router
 from agent_wiki.viewer.session import SESSION_COOKIE, current_viewer
-from conftest import VIEWER_USER, make_vault, sign_in
+from conftest import VIEWER_USER, make_vault, sign_in, signin_form
 
 
 SERVER_CONFIG = {"bind": "127.0.0.1", "port": 8731}
@@ -77,9 +77,8 @@ def session_count(app):
 
 
 def post_sign_in(client, name, password, next_=None):
-    data = {"name": name, "password": password}
-    if next_ is not None:
-        data["next"] = next_
+    data = signin_form(client, next_)
+    data.update(name=name, password=password)
     return client.post("/signin", data=data, follow_redirects=False)
 
 
