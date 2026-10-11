@@ -108,9 +108,8 @@ main.container { padding-bottom: 48px; }
 /* The switch clips its overflow, so the focus ring sits inside the button. */
 .theme button:focus-visible { outline-offset: -2px; border-radius: 0; }
 /* With no search form in the header (the search and sign-in pages), the
-   account block or the switch moves to the right instead. */
-.brand + .account,
-.brand + .theme { margin-left: auto; }
+   account block moves to the right instead. */
+.brand + .account { margin-left: auto; }
 .account { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg-muted); }
 .account .identity a { color: var(--fg); font-weight: 600; }
 .signout { margin: 0; }
@@ -118,7 +117,7 @@ main.container { padding-bottom: 48px; }
 @media (max-width: 767px) {
   .header-search,
   .site-header form[role=search] { order: 3; flex: 1 0 100%; margin-left: 0; }
-  .theme { margin-left: auto; }
+  .account { margin-left: auto; }
   .vault-pick { display: none; }
 }
 
@@ -132,13 +131,49 @@ input[type=text],
 input[type=password] { font: inherit; color: var(--fg); background: var(--bg);
   border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 10px; min-height: 32px; }
 input[type=text]:focus,
-input[type=password]:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+input[type=password]:focus,
+select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+input[type=radio] { accent-color: var(--accent); }
+select { font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; min-height: 32px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap; }
 
 /* ---------- Sign-in form ---------- */
 .box.signin { max-width: 400px; padding: 16px; }
 .signin form { display: flex; flex-direction: column; gap: 12px; }
 .signin label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
 .signin button { align-self: flex-start; }
+/* ---------- User page ---------- */
+.box.user-section { max-width: 880px; padding: 16px; margin-bottom: 20px; }
+.user-section h2 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
+.user-section h3 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; }
+.user-section .notice { margin: 0 0 12px; }
+.user-section .theme { display: inline-flex; }
+.token-create { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.token-create > label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
+.scope { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px 12px;
+  margin: 0; max-width: 100%; }
+.scope legend { font-weight: 500; padding: 0 4px; }
+.scope .choice { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.scope-rows,
+.token-table { border-collapse: collapse; font-size: 14px; }
+.scope-rows { margin-top: 8px; }
+.scope-rows th,
+.scope-rows td,
+.token-table th,
+.token-table td { text-align: left; padding: 6px 12px 6px 0; border-top: 1px solid var(--border-muted);
+  vertical-align: middle; }
+.scope-rows thead th,
+.token-table thead th { border-top: 0; color: var(--fg-muted); font-weight: 500; font-size: 13px; }
+.table-scroll { overflow-x: auto; }
+.token-table { width: 100%; }
+.token-table td { white-space: nowrap; }
+.token-revoke { margin: 0; }
+.token-revoke button { font-size: 12px; padding: 4px 9px; min-height: 0; }
+.minted { margin: 12px 0; }
+.minted .secret code { display: block; padding: 8px 12px; background: var(--bg-muted);
+  border: 1px solid var(--border); border-radius: var(--radius); word-break: break-all; }
 .error { color: var(--fg); background: var(--mark); border-radius: var(--radius); padding: 8px 12px; margin: 0 0 12px; }
 button,
 .btn { font: inherit; color: var(--fg); background: var(--bg-muted); border: 1px solid var(--border);

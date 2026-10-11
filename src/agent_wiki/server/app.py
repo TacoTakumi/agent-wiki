@@ -79,6 +79,6 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
         app.add_exception_handler(SignInRequired, sign_in_redirect)
         app.add_exception_handler(ProxyUserUnknown, refuse_unknown_proxy_user)
         app.add_middleware(SessionCookieMiddleware)
-        app.include_router(build_auth_router(store_file))
+        app.include_router(build_auth_router(store_file, viewer))
         app.include_router(build_viewer_router(viewer))
     return app

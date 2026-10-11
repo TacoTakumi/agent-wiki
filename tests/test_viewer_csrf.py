@@ -165,10 +165,12 @@ def form(html, css_class):
     return found.group(1)
 
 
-@pytest.mark.parametrize("css_class", ["signout", "theme"])
-def test_signed_in_forms_echo_the_session_secret(signed_in, css_class):
+@pytest.mark.parametrize("url, css_class", [("/", "signout"),
+                                            ("/user", "signout"),
+                                            ("/user", "theme")])
+def test_signed_in_forms_echo_the_session_secret(signed_in, url, css_class):
     client, secret = signed_in
-    html = client.get("/").text
+    html = client.get(url).text
     assert (f'<input type="hidden" name="session" value="{secret}">'
             in form(html, css_class))
 

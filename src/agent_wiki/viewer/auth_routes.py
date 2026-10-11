@@ -1,8 +1,10 @@
-"""The viewer's front door: the sign-in page, password sign-in and sign-out.
+"""The viewer's front door and the user's own page: the sign-in page,
+password sign-in, sign-out and the user page.
 
 The sign-in page is the one viewer page a browser reaches without a session.
 A password sign-in opens a session and sets its cookie (see viewer.session);
-sign-out ends the session and clears the cookie.
+sign-out ends the session and clears the cookie. The user page, at /user,
+holds the theme choice and the signed-in user's own tokens.
 """
 from __future__ import annotations
 
@@ -10,11 +12,15 @@ from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import RedirectResponse, Response
 
 from agent_wiki.server import accounts
-from agent_wiki.server.store import open_store
-from agent_wiki.viewer.routes import (render, request_target, same_site_path,
+from agent_wiki.server.access import ROLES, WILDCARD
+from agent_wiki.server.store import Token, open_store
+from agent_wiki.viewer.catalog import VaultCatalog
+from agent_wiki.viewer.routes import (readable_catalog, render,
+                                      request_target, same_site_path,
                                       templates)
 from agent_wiki.viewer.session import (ProxyUserUnknown, SignInRequired,
                                        Viewer, clear_session_cookie,
@@ -25,6 +31,8 @@ from agent_wiki.viewer.session import (ProxyUserUnknown, SignInRequired,
 
 SIGNIN_PATH = "/signin"
 SIGNOUT_PATH = "/signout"
+USER_PATH = "/user"
+TOKENS_SECTION = USER_PATH + "#tokens"
 
 # One message for every refused sign-in: an unknown user, a user with no
 # password and a wrong password read the same.
@@ -75,8 +83,64 @@ def refuse_unknown_proxy_user(request: Request,
                   message=PROXY_USER_UNKNOWN.format(name=exc.name))
 
 
-def build_auth_router(store_file: Path) -> APIRouter:
-    """The sign-in and sign-out routes over the user store at `store_file`."""
+# --- the user page ------------------------------------------------------------
+#
+# Every form on the user page, except the theme switch, posts to USER_PATH
+# with an `op` field naming what it does, so the page a token create answers
+# with stays at the page's own address. A later change adds a password
+# section and its op here.
+
+ADD_TOKEN_OP = "add_token"
+REVOKE_TOKEN_OP = "revoke_token"
+# The create form's scope choice: no scope (the owner's grants as they are),
+# or the VAULT=ROLE entries picked in the rows.
+SCOPE_GRANTS = "grants"
+SCOPE_ENTRIES = "entries"
+
+SHOWN_ONCE = (
+    "Copy the secret now: this page shows it once, and the server keeps only"
+    " its hash."
+)
+NO_TOKENS = "You have no tokens."
+NAME_NEEDED = "The token needs a name."
+NO_SCOPE_PICKED = (
+    "Pick a role for at least one row, or choose no scope to use all your"
+    " grants."
+)
+NO_SUCH_ACTION = "No such action."
+
+
+def form_text(form, key: str) -> str:
+    """The text field `key` of a parsed form; empty when missing or a file."""
+    value = form.get(key)
+    return value if isinstance(value, str) else ""
+
+
+def scope_text(scope: dict[str, str] | None) -> str:
+    """A token's scope as the token list shows it."""
+    if scope is None:
+        return "all my grants"
+    return ", ".join(f"{vault}={role}" for vault, role in scope.items())
+
+
+def token_row(token: Token) -> dict:
+    """One token as the token list shows it; never the secret or its hash.
+    A token made before the store kept a tail shows 'legacy'."""
+    return {
+        "name": token.name,
+        "last4": token.last4 or "legacy",
+        "scope": scope_text(token.scope),
+        "created": token.created,
+        "last_used": token.last_used or "never",
+    }
+
+
+def build_auth_router(store_file: Path,
+                      catalog: VaultCatalog | None = None) -> APIRouter:
+    """The sign-in, sign-out and user page routes over the user store at
+    `store_file`. The user page's scope rows offer the vaults of `catalog`
+    the signed-in user can read."""
+    catalog = catalog or VaultCatalog()
     r = APIRouter(include_in_schema=False)
 
     def sign_in_form(request: Request, next: str, *, status_code: int = 200,
@@ -137,5 +201,105 @@ def build_auth_router(store_file: Path) -> APIRouter:
         response = RedirectResponse(SIGNIN_PATH, status_code=303)
         clear_session_cookie(response)
         return response
+
+    def user_page(request: Request, viewer: Viewer, *,
+                  minted: tuple[str, str] | None = None,
+                  status_code: int = 200, **context) -> Response:
+        """The user page of `viewer`. `minted` is a new token's (name,
+        secret), shown this once: the response that carries it is never
+        cached, so a back button or a shared cache cannot show it again."""
+        with open_store(store_file) as store:
+            tokens = [token_row(t)
+                      for t in accounts.list_tokens(store, viewer.name)]
+        visible = readable_catalog(request, catalog)
+        vaults = list(visible.vaults) + list(visible.unavailable)
+        response = render(
+            request, "user.html", title="User settings", status_code=status_code,
+            user=viewer.name, tokens=tokens, minted=minted,
+            shown_once=SHOWN_ONCE, no_tokens=NO_TOKENS, user_path=USER_PATH,
+            add_token_op=ADD_TOKEN_OP, revoke_token_op=REVOKE_TOKEN_OP,
+            scope_grants=SCOPE_GRANTS, scope_entries=SCOPE_ENTRIES,
+            scope_rows=[WILDCARD] + vaults, roles=ROLES, **context)
+        if minted is not None:
+            response.headers["Cache-Control"] = "no-store"
+        return response
+
+    def create_token(request: Request, viewer: Viewer, form) -> Response:
+        """Mint a token for the signed-in user and show its secret, once.
+
+        The page answers the post itself rather than redirecting, so the
+        secret is in this one response and no later page has it: the store
+        keeps only its hash. A blank name or a bad scope is a 400 page; a
+        name the user already has is a 409 page.
+        """
+        name = form_text(form, "name").strip()
+        if not name:
+            return user_page(request, viewer, status_code=400,
+                             create_error=NAME_NEEDED)
+        scope = None
+        if form_text(form, "scope_mode") == SCOPE_ENTRIES:
+            # Each row's select posts VAULT=ROLE, or nothing for a row
+            # left out of the token.
+            entries = [item for item in form.getlist("scope")
+                       if isinstance(item, str) and item]
+            try:
+                scope = accounts.parse_scope(entries)
+            except accounts.AccountError as exc:
+                return user_page(request, viewer, status_code=400,
+                                 create_error=str(exc))
+            if scope is None:
+                return user_page(request, viewer, status_code=400,
+                                 create_error=NO_SCOPE_PICKED)
+        try:
+            with open_store(store_file) as store:
+                secret = accounts.mint_token(store, viewer.name, name, scope)
+        except accounts.AccountError as exc:
+            return user_page(request, viewer, status_code=409,
+                             create_error=str(exc))
+        return user_page(request, viewer, minted=(name, secret))
+
+    def revoke_token(request: Request, viewer: Viewer, form) -> Response:
+        """Revoke the signed-in user's token by the name the form carries,
+        then back to the token list. Only the user's own tokens are looked
+        at, so a name only another user's token carries is not found: a 404
+        page, and that token stays as it was."""
+        name = form_text(form, "name")
+        try:
+            with open_store(store_file) as store:
+                accounts.revoke_token(store, viewer.name, name)
+        except accounts.AccountError as exc:
+            return user_page(request, viewer, status_code=404,
+                             revoke_error=str(exc))
+        return RedirectResponse(TOKENS_SECTION, status_code=303)
+
+    # What each op a user page form posts does.
+    user_ops = {
+        ADD_TOKEN_OP: create_token,
+        REVOKE_TOKEN_OP: revoke_token,
+    }
+
+    @r.get(USER_PATH)
+    def show_user_page(request: Request,
+                       viewer: Viewer = Depends(current_viewer)):
+        # The session guard reads the cookie (or a trusted proxy's header)
+        # only: a bearer header alone signs nobody in, so it gets the
+        # sign-in page.
+        return user_page(request, viewer)
+
+    @r.post(USER_PATH)
+    async def user_page_form(request: Request,
+                             viewer: Viewer = Depends(current_viewer)):
+        """Run the user page form the post's op names; a 400 page for an
+        op it does not know. The session field is checked first, so a
+        refused post changes nothing."""
+        form = await request.form()
+        refused = csrf_refused(request, form_text(form, "session"))
+        if refused is not None:
+            return refused
+        action = user_ops.get(form_text(form, "op"))
+        if action is None:
+            return user_page(request, viewer, status_code=400,
+                             error=NO_SUCH_ACTION)
+        return await run_in_threadpool(action, request, viewer, form)
 
     return r

@@ -1,7 +1,8 @@
-"""The header theme switch: POST /theme, from a signed-in session that echoes
-its secret in the form's session field, stores the choice in a cookie and
-redirects back on the same site; every viewer page writes data-theme from that
-cookie, marks the current button pressed and varies on Cookie. (The session
+"""The theme switch: it sits on the user page, not in the header. POST
+/theme, from a signed-in session that echoes its secret in the form's
+session field, stores the choice in a cookie and redirects back on the same
+site; every viewer page writes data-theme from that cookie and varies on
+Cookie, and the user page marks the current button pressed. (The session
 field itself is tested in test_viewer_csrf.py.)"""
 
 import re
@@ -118,7 +119,10 @@ def test_theme_redirect_keeps_the_query(viewer):
     assert resp.headers["location"] == "/search?q=a&vault=main"
 
 
-# ---------- data-theme and the switch on every page ----------
+# ---------- data-theme on every page, the switch on the user page ----------
+
+USER_PAGE = "/user"
+
 
 def html_theme(html):
     match = re.search(r"<html\b[^>]*>", html)
@@ -128,12 +132,16 @@ def html_theme(html):
     return attr.group(1)
 
 
-def pressed(html):
-    """The theme buttons as {value: aria-pressed}."""
+def theme_form(html):
     form = re.search(r'<form class="theme" method="post" action="/theme"'
                      r'[^>]*>(.*?)</form>', html, re.S)
     assert form, "no theme form"
-    buttons = re.findall(r"<button\b[^>]*>[^<]*</button>", form.group(1))
+    return form.group(1)
+
+
+def pressed(html):
+    """The theme buttons as {value: aria-pressed}."""
+    buttons = re.findall(r"<button\b[^>]*>[^<]*</button>", theme_form(html))
     out = {}
     for button in buttons:
         value = re.search(r'value="([^"]*)"', button).group(1)
@@ -142,65 +150,75 @@ def pressed(html):
 
 
 def next_field(html):
-    form = re.search(r'<form class="theme"[^>]*>(.*?)</form>', html, re.S)
     field = re.search(r'<input type="hidden" name="next" value="([^"]*)">',
-                      form.group(1))
-    assert field, form.group(1)
+                      theme_form(html))
+    assert field, theme_form(html)
     return field.group(1)
 
 
-@pytest.mark.parametrize("url", VIEWS)
+@pytest.mark.parametrize("url", VIEWS + [USER_PAGE])
 def test_no_cookie_means_auto(viewer, url):
-    html = viewer.get(url).text
-    assert html_theme(html) == "auto"
-    assert pressed(html) == {"auto": "true", "light": "false",
-                             "dark": "false"}
+    assert html_theme(viewer.get(url).text) == "auto"
 
 
-@pytest.mark.parametrize("url", VIEWS)
+@pytest.mark.parametrize("url", VIEWS + [USER_PAGE])
 def test_dark_cookie_marks_dark(viewer, url):
     viewer.cookies.set("awiki_theme", "dark")
-    html = viewer.get(url).text
-    assert html_theme(html) == "dark"
-    assert pressed(html) == {"auto": "false", "light": "false",
-                             "dark": "true"}
+    assert html_theme(viewer.get(url).text) == "dark"
+
+
+@pytest.mark.parametrize("url", VIEWS)
+def test_no_page_but_the_user_page_has_the_switch(viewer, url):
+    assert 'action="/theme"' not in viewer.get(url).text
+
+
+def test_user_page_marks_auto_without_a_cookie(viewer):
+    assert pressed(viewer.get(USER_PAGE).text) == {
+        "auto": "true", "light": "false", "dark": "false"}
+
+
+def test_user_page_marks_dark(viewer):
+    viewer.cookies.set("awiki_theme", "dark")
+    assert pressed(viewer.get(USER_PAGE).text) == {
+        "auto": "false", "light": "false", "dark": "true"}
 
 
 def test_light_cookie_marks_light(viewer):
     viewer.cookies.set("awiki_theme", "light")
-    html = viewer.get("/").text
+    html = viewer.get(USER_PAGE).text
     assert html_theme(html) == "light"
     assert pressed(html)["light"] == "true"
 
 
 def test_bogus_cookie_falls_back_to_auto(viewer):
     viewer.cookies.set("awiki_theme", "bogus")
-    html = viewer.get("/vaults/main/").text
+    html = viewer.get(USER_PAGE).text
     assert html_theme(html) == "auto"
     assert pressed(html)["auto"] == "true"
 
 
 def test_switch_shows_auto_light_and_dark_buttons(viewer):
-    html = viewer.get("/").text
+    form = theme_form(viewer.get(USER_PAGE).text)
     for label in ("Auto", "Light", "Dark"):
         assert re.search(rf'<button[^>]*name="theme"[^>]*>{label}</button>',
-                         html), label
+                         form), label
 
 
-@pytest.mark.parametrize("url", ["/", "/vaults/main/research/foo",
-                                 "/vaults/main/research/?page=1"])
-def test_next_field_holds_the_requested_path_and_query(viewer, url):
-    assert next_field(viewer.get(url).text) == url.replace("&", "&amp;")
+def test_switch_comes_back_to_the_user_page(viewer):
+    assert next_field(viewer.get(USER_PAGE).text) == USER_PAGE
 
 
-def test_next_field_escapes_the_query(viewer):
-    html = viewer.get("/search?q=a&vault=main").text
-    assert next_field(html) == "/search?q=a&amp;vault=main"
-
-
-def test_next_field_keeps_a_quoted_path(viewer):
-    url = "/vaults/main/-/tags/machine%20learning"
-    assert next_field(viewer.get(url).text) == url
+def test_switch_on_the_user_page_sets_the_cookie(viewer):
+    html = viewer.get(USER_PAGE).text
+    secret = re.search(r'<input type="hidden" name="session" value="([^"]*)">',
+                       theme_form(html)).group(1)
+    resp = viewer.post("/theme", data={"session": secret, "theme": "dark",
+                                       "next": next_field(html)},
+                       follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == USER_PAGE
+    assert resp.headers["set-cookie"].startswith("awiki_theme=dark;")
+    assert pressed(viewer.get(USER_PAGE).text)["dark"] == "true"
 
 
 # ---------- Stylesheet ----------
@@ -221,7 +239,7 @@ def test_stylesheet_sets_color_scheme_per_theme(selector, scheme):
 
 # ---------- Caching ----------
 
-@pytest.mark.parametrize("url", VIEWS)
+@pytest.mark.parametrize("url", VIEWS + [USER_PAGE])
 def test_every_view_varies_on_cookie(viewer, url):
     resp = viewer.get(url)
     assert resp.status_code == 200
