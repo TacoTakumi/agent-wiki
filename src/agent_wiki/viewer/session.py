@@ -36,6 +36,10 @@ VIEWER_STATE = "viewer"
 # must set again, because the request moved the session's expiry.
 REFRESH_STATE = "session_refresh"
 
+# Sent with every response that carries the session secret, in a form or in a
+# Set-Cookie.
+SIGNED_IN_CACHE_CONTROL = "private, no-store"
+
 
 class SignInRequired(Exception):
     """A viewer page was asked for by a browser with no live session."""
@@ -271,8 +275,11 @@ class SessionCookieMiddleware:
                 cookie = Response()
                 set_session_cookie(cookie, secret,
                                    secure=request_is_https(HTTPConnection(scope)))
-                MutableHeaders(scope=message).append(
-                    "set-cookie", cookie.headers["set-cookie"])
+                headers = MutableHeaders(scope=message)
+                headers.append("set-cookie", cookie.headers["set-cookie"])
+                # The cookie carries the secret, on whatever response the
+                # route made: no cache may keep a copy.
+                headers["cache-control"] = SIGNED_IN_CACHE_CONTROL
             await send(message)
 
         await self.app(scope, receive, send_with_cookie)
