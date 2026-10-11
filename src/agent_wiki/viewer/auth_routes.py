@@ -4,7 +4,8 @@ password sign-in, sign-out and the user page.
 The sign-in page is the one viewer page a browser reaches without a session.
 A password sign-in opens a session and sets its cookie (see viewer.session);
 sign-out ends the session and clears the cookie. The user page, at /user,
-holds the theme choice and the signed-in user's own tokens.
+holds the theme choice, the signed-in user's own tokens and, for a session
+opened with a password, the change-password form.
 """
 from __future__ import annotations
 
@@ -33,6 +34,8 @@ SIGNIN_PATH = "/signin"
 SIGNOUT_PATH = "/signout"
 USER_PATH = "/user"
 TOKENS_SECTION = USER_PATH + "#tokens"
+# How a session opened by password sign-in is marked in the store.
+PASSWORD_METHOD = "password"
 
 # One message for every refused sign-in: an unknown user, a user with no
 # password and a wrong password read the same.
@@ -87,11 +90,11 @@ def refuse_unknown_proxy_user(request: Request,
 #
 # Every form on the user page, except the theme switch, posts to USER_PATH
 # with an `op` field naming what it does, so the page a token create answers
-# with stays at the page's own address. A later change adds a password
-# section and its op here.
+# with stays at the page's own address.
 
 ADD_TOKEN_OP = "add_token"
 REVOKE_TOKEN_OP = "revoke_token"
+CHANGE_PASSWORD_OP = "change_password"
 # The create form's scope choice: no scope (the owner's grants as they are),
 # or the VAULT=ROLE entries picked in the rows.
 SCOPE_GRANTS = "grants"
@@ -108,6 +111,10 @@ NO_SCOPE_PICKED = (
     " grants."
 )
 NO_SUCH_ACTION = "No such action."
+PASSWORDS_DIFFER = "The two new passwords do not match."
+PASSWORD_CHANGED = (
+    "Your password is changed. Every other session of yours has ended."
+)
 
 
 def form_text(form, key: str) -> str:
@@ -218,6 +225,8 @@ def build_auth_router(store_file: Path,
             user=viewer.name, tokens=tokens, minted=minted,
             shown_once=SHOWN_ONCE, no_tokens=NO_TOKENS, user_path=USER_PATH,
             add_token_op=ADD_TOKEN_OP, revoke_token_op=REVOKE_TOKEN_OP,
+            change_password_op=CHANGE_PASSWORD_OP,
+            password_session=viewer.method == PASSWORD_METHOD,
             scope_grants=SCOPE_GRANTS, scope_entries=SCOPE_ENTRIES,
             scope_rows=[WILDCARD] + vaults, roles=ROLES, **context)
         if minted is not None:
@@ -272,10 +281,42 @@ def build_auth_router(store_file: Path,
                              revoke_error=str(exc))
         return RedirectResponse(TOKENS_SECTION, status_code=303)
 
-    # What each op a user page form posts does.
+    def change_password(request: Request, viewer: Viewer, form) -> Response:
+        """Change the signed-in user's password, keeping this session and
+        ending their others.
+
+        Only a session opened with a password has the form; a post from a
+        proxy session gets a 404 page, as for an op that does not exist. A
+        new password that is empty or not typed the same twice, and a wrong
+        current password, are refused beside the form with a 400, and
+        nothing changes. A wrong current password is no failed sign-in: it
+        does not count toward the lockout.
+        """
+        if viewer.method != PASSWORD_METHOD:
+            return user_page(request, viewer, status_code=404,
+                             error=NO_SUCH_ACTION)
+        new = form_text(form, "new")
+        if not new:
+            return user_page(request, viewer, status_code=400,
+                             password_error=accounts.PASSWORD_EMPTY)
+        if new != form_text(form, "again"):
+            return user_page(request, viewer, status_code=400,
+                             password_error=PASSWORDS_DIFFER)
+        with open_store(store_file) as store:
+            refusal = accounts.change_password(
+                store, viewer.name, form_text(form, "current"), new,
+                keep_session_hash=accounts.hash_secret(viewer.secret))
+        if refusal is not None:
+            return user_page(request, viewer, status_code=400,
+                             password_error=refusal)
+        return user_page(request, viewer, password_changed=PASSWORD_CHANGED)
+
+    # What each op a user page form posts does. Each runs in the thread
+    # pool, so a scrypt run waits off the event loop.
     user_ops = {
         ADD_TOKEN_OP: create_token,
         REVOKE_TOKEN_OP: revoke_token,
+        CHANGE_PASSWORD_OP: change_password,
     }
 
     @r.get(USER_PATH)

@@ -5,6 +5,7 @@ its secret; a user revokes only their own tokens. Every form posts the
 session field, and a bearer header alone signs nobody in to the page."""
 
 import re
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -296,3 +297,143 @@ def test_bearer_only_post_goes_to_sign_in_and_changes_nothing(app, bearer,
     assert resp.status_code == 303
     assert resp.headers["location"] == "/signin"
     assert tokens(app) == before
+
+
+# ---------- change password ----------
+
+OLD_PASSWORD = "old horse battery"
+NEW_PASSWORD = "new staple cloud"
+
+
+def set_old_password(app, user=VIEWER_USER):
+    # Cheap parameters: the setup hash is checked, not measured.
+    with open_store(app.state.store_file) as store:
+        store.set_user_password(user, accounts.hash_password(OLD_PASSWORD,
+                                                             n=1024))
+
+
+def stored_hash(app, user=VIEWER_USER):
+    with open_store(app.state.store_file) as store:
+        return store.get_user(user).password_hash
+
+
+def failures(app, user=VIEWER_USER):
+    with open_store(app.state.store_file) as store:
+        return store.list_signin_failures(user)
+
+
+def add_failures(app, count, user=VIEWER_USER):
+    now = time.time()
+    with open_store(app.state.store_file) as store:
+        for i in range(count):
+            store.add_signin_failure(user, now - i)
+
+
+def change(client, current, new, again=None, session=None):
+    return post(client, {"op": "change_password", "current": current,
+                         "new": new,
+                         "again": new if again is None else again}, session)
+
+
+def session_client(app, method, user=VIEWER_USER):
+    """A client with a cookie for a new session of `user` opened by
+    `method`, and that session's secret."""
+    with open_store(app.state.store_file) as store:
+        secret = accounts.open_session(store, user, method)
+    other = TestClient(app, raise_server_exceptions=False)
+    other.cookies.set(SESSION_COOKIE, secret)
+    return other, secret
+
+
+@pytest.fixture
+def pw_client(app, client):
+    set_old_password(app)
+    return client
+
+
+def test_password_session_page_has_the_password_form(pw_client):
+    html = section(pw_client.get("/user").text, "password")
+    assert "<h2>Password</h2>" in html
+    assert 'name="op" value="change_password"' in html
+    for field in ("current", "new", "again"):
+        assert f'type="password" name="{field}"' in html
+
+
+def test_wrong_current_password_changes_nothing(app, pw_client):
+    other, _ = session_client(app, "password")
+    add_failures(app, 2)
+    before_hash, before_failures = stored_hash(app), failures(app)
+    resp = change(pw_client, "not it", NEW_PASSWORD)
+    assert resp.status_code == 400
+    assert "That is not your current password." in section(resp.text,
+                                                           "password")
+    assert stored_hash(app) == before_hash
+    assert accounts.verify_password(OLD_PASSWORD, stored_hash(app))
+    # No failed sign-in is recorded, and no session ends.
+    assert failures(app) == before_failures
+    assert pw_client.get("/user").status_code == 200
+    assert other.get("/user", follow_redirects=False).status_code == 200
+
+
+def test_change_keeps_this_session_and_ends_the_others(app, pw_client):
+    other, _ = session_client(app, "password")
+    add_failures(app, 3)
+    resp = change(pw_client, OLD_PASSWORD, NEW_PASSWORD)
+    assert resp.status_code == 200
+    assert "Your password is changed." in section(resp.text, "password")
+    assert accounts.verify_password(NEW_PASSWORD, stored_hash(app))
+    assert not accounts.verify_password(OLD_PASSWORD, stored_hash(app))
+    assert failures(app) == []
+    assert pw_client.get("/user").status_code == 200
+    gone = other.get("/user", follow_redirects=False)
+    assert gone.status_code == 303
+    assert gone.headers["location"].startswith("/signin")
+
+
+def test_change_while_locked_out_works_and_clears_the_lockout(app,
+                                                              pw_client):
+    add_failures(app, accounts.SIGNIN_MAX_FAILURES)
+    resp = change(pw_client, OLD_PASSWORD, NEW_PASSWORD)
+    assert resp.status_code == 200
+    assert failures(app) == []
+    with open_store(app.state.store_file) as store:
+        user, locked = accounts.check_password(store, VIEWER_USER,
+                                               NEW_PASSWORD)
+    assert user is not None and not locked
+
+
+@pytest.mark.parametrize("new, again, message", [
+    (NEW_PASSWORD, NEW_PASSWORD + "x", "The two new passwords do not match."),
+    ("", "", "The new password may not be empty."),
+])
+def test_bad_new_password_is_a_400_and_changes_nothing(app, pw_client, new,
+                                                       again, message):
+    other, _ = session_client(app, "password")
+    before = stored_hash(app)
+    resp = change(pw_client, OLD_PASSWORD, new, again)
+    assert resp.status_code == 400
+    assert message in section(resp.text, "password")
+    assert stored_hash(app) == before
+    assert other.get("/user", follow_redirects=False).status_code == 200
+
+
+def test_change_with_a_bad_session_field_is_a_403(app, pw_client):
+    other, _ = session_client(app, "password")
+    before = stored_hash(app)
+    resp = change(pw_client, OLD_PASSWORD, NEW_PASSWORD, session="wrong")
+    assert resp.status_code == 403
+    assert stored_hash(app) == before
+    assert other.get("/user", follow_redirects=False).status_code == 200
+
+
+def test_proxy_session_has_no_password_form_and_gets_404(app, pw_client):
+    proxy, secret = session_client(app, "proxy")
+    html = proxy.get("/user").text
+    assert 'id="password"' not in html
+    assert 'type="password"' not in html
+    assert "change_password" not in html
+    before = stored_hash(app)
+    resp = change(proxy, OLD_PASSWORD, NEW_PASSWORD, session=secret)
+    assert resp.status_code == 404
+    assert stored_hash(app) == before
+    assert pw_client.get("/user").status_code == 200
