@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The Agent Wiki favicon (option W3): the mark in white on a rounded indigo tile, drawn on the 32 grid with heavy strokes so it holds at 16 px. src/agent_wiki/viewer/static/favicon.svg is a copy of this file. -->
+  <rect width="32" height="32" rx="7" fill="#5b4fd6"/>
+  <path d="M11 7H6.5v18H11M21 7h4.5v18H21" fill="none" stroke="#ffffff" stroke-width="3.4"/>
+  <path d="M12.5 13h7M12.5 19h7" fill="none" stroke="#ffffff" stroke-width="2.6"/>
+</svg>
