@@ -150,8 +150,10 @@ select { font: inherit; color: var(--fg); background: var(--bg);
 .user-section h3 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; }
 .user-section .notice { margin: 0 0 12px; }
 .user-section .theme { display: inline-flex; }
-.token-create { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
-.token-create > label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
+.token-create,
+.password-change { display: flex; flex-direction: column; gap: 12px; align-items: flex-start; }
+.token-create > label,
+.password-change > label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
 .scope { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px 12px;
   margin: 0; max-width: 100%; }
 .scope legend { font-weight: 500; padding: 0 4px; }

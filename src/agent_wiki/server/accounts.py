@@ -137,6 +137,39 @@ def set_password(store, name: str, password: str | None) -> User:
     return user
 
 
+# What a change of one's own password says when it is refused.
+WRONG_PASSWORD = "That is not your current password."
+PASSWORD_EMPTY = "The new password may not be empty."
+
+
+def change_password(
+    store, name: str, current: str, new: str, *, keep_session_hash: str
+) -> str | None:
+    """Replace the password of ``name`` when ``current`` is theirs; the refusal, or None.
+
+    The current password is checked against the stored hash directly, not
+    through :func:`check_password`: a wrong one here is no failed sign-in,
+    so it neither counts toward the lockout nor is blocked by one. A user
+    with no password has no current password to give. On a change, the
+    session whose hash is ``keep_session_hash`` (the one that made it) stays
+    and every other session of the user ends; their failed sign-ins go too,
+    as with a password the operator sets. A refusal changes nothing.
+    """
+    if not new:
+        return PASSWORD_EMPTY
+    user = store.get_user(name)
+    if (user is None or user.password_hash is None
+            or not verify_password(current, user.password_hash)):
+        return WRONG_PASSWORD
+    new_hash = hash_password(new)
+    # The password first, then the sessions: a session opened under the old
+    # password just before the change is still among those dropped.
+    store.set_user_password(user.name, new_hash)
+    store.remove_user_sessions(user.name, keep=keep_session_hash)
+    store.clear_signin_failures(user.name)
+    return None
+
+
 def clear_password(store, name: str) -> User:
     """Remove the password of ``name``: proxy-only from now on, sessions ended."""
     return set_password(store, name, None)

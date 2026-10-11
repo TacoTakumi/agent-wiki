@@ -102,6 +102,30 @@
 <p class="notice">{{ no_tokens }}</p>
 {% endif %}
 </section>
-{# The password section goes here: a change-password form, shown for
-   password sessions only, posting to the user page with its own op. #}
+{% if password_session %}
+<section class="box user-section" id="password">
+<h2>Password</h2>
+<p class="notice">Change the password <strong>{{ user }}</strong> signs in with. This session stays signed in; every other session of yours ends.</p>
+{% if password_error %}
+<p class="error" role="alert">{{ password_error }}</p>
+{% endif %}
+{% if password_changed %}
+<p class="notice" role="status">{{ password_changed }}</p>
+{% endif %}
+<form class="password-change" method="post" action="{{ user_path }}">
+<input type="hidden" name="session" value="{{ session }}">
+<input type="hidden" name="op" value="{{ change_password_op }}">
+<label>Current password
+<input type="password" name="current" required autocomplete="current-password">
+</label>
+<label>New password
+<input type="password" name="new" required autocomplete="new-password">
+</label>
+<label>New password again
+<input type="password" name="again" required autocomplete="new-password">
+</label>
+<button class="btn-accent" type="submit">Change password</button>
+</form>
+</section>
+{% endif %}
 {% endblock %}
