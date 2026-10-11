@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ title }}{% endblock %} - Agent Wiki</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 {# Inlined, not linked: pages load no external CSS. #}
 <style>
 {% include "github-markdown.css" %}
@@ -14,8 +17,9 @@
 <header class="site-header">
 <div class="container">
 <a class="brand" href="/">
-<svg viewBox="0 0 30 22" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square">
-<path d="M7 2H3v18h4M12 2H8v18h4M18 2h4v18h-4M23 2h4v18h-4"/>
+<svg viewBox="0 0 30 22" aria-hidden="true" fill="none" stroke="currentColor">
+<path d="M10 2H5.5v18H10M20 2h4.5v18H20" stroke-width="2.6"/>
+<path d="M11.5 8h7M11.5 14h7" stroke-width="2.2"/>
 </svg>
 Agent Wiki
 </a>

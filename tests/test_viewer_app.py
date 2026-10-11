@@ -918,6 +918,48 @@ def test_header_has_the_mark_and_wordmark_linking_home(viewer, pages, url):
     assert "Agent Wiki" in brand.group(1)
 
 
+MARK_PATHS = ('d="M10 2H5.5v18H10M20 2h4.5v18H20"', 'd="M11.5 8h7M11.5 14h7"')
+
+
+@pytest.mark.parametrize("url", ("/", "/search") + VAULT_VIEWS)
+def test_header_brand_holds_the_bracketed_page_mark(viewer, pages, url):
+    header = site_header(viewer.get(url).text)
+    brand = re.search(r'<a class="brand" href="/">(.*?)</a>', header, re.S).group(1)
+    for path in MARK_PATHS:
+        assert path in brand, url
+    assert "M7 2H3v18h4" not in brand
+
+
+FAVICONS = {
+    "/favicon.svg": "image/svg+xml",
+    "/favicon.ico": "image/vnd.microsoft.icon",
+    "/apple-touch-icon.png": "image/png",
+}
+
+
+@pytest.mark.parametrize("url", FAVICONS)
+def test_each_favicon_is_served_without_a_token(viewer, url):
+    resp = viewer.get(url)
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith(FAVICONS[url])
+
+
+def test_the_favicon_files_hold_the_sizes_browsers_ask_for(viewer):
+    ico = viewer.get("/favicon.ico").content
+    count = int.from_bytes(ico[4:6], "little")
+    png = viewer.get("/apple-touch-icon.png").content
+    assert sorted(ico[6 + 16 * i] for i in range(count)) == [16, 32, 48]
+    assert int.from_bytes(png[16:20], "big") == int.from_bytes(png[20:24], "big") == 180
+
+
+@pytest.mark.parametrize("url", ("/", "/search") + VAULT_VIEWS)
+def test_every_page_links_the_favicons(viewer, pages, url):
+    html = viewer.get(url).text
+    assert '<link rel="icon" href="/favicon.svg" type="image/svg+xml">' in html
+    assert '<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">' in html
+    assert '<link rel="apple-touch-icon" href="/apple-touch-icon.png">' in html
+
+
 @pytest.mark.parametrize("url", ("/", "/search") + VAULT_VIEWS)
 def test_header_has_the_theme_switch(viewer, pages, url):
     header = site_header(viewer.get(url).text)

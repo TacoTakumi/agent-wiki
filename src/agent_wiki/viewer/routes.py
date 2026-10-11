@@ -5,10 +5,11 @@ keeps its own auth."""
 from __future__ import annotations
 
 import sys
+from importlib.resources import files
 from urllib.parse import quote
 
 from fastapi import APIRouter, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from jinja2 import ChoiceLoader, Environment, PackageLoader, select_autoescape
 
 from agent_wiki.config import backend_for_entry
@@ -30,6 +31,15 @@ templates = Environment(
 # {{ text | highlight(query) }} marks the query terms; it escapes the text
 # itself and returns Markup, so autoescape leaves the result alone.
 templates.filters["highlight"] = highlight
+
+
+# The favicons, served from the static folder with no token.
+STATIC = files("agent_wiki.viewer") / "static"
+FAVICONS = {
+    "favicon.svg": "image/svg+xml",
+    "favicon.ico": "image/vnd.microsoft.icon",
+    "apple-touch-icon.png": "image/png",
+}
 
 
 # The header theme switch: the choice lives in this cookie for a year.
@@ -260,6 +270,14 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
         resp.set_cookie(THEME_COOKIE, theme, max_age=THEME_MAX_AGE, path="/",
                         samesite="lax", httponly=True)
         return resp
+
+    def favicon(name: str):
+        def serve():
+            return Response((STATIC / name).read_bytes(), media_type=FAVICONS[name])
+        return serve
+
+    for name in FAVICONS:
+        r.add_api_route(f"/{name}", favicon(name), methods=["GET"])
 
     @r.get("/", response_class=HTMLResponse)
     def vault_list(request: Request):
