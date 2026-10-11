@@ -118,7 +118,7 @@ def test_no_or_unknown_token_is_401(client, headers, detail):
 # --- the served vault's name -----------------------------------------------------
 
 def test_a_registry_vault_is_served_under_its_registry_name(registry_vault):
-    assert served_vault_name(registry_vault) == "main"
+    assert served_vault_name() == "main"
 
 
 def test_a_registry_vault_honours_a_grant_on_its_name(registry_vault):
@@ -134,14 +134,16 @@ def test_a_registry_vault_refuses_a_grant_on_another_vault(registry_vault):
         "/v1/status", headers=headers).status_code == 403
 
 
-def test_a_bare_path_vault_is_served_as_local(bare_vault):
-    assert served_vault_name(bare_vault) == "local"
+def test_a_bare_path_vault_is_served_as_local(bare_vault, monkeypatch):
+    monkeypatch.setenv("AWIKI_VAULT", str(bare_vault))
+    assert served_vault_name() == "local"
     headers = _user("ann", {"local": "reader"})
     assert _client(bare_vault).get("/v1/status", headers=headers).status_code == 200
 
 
 @pytest.mark.parametrize("override, expected", [
-    (None, "main"), ("main", "main"), ("path", "local")])
+    (None, "main"), ("main", "main"), ("path", "local"),
+    ("registered-path", "local")])
 def test_serve_passes_the_served_vault_name(
         registry_vault, bare_vault, monkeypatch, override, expected):
     import uvicorn
@@ -157,6 +159,10 @@ def test_serve_passes_the_served_vault_name(
     monkeypatch.setattr(uvicorn, "run", lambda *args, **kwargs: None)
     if override == "path":
         monkeypatch.setenv("AWIKI_VAULT", str(bare_vault))
+    elif override == "registered-path":
+        # A path override is 'local' even when it is a registered vault's
+        # path, as the viewer catalog names it.
+        monkeypatch.setenv("AWIKI_VAULT", str(registry_vault))
     elif override:
         monkeypatch.setenv("AWIKI_VAULT", override)
     else:

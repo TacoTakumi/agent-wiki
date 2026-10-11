@@ -102,7 +102,8 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
 
     Bearer tokens are checked against the user store in the config dir (as
     it is when the app is built), with grants matched against `vault_name`:
-    by default the vault's registry name, or 'local' outside the registry.
+    by default `served_vault_name()`, the name the viewer catalog gives the
+    same vault (a path override is 'local', even on a registered path).
     The viewer's browser sessions live in the same store. `server_config`
     is server.yaml's settings; its tokens are never read."""
     # No /docs, /redoc or /openapi.json: the API is documented in the
@@ -111,7 +112,7 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
                   redoc_url=None, openapi_url=None)
     svc = LocalVaultService(vault_path)
     if vault_name is None:
-        vault_name = served_vault_name(vault_path)
+        vault_name = served_vault_name()
     store_file = store_path()
     app.state.store_file = store_file
     # Who may name a user in a header (the viewer only, never /v1), and

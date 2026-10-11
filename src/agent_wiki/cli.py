@@ -1586,7 +1586,7 @@ def serve(bind, port, viewer):
         catalog = load_vault_catalog()
     from agent_wiki.viewer.catalog import served_vault_name
     app = create_app(vault_path, server_config, viewer=catalog,
-                     vault_name=served_vault_name(vault_path))
+                     vault_name=served_vault_name())
     click.echo(f"Serving vault {vault_path} on http://{host}:{bind_port}")
     # Forwarded headers never set the client address: the trusted-proxy
     # check must see the real peer, not one a client claims.
