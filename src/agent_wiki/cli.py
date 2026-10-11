@@ -1535,12 +1535,14 @@ def tag_fix(path, topic, write):
 
 def _warn_about_accounts() -> None:
     """Warn on stderr when nobody can sign in yet, and for each grant or
-    token scope that names a vault the registry does not hold."""
+    token scope that names a vault neither the registry holds nor this
+    server serves ('local' under a bare-path override)."""
     from agent_wiki.config import load_registry
     from agent_wiki.server import accounts
     from agent_wiki.server.store import open_store
+    from agent_wiki.viewer.catalog import served_vault_name
 
-    vault_names = set(load_registry())
+    vault_names = set(load_registry()) | {served_vault_name()}
     with open_store() as store:
         if not store.list_users():
             click.echo("WARNING: the user store has no users; nobody can sign "

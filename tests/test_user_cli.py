@@ -388,3 +388,16 @@ def test_grant_name_is_case_insensitive(config_dir):
     assert run("add", "ann").exit_code == 0
     assert run("grant", "ANN", "work", "reader").exit_code == 0
     assert _grants("ann") == {"work": "reader"}
+
+
+def test_list_does_not_mark_local_stale_under_a_bare_path_override(
+        config_dir, tmp_path, monkeypatch):
+    from conftest import make_vault
+    monkeypatch.setenv("AWIKI_VAULT", str(make_vault(tmp_path / "bare")))
+    assert run("add", "ann").exit_code == 0
+    assert run("grant", "ann", "local", "reader").exit_code == 0
+    result = run("list")
+    assert result.exit_code == 0, result.output
+    local = next(line for line in result.output.splitlines()
+                 if "local" in line and "reader" in line)
+    assert "stale" not in local

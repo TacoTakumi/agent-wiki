@@ -195,3 +195,19 @@ def test_serve_warns_for_a_token_scope_on_a_vault_not_in_the_registry(run_serve)
     assert len(warnings) == 1
     assert "bob" in warnings[0]
     assert "token laptop" in warnings[0]
+
+
+def test_serve_counts_local_as_known_under_a_bare_path_override(
+        run_serve, tmp_path, monkeypatch):
+    # A bare-path override is served as 'local'; a grant on it is live.
+    from conftest import make_vault
+    from agent_wiki.server import accounts
+    bare = make_vault(tmp_path / "bare")
+    monkeypatch.setenv("AWIKI_VAULT", str(bare))
+    with _store() as store:
+        accounts.add_user(store, "alice", None)
+        accounts.set_grant(store, "alice", "local", "reader")
+    result, calls = run_serve({})
+    assert result.exit_code == 0, result.output
+    assert "WARNING" not in result.output
+    assert len(calls) == 1
