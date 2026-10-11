@@ -34,6 +34,15 @@ Agent Wiki
 <input type="search" name="q" placeholder="Search all vaults" aria-label="Search all vaults">
 </form>
 {% endif %}
+{% if viewer %}
+<div class="account">
+<span class="identity">Signed in as <a href="/user">{{ viewer }}</a></span>
+<form class="signout" method="post" action="/signout">
+<input type="hidden" name="session" value="{{ session }}">
+<button type="submit">Sign out</button>
+</form>
+</div>
+{% endif %}
 <form class="theme" method="post" action="/theme" aria-label="Theme">
 <input type="hidden" name="next" value="{{ theme_next }}">
 {% for value in themes %}

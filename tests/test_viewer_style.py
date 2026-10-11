@@ -10,12 +10,11 @@ import re
 from importlib.resources import files
 
 import pytest
-from fastapi.testclient import TestClient
 
 from agent_wiki.registry import VaultEntry
 from agent_wiki.server.app import create_app
 from agent_wiki.viewer.catalog import build_vault_catalog
-from conftest import make_vault
+from conftest import make_vault, signed_in_client
 
 
 SERVER_CONFIG = {"bind": "127.0.0.1", "port": 8731, "tokens": []}
@@ -59,7 +58,7 @@ def viewer(tmp_vault, tmp_path):
     catalog = build_vault_catalog(
         {"main": VaultEntry(name="main", path=main)})
     app = create_app(tmp_vault, SERVER_CONFIG, viewer=catalog)
-    return TestClient(app, raise_server_exceptions=False)
+    return signed_in_client(app)
 
 
 def css(name: str) -> str:

@@ -107,6 +107,14 @@ main.container { padding-bottom: 48px; }
 .theme button[aria-pressed=true] { color: var(--fg); background: var(--bg-muted); font-weight: 600; }
 /* The switch clips its overflow, so the focus ring sits inside the button. */
 .theme button:focus-visible { outline-offset: -2px; border-radius: 0; }
+/* With no search form in the header (the search and sign-in pages), the
+   account block or the switch moves to the right instead. */
+.brand + .account,
+.brand + .theme { margin-left: auto; }
+.account { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg-muted); }
+.account .identity a { color: var(--fg); font-weight: 600; }
+.signout { margin: 0; }
+.signout button { font-size: 12px; padding: 4px 9px; min-height: 0; }
 @media (max-width: 767px) {
   .header-search,
   .site-header form[role=search] { order: 3; flex: 1 0 100%; margin-left: 0; }
@@ -120,6 +128,18 @@ input[type=search] { font: inherit; color: var(--fg); background: var(--bg);
 input[type=search]::placeholder { color: var(--fg-muted); }
 input[type=search]:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
 input[type=checkbox] { accent-color: var(--accent); }
+input[type=text],
+input[type=password] { font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 5px 10px; min-height: 32px; }
+input[type=text]:focus,
+input[type=password]:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: var(--accent); }
+
+/* ---------- Sign-in form ---------- */
+.box.signin { max-width: 400px; padding: 16px; }
+.signin form { display: flex; flex-direction: column; gap: 12px; }
+.signin label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
+.signin button { align-self: flex-start; }
+.error { color: var(--fg); background: var(--mark); border-radius: var(--radius); padding: 8px 12px; margin: 0 0 12px; }
 button,
 .btn { font: inherit; color: var(--fg); background: var(--bg-muted); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 5px 14px; min-height: 32px; cursor: pointer; font-weight: 500; }

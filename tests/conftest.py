@@ -209,3 +209,37 @@ def remote_service(server_app):
     client = TestClient(server_app, base_url="http://test",
                         raise_server_exceptions=False)
     return RemoteVaultService("http://test", "writer-tok", client=client)
+
+
+# The user the viewer tests browse as: a reader on every vault, signed in by
+# a session opened straight in the store, so no test pays for scrypt.
+VIEWER_USER = "viewer"
+
+
+def sign_in(client, user=VIEWER_USER, role="reader"):
+    """Sign `client` (a TestClient on an app built with the viewer) in as
+    `user`: the user is added to the app's store with no password and
+    `role` on every vault when missing, and a session's cookie is set on
+    the client. Returns the session secret."""
+    from agent_wiki.server import accounts
+    from agent_wiki.server.store import User, open_store
+    from agent_wiki.viewer.session import SESSION_COOKIE
+    with open_store(client.app.state.store_file) as store:
+        if store.get_user(user) is None:
+            store.add_user(User(name=user, password_hash=None,
+                                created="2026-01-01T00:00:00Z"))
+            store.set_grant(user, "*", role)
+        secret = accounts.open_session(store, user, "password")
+    client.cookies.set(SESSION_COOKIE, secret)
+    return secret
+
+
+def signed_in_client(app, user=VIEWER_USER, role="reader", **kwargs):
+    """A TestClient on `app`, signed in as `user` (see sign_in). Keyword
+    arguments go to TestClient; server exceptions become 500s unless
+    raise_server_exceptions says otherwise."""
+    from fastapi.testclient import TestClient
+    kwargs.setdefault("raise_server_exceptions", False)
+    client = TestClient(app, **kwargs)
+    sign_in(client, user, role)
+    return client
