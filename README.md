@@ -891,6 +891,11 @@ awiki vault add team https://wiki.example.com:8731 --token <secret>
 awiki vault list                                    # name, kind, target, reachability, default marker
 ```
 
+A vault name uses lowercase letters, digits and hyphens only (`work`,
+`team-2`). `init` and `vault add` refuse any other name. A name typed into a
+config file by hand that breaks the rule is left out with a warning, and a
+command that names it (`--vault`, `AWIKI_VAULT`, `default_vault`) stops.
+
 An `init` beside an existing vault does not clone the default topics - it
 prompts for (or takes `--topics`) a topic list of its own, so `--topic`
 routing stays unambiguous. See [`awiki init`](#awiki-init-path).
