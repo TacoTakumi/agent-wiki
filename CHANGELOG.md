@@ -9,6 +9,12 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.13.1]
+
+### Added
+
+- Project website at https://tacotakumi.github.io/agent-wiki/, linked from the README and from the package metadata (`Homepage` and `Repository` URLs, shown on PyPI).
+
 ## [0.13.0]
 
 ### Added

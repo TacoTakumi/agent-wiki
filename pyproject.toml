@@ -32,6 +32,10 @@ dependencies = [
 # select it with `pdf_extractor: pdfplumber` in wiki.yaml.
 pdf-permissive = ["pdfplumber>=0.11"]
 
+[project.urls]
+Homepage = "https://tacotakumi.github.io/agent-wiki/"
+Repository = "https://github.com/TacoTakumi/agent-wiki"
+
 [project.scripts]
 awiki = "agent_wiki.cli:cli"
 aw = "agent_wiki.cli:cli"
