@@ -47,7 +47,9 @@ below are reconstructed from the commits that bumped `__version__`.
   a matching pair is refused with 403 before any password check, so another
   site cannot sign a browser in to an account of its choosing.
 - **Signed-in pages are not cached.** Every page that carries the session
-  secret in its forms is sent with `Cache-Control: private, no-store`.
+  secret in its forms is sent with `Cache-Control: private, no-store`, and
+  so is every response that refreshes the session cookie, a 404 or a
+  redirect included.
 - **An unknown stored role grants nothing, everywhere.** A grant or scope row
   holding a role the ladder does not know reads as `none` in one place, so
   the viewer no longer answers 400 for it and the API and the viewer agree.

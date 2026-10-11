@@ -24,9 +24,9 @@ from agent_wiki.viewer.catalog import (VaultCatalog, index_vault,
                                        narrow_catalog, resolve_page)
 from agent_wiki.viewer.highlight import highlight
 from agent_wiki.viewer.render import render_markdown
-from agent_wiki.viewer.session import (VIEWER_STATE, csrf_refused,
-                                       current_viewer, session_secret,
-                                       store_file)
+from agent_wiki.viewer.session import (SIGNED_IN_CACHE_CONTROL, VIEWER_STATE,
+                                       csrf_refused, current_viewer,
+                                       session_secret, store_file)
 
 
 # The static folder is on the search path so base.html can include the
@@ -81,8 +81,6 @@ def same_site_path(target: str | None) -> str:
         return "/"
     return target
 
-
-SIGNED_IN_CACHE_CONTROL = "private, no-store"
 
 # The only inline style attributes a page may carry: the table alignment
 # markdown-it writes on th and td, which the sanitiser lets through.
