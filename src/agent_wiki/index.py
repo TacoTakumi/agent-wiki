@@ -1,5 +1,6 @@
 import re
 from pathlib import Path
+import yaml
 from agent_wiki.config import load_vault_config
 from agent_wiki.page import parse_page
 
@@ -31,9 +32,14 @@ def rebuild_index(vault_path: Path) -> None:
 
         pages = []
         for md_file in sorted(topic_dir.rglob("*.md")):
-            page = parse_page(md_file)
-            meta = page["meta"]
-            if not meta:
+            # A page whose frontmatter cannot be read is left out, as the
+            # viewer's index_vault does, so one bad page does not stop the
+            # index for the whole vault.
+            try:
+                meta = parse_page(md_file)["meta"]
+            except (yaml.YAMLError, UnicodeDecodeError, OSError):
+                continue
+            if not meta or not isinstance(meta, dict):
                 continue
             pages.append({
                 "title": meta.get("title", md_file.stem),

@@ -82,3 +82,18 @@ def test_index_multi_vault_skips_unreachable_with_notice(tmp_path, monkeypatch):
     assert "vault: team" in result.output
     assert "skipped" in result.output
     assert "Index rebuilt." in result.output
+
+
+def test_rebuild_index_skips_unreadable_pages(tmp_vault):
+    _create_page(tmp_vault, "research", "good", "Good Page")
+    research = tmp_vault / "research"
+    (research / "bad-yaml.md").write_text("---\ntitle: [unclosed\n---\n\nbody\n")
+    (research / "list-block.md").write_text("---\n- a\n- b\n---\n\nbody\n")
+    (research / "not-utf8.md").write_bytes(b"---\ntitle: \xff\n---\n\nbody\n")
+
+    rebuild_index(tmp_vault)
+
+    index_content = (tmp_vault / "index.md").read_text()
+    assert "Good Page" in index_content
+    for slug in ("bad-yaml", "list-block", "not-utf8"):
+        assert f"research/{slug}.md" not in index_content
