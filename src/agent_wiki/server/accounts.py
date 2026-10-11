@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import functools
 import hashlib
 import hmac
 import re
@@ -241,6 +242,33 @@ def needs_rehash(stored: str) -> bool:
         return True
     n, r, p, _salt, expected = parsed
     return (n, r, p, len(expected)) != (SCRYPT_N, SCRYPT_R, SCRYPT_P, SCRYPT_KEY_BYTES)
+
+
+def authenticate_password(store: SqliteStore, name: str, password: str) -> User | None:
+    """The user ``name`` (in any case) when ``password`` is theirs, else None.
+
+    An unknown name, a proxy-only user and a wrong password all answer
+    None, and each costs one scrypt run, so neither the answer nor how long
+    it takes tells which. A right password over a hash made under older
+    parameters replaces that hash with one under today's; the user's
+    sessions stay open, as the password itself did not change.
+    """
+    user = store.get_user(name.lower()) if isinstance(name, str) and name else None
+    if user is None or user.password_hash is None:
+        verify_password(password, _decoy_hash())
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
+    if needs_rehash(user.password_hash):
+        user = store.set_user_password(user.name, hash_password(password)) or user
+    return user
+
+
+@functools.cache
+def _decoy_hash() -> str:
+    # What a sign-in with no stored hash checks against, so it takes as long
+    # as one with a hash; no password is ever its own.
+    return hash_password(secrets.token_urlsafe(32))
 
 
 def _scrypt(password: str, salt: bytes, n: int, r: int, p: int, dklen: int) -> bytes:

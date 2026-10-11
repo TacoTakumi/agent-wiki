@@ -1,14 +1,15 @@
 """HTML routes for the viewer. Built against an injected VaultCatalog so the
 same router works for any set of vaults (and tests never read the real
-config). The routes need no token: the viewer is read-only, and the /v1 API
-keeps its own auth."""
+config). Every page needs a signed-in session (see viewer.session); only the
+favicons and the theme switch answer without one. The /v1 API keeps its own
+bearer-token auth."""
 from __future__ import annotations
 
 import sys
 from importlib.resources import files
 from urllib.parse import quote
 
-from fastapi import APIRouter, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from jinja2 import ChoiceLoader, Environment, PackageLoader, select_autoescape
 
@@ -19,6 +20,8 @@ from agent_wiki.viewer.catalog import (VaultCatalog, index_vault,
                                        resolve_page)
 from agent_wiki.viewer.highlight import highlight
 from agent_wiki.viewer.render import render_markdown
+from agent_wiki.viewer.session import (VIEWER_STATE, current_viewer,
+                                       session_secret)
 
 
 # The static folder is on the search path so base.html can include the
@@ -76,7 +79,8 @@ def same_site_path(target: str | None) -> str:
 
 def render(request: Request, template: str, *, header_vault: str | None = None,
            header_search: bool = True, tabs: list | None = None,
-           crumbs: list | None = None, **context) -> HTMLResponse:
+           crumbs: list | None = None, status_code: int = 200,
+           **context) -> HTMLResponse:
     """Render a template from the viewer's templates folder as an HTML
     response. Every page gets the theme context here; the page depends on the
     theme cookie, so the response varies on Cookie.
@@ -85,14 +89,22 @@ def render(request: Request, template: str, *, header_vault: str | None = None,
     so the header links that vault's home and searches only that vault; any
     other page gets a search over all vaults unless `header_search` is False.
     A vault view also passes its topic `tabs` and `crumbs` (see vault_nav);
-    base.html shows each only when it is given."""
+    base.html shows each only when it is given.
+
+    A page rendered for a signed-in request gets the user's name and the
+    session secret, so base.html shows who is signed in and a sign-out form
+    that echoes the secret; any other page (the sign-in page) shows neither."""
     header_vault_url = vault_url(header_vault) if header_vault else None
+    viewer = getattr(request.state, VIEWER_STATE, None)
     html = templates.get_template(template).render(
+        viewer=viewer.name if viewer else None,
+        session=session_secret(request) if viewer else "",
         theme=current_theme(request), themes=THEMES,
         theme_next=request_target(request), header_vault=header_vault,
         header_vault_url=header_vault_url, header_search=header_search,
         tabs=tabs, crumbs=crumbs, **context)
-    return HTMLResponse(html, headers={"Vary": "Cookie"})
+    return HTMLResponse(html, status_code=status_code,
+                        headers={"Vary": "Cookie"})
 
 
 def vault_url(name: str) -> str:
@@ -261,6 +273,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Kept out of the OpenAPI schema: the schema documents the /v1 API only.
     r = APIRouter(include_in_schema=False)
 
+    # Needs no session: it sets only the browser's own preference, and the
+    # sign-in page carries the switch too.
     @r.post("/theme")
     def set_theme(theme: str | None = Form(default=None),
                   next: str | None = Form(default=None)):
@@ -279,7 +293,13 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     for name in FAVICONS:
         r.add_api_route(f"/{name}", favicon(name), methods=["GET"])
 
-    @r.get("/", response_class=HTMLResponse)
+    # Every page from here on needs a signed-in session: without one the
+    # guard raises SignInRequired, which the app turns into a redirect to
+    # the sign-in page before the route looks at its vault or path.
+    signed_in = [Depends(current_viewer)]
+
+    @r.get("/", response_class=HTMLResponse,
+           dependencies=signed_in)
     def vault_list(request: Request):
         # Each count is the vault home's About count: every topic's records.
         # A vault that cannot be indexed (no or bad wiki.yaml, its directory
@@ -295,7 +315,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
         return render(request, "vaults.html", title="Vaults", catalog=catalog,
                       counts=counts)
 
-    @r.get("/vaults/{name}/", response_class=HTMLResponse)
+    @r.get("/vaults/{name}/", response_class=HTMLResponse,
+           dependencies=signed_in)
     def vault_home(request: Request, name: str):
         index = index_vault(served_vault(catalog, name))
         every_page = [rec for recs in index.topics.values() for rec in recs]
@@ -318,7 +339,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
                                                 (name, None)]),
         )
 
-    @r.get("/search", response_class=HTMLResponse)
+    @r.get("/search", response_class=HTMLResponse,
+           dependencies=signed_in)
     def search(request: Request, q: str = "",
                vault: list[str] = Query(default=[])):
         # Unknown names are dropped; none left means every vault, as when
@@ -347,7 +369,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
 
     # Registered before the page view, which would otherwise catch
     # /vaults/<name>/<topic>/ as a page path.
-    @r.get("/vaults/{name}/{topic}/", response_class=HTMLResponse)
+    @r.get("/vaults/{name}/{topic}/", response_class=HTMLResponse,
+           dependencies=signed_in)
     def topic_view(request: Request, name: str, topic: str, page: int = 1):
         index = index_vault(served_vault(catalog, name))
         if topic not in index.topics:
@@ -370,7 +393,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
 
     # Registered before the page view, which would 404 it: "-" is not a
     # topic. A path parameter, so a tag holding a slash still reaches here.
-    @r.get("/vaults/{name}/-/tags/{tag:path}", response_class=HTMLResponse)
+    @r.get("/vaults/{name}/-/tags/{tag:path}", response_class=HTMLResponse,
+           dependencies=signed_in)
     def tag_view(request: Request, name: str, tag: str, page: int = 1):
         index = index_vault(served_vault(catalog, name))
         wanted = tag.casefold()
@@ -395,7 +419,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
 
     # Registered after the vault home, topic and tag routes, so those keep
     # their URLs.
-    @r.get("/vaults/{name}/{path:path}", response_class=HTMLResponse)
+    @r.get("/vaults/{name}/{path:path}", response_class=HTMLResponse,
+           dependencies=signed_in)
     def page_view(request: Request, name: str, path: str):
         vault_dir = served_vault(catalog, name)
         page_file = resolve_page(vault_dir, path)

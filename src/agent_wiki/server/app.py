@@ -23,12 +23,15 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
     Bearer tokens are checked against the user store in the config dir (as
     it is when the app is built), with grants matched against `vault_name`:
     by default the vault's registry name, or 'local' outside the registry.
-    `server_config` is server.yaml's settings; its tokens are never read."""
+    The viewer's browser sessions live in the same store. `server_config`
+    is server.yaml's settings; its tokens are never read."""
     app = FastAPI(title="Agent Wiki", version="1")
     svc = LocalVaultService(vault_path)
     if vault_name is None:
         vault_name = served_vault_name(vault_path)
-    require = make_require(vault_name, store_path())
+    store_file = store_path()
+    app.state.store_file = store_file
+    require = make_require(vault_name, store_file)
 
     @app.exception_handler(FileNotFoundError)
     async def _not_found(request, exc):
@@ -62,6 +65,13 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
 
     app.include_router(build_router(svc, require))
     if viewer is not None:
+        from agent_wiki.viewer.auth_routes import (build_auth_router,
+                                                   sign_in_redirect)
         from agent_wiki.viewer.routes import build_viewer_router
+        from agent_wiki.viewer.session import (SessionCookieMiddleware,
+                                               SignInRequired)
+        app.add_exception_handler(SignInRequired, sign_in_redirect)
+        app.add_middleware(SessionCookieMiddleware)
+        app.include_router(build_auth_router(store_file))
         app.include_router(build_viewer_router(viewer))
     return app

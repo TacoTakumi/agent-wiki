@@ -138,12 +138,10 @@ def test_title_absent_keeps_first_h1():
 
 
 def test_title_page_view_shows_one_h1(tmp_vault, tmp_path):
-    from fastapi.testclient import TestClient
-
     from agent_wiki.registry import VaultEntry
     from agent_wiki.server.app import create_app
     from agent_wiki.viewer.catalog import build_vault_catalog
-    from conftest import make_vault
+    from conftest import make_vault, signed_in_client
     from test_viewer_app import SERVER_CONFIG
 
     main = make_vault(tmp_path / "main")
@@ -151,7 +149,9 @@ def test_title_page_view_shows_one_h1(tmp_vault, tmp_path):
         "---\ntitle: Foo Page\ntopic: research\n---\n\n"
         "# Foo Page\n\nBody text.\n")
     catalog = build_vault_catalog({"main": VaultEntry(name="main", path=main)})
-    client = TestClient(create_app(tmp_vault, SERVER_CONFIG, viewer=catalog))
+    client = signed_in_client(create_app(tmp_vault, SERVER_CONFIG,
+                                         viewer=catalog),
+                              raise_server_exceptions=True)
     html = client.get("/vaults/main/research/foo").text
     assert "Body text." in html
     assert len(re.findall(r"<h1[\s>]", html)) == 1

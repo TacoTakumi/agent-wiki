@@ -14,7 +14,7 @@ from agent_wiki.registry import VaultEntry
 from agent_wiki.server.app import create_app
 from agent_wiki.viewer.catalog import PageRecord, build_vault_catalog
 from agent_wiki.viewer.routes import by_recency
-from conftest import make_vault
+from conftest import make_vault, signed_in_client
 
 
 SERVER_CONFIG = {"bind": "127.0.0.1", "port": 8731, "tokens": []}
@@ -36,7 +36,7 @@ def catalog(tmp_path):
 @pytest.fixture
 def viewer(tmp_vault, catalog):
     app = create_app(tmp_vault, SERVER_CONFIG, viewer=catalog)
-    return TestClient(app, raise_server_exceptions=False)
+    return signed_in_client(app)
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def counted_viewer(tmp_vault, tmp_path):
     }
     app = create_app(tmp_vault, SERVER_CONFIG,
                      viewer=build_vault_catalog(registry))
-    return TestClient(app, raise_server_exceptions=False)
+    return signed_in_client(app)
 
 
 def test_vault_list_has_a_page_title_and_subtitle(counted_viewer):
@@ -142,8 +142,8 @@ def test_vault_list_survives_a_vault_it_cannot_index(tmp_vault, tmp_path,
         (broken / "wiki.yaml").write_text("topics: [unclosed\n")
     else:
         shutil.rmtree(broken)
-    client = TestClient(create_app(tmp_vault, SERVER_CONFIG, viewer=catalog),
-                        raise_server_exceptions=False)
+    client = signed_in_client(create_app(tmp_vault, SERVER_CONFIG,
+                                         viewer=catalog))
     resp = client.get("/")
     assert resp.status_code == 200
     rows = re.findall(r'<li><a class="title" href="([^"]+)">([^<]+)</a>(.*?)</li>',
@@ -169,7 +169,7 @@ def test_vault_list_without_local_vaults_says_so(tmp_vault, tmp_path):
     registry = {"gone": VaultEntry(name="gone", path=tmp_path / "gone")}
     app = create_app(tmp_vault, SERVER_CONFIG,
                      viewer=build_vault_catalog(registry))
-    html = TestClient(app).get("/").text
+    html = signed_in_client(app).get("/").text
     assert "No local vaults to serve." in html
     assert '<ul class="rows">' not in html
 
@@ -983,7 +983,7 @@ def test_header_vault_name_is_escaped_and_its_link_quoted(tmp_vault, tmp_path):
     registry = {name: VaultEntry(name=name, path=make_vault(tmp_path / "v"))}
     app = create_app(tmp_vault, SERVER_CONFIG,
                      viewer=build_vault_catalog(registry))
-    client = TestClient(app, raise_server_exceptions=False)
+    client = signed_in_client(app)
     header = site_header(client.get("/vaults/a%26b%20c/").text)
     assert '<a href="/vaults/a%26b%20c/">a&amp;b c</a>' in header
     assert ('<input type="hidden" name="vault" value="a&amp;b c">'
@@ -1133,7 +1133,7 @@ def nav_viewer(tmp_vault, tmp_path):
     registry = {"main": VaultEntry(name="main", path=main)}
     app = create_app(tmp_vault, SERVER_CONFIG,
                      viewer=build_vault_catalog(registry))
-    return TestClient(app, raise_server_exceptions=False)
+    return signed_in_client(app)
 
 
 def topic_tabs(html):
@@ -1223,7 +1223,7 @@ def test_tabs_and_breadcrumb_quote_names(tmp_vault, tmp_path):
     name = "a&b c"
     app = create_app(tmp_vault, SERVER_CONFIG, viewer=build_vault_catalog(
         {name: VaultEntry(name=name, path=vault)}))
-    client = TestClient(app, raise_server_exceptions=False)
+    client = signed_in_client(app)
     html = client.get("/vaults/a%26b%20c/my%20notes/p").text
     assert topic_tabs(html) == [
         ("/vaults/a%26b%20c/", "Overview", None, False),
