@@ -1,10 +1,11 @@
-"""Account logic for awiki serve: user names, users, grants and passwords.
+"""Account logic for awiki serve: passwords, users and grants, sessions and tokens.
 
 The functions that change accounts take an open store (see
 :mod:`agent_wiki.server.store`), so the CLI and the server share one set of
 rules: a user name is checked and lowercased here, a password change ends
-the user's sessions here, and a grant's role is checked here. A refusal is
-an :class:`AccountError` whose message is fit to show the operator.
+the user's sessions here, and a grant's or a token scope's role is checked
+here. A refusal is an :class:`AccountError` whose message is fit to show
+the operator.
 
 A password is stored as
 ``scrypt$N$r$p$salt$hash`` (salt and hash in hex), so each stored string
@@ -12,18 +13,27 @@ names the parameters it was made with: verifying uses those parameters,
 and :func:`needs_rehash` tells when they are older than today's.
 Verification compares in constant time, and a stored string that asks
 scrypt for more than :data:`SCRYPT_MAX_MEMORY` verifies false instead of
-allocating it. Stdlib only.
+allocating it.
+
+A browser session and a bearer token are both random secrets of which the
+store keeps only the SHA-256 (:func:`hash_secret`), so a copy of the store
+hands out neither. A session expires a while after its last use; a token
+lives until it is revoked, belongs to one user, and may carry a scope map
+that narrows that user's grants. Both write their last use at most once a
+minute. Stdlib only.
 """
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import hashlib
 import hmac
 import re
 import secrets
+import time
 
 from agent_wiki.server.access import ROLES, WILDCARD, is_role
-from agent_wiki.server.store import Conflict, User
+from agent_wiki.server.store import Conflict, Session, SqliteStore, Token, User
 
 SCRYPT_N = 16384
 SCRYPT_R = 8
@@ -267,10 +277,6 @@ def _parse(stored: str) -> tuple[int, int, int, bytes, bytes] | None:
 # so the cookie) is rewritten at most once per SESSION_WRITE_EVERY, so a
 # page that fires many requests a second writes once.
 
-import time  # noqa: E402
-
-from agent_wiki.server.store import Session, SqliteStore  # noqa: E402
-
 SESSION_TTL = 12 * 3600
 SESSION_WRITE_EVERY = 60
 
@@ -338,3 +344,149 @@ def end_session(store: SqliteStore, secret: str) -> bool:
     if not secret:
         return False
     return store.remove_session(hash_secret(secret))
+
+
+# --- bearer tokens -----------------------------------------------------------
+#
+# A token is a random secret a script or an agent sends as a bearer token. It
+# acts for its owner, under the owner's grants as they are at each request,
+# narrowed by the token's scope map when it has one. The store keeps the
+# secret's SHA-256 and its last 4 characters (to tell tokens apart in a
+# listing), never the secret. A use is written as the token's last use at
+# most once per TOKEN_WRITE_EVERY, so a busy script does not write on every
+# request.
+
+TOKEN_PREFIX = "awp_"
+TOKEN_WRITE_EVERY = 60
+
+_TIME_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
+
+
+def parse_scope(items) -> dict[str, str] | None:
+    """A scope map from ``VAULT=ROLE`` strings; None when there are none.
+
+    VAULT may be ``'*'`` for every vault. A string with no ``=``, an empty
+    vault, an unknown role or a vault named twice is an :class:`AccountError`.
+    """
+    scope: dict[str, str] = {}
+    for item in items or ():
+        vault, sep, role = item.partition("=")
+        vault, role = vault.strip(), role.strip()
+        if not sep:
+            raise AccountError(f"Bad scope {item!r}: expected VAULT=ROLE.")
+        if not vault:
+            raise AccountError(
+                f"Bad scope {item!r}: name a vault or {WILDCARD!r} before the '='."
+            )
+        if not is_role(role):
+            raise AccountError(
+                f"Bad scope {item!r}: unknown role {role!r}, "
+                f"expected one of {', '.join(ROLES)}."
+            )
+        if vault in scope:
+            raise AccountError(f"Bad scope: {vault!r} is named twice.")
+        scope[vault] = role
+    return scope or None
+
+
+def mint_token(
+    store: SqliteStore,
+    owner: str,
+    name: str,
+    scope: dict[str, str] | None,
+    *,
+    now: str | None = None,
+) -> str:
+    """Make the token ``name`` for ``owner`` and return its secret; the only copy.
+
+    The secret is :data:`TOKEN_PREFIX` and 43 URL-safe characters. The store
+    keeps its SHA-256, its last 4 characters, ``scope`` (None: the owner's
+    grants as they are) and the time made. An unknown owner, an empty name,
+    a name the owner already uses, and a scope with an empty vault or an
+    unknown role are refused.
+    """
+    owner = require_user(store, owner).name
+    if not name or not name.strip():
+        raise AccountError("A token needs a name.")
+    if scope is not None:
+        for vault, role in scope.items():
+            if not vault:
+                raise AccountError(
+                    f"A token scope names a vault or {WILDCARD!r}; got an empty name."
+                )
+            if not is_role(role):
+                raise AccountError(
+                    f"Unknown role {role!r} in the scope: expected one of {', '.join(ROLES)}."
+                )
+        scope = dict(scope) or None
+    secret = TOKEN_PREFIX + secrets.token_urlsafe(32)
+    token = Token(
+        owner=owner,
+        name=name,
+        hash=hash_secret(secret),
+        last4=secret[-4:],
+        scope=scope,
+        created=now or _now(),
+    )
+    try:
+        store.add_token(token)
+    except Conflict:
+        raise AccountError(f"{owner} already has a token named {name!r}.") from None
+    return secret
+
+
+def list_tokens(store: SqliteStore, owner: str) -> list[Token]:
+    """The tokens of ``owner`` (any case), by name; an unknown user is refused."""
+    owner = require_user(store, owner).name
+    return store.list_tokens(owner)
+
+
+def revoke_token(store: SqliteStore, owner: str, name: str) -> bool:
+    """Delete ``owner``'s token ``name``; True, or an :class:`AccountError` when missing."""
+    owner = require_user(store, owner).name
+    if not store.revoke_token(owner, name):
+        raise AccountError(f"{owner} has no token named {name!r}.")
+    return True
+
+
+def token_for(
+    store: SqliteStore, secret: str, *, now: float | None = None
+) -> Token | None:
+    """The token ``secret`` is, or None for an empty or unknown secret.
+
+    The lookup is by the secret's SHA-256, so the secret itself is never
+    compared. The token's last use is written as ``now`` (epoch seconds)
+    when it has none yet or the one stored is at least
+    :data:`TOKEN_WRITE_EVERY` old; the token returned carries what is
+    stored after that.
+    """
+    if not secret:
+        return None
+    now = time.time() if now is None else now
+    digest = hash_secret(secret)
+    token = store.find_token(digest)
+    if token is None:
+        return None
+    if _token_due(token.last_used, now):
+        when = _format_time(now)
+        if store.touch_token(digest, when):
+            token = dataclasses.replace(token, last_used=when)
+    return token
+
+
+def _token_due(last_used: str | None, now: float) -> bool:
+    """Whether a token last used at ``last_used`` should have ``now`` written."""
+    if last_used is None:
+        return True
+    try:
+        then = datetime.datetime.strptime(last_used, _TIME_FORMAT).replace(
+            tzinfo=datetime.timezone.utc
+        ).timestamp()
+    except ValueError:
+        return True
+    return now - then >= TOKEN_WRITE_EVERY
+
+
+def _format_time(epoch: float) -> str:
+    """``epoch`` in the store's UTC time format, to the second."""
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime(_TIME_FORMAT)
