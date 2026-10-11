@@ -234,3 +234,19 @@ def test_name_override_sees_local_vaults(tmp_path, monkeypatch):
     monkeypatch.setenv("AWIKI_VAULT", "personal")
 
     assert get_vault_path() == personal
+
+
+def test_invalid_vault_in_a_local_config_is_left_out(tmp_path, monkeypatch, capsys):
+    from agent_wiki.config import load_registry
+    g_main = make_vault(tmp_path / "g-main")
+    proj = tmp_path / "home" / "proj"
+    _setup(tmp_path, monkeypatch,
+           global_config={"vaults": {"main": {"path": str(g_main)}}},
+           trust=(proj,))
+    local = _write_yaml(proj / ".agent-wiki" / "config.yaml",
+                        {"vaults": {"Work": {"path": str(g_main)}}})
+    monkeypatch.chdir(proj)
+    assert set(load_registry()) == {"main"}
+    assert set(load_registry()) == {"main"}
+    err = capsys.readouterr().err
+    assert err.count(f"vault 'Work' in {local} is not a valid name") == 1

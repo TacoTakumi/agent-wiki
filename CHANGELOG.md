@@ -27,6 +27,12 @@ below are reconstructed from the commits that bumped `__version__`.
   or not `auth_proxy` is on, so a TLS proxy on another host gets Secure
   cookies. `serve` checks the list whenever it is set and refuses a wildcard
   even with `auth_proxy` off.
+- **A vault name in a config must be valid.** The rule `vault add` and `init`
+  already applied (lowercase letters, digits and hyphens) now holds for a name
+  typed into config.yaml or a project-local config too. An entry with any
+  other name is left out, with one warning naming it and its file; the other
+  vaults, and `awiki serve`, work as before. A command that names that vault
+  (`default_vault`, `--vault`, `AWIKI_VAULT`) stops with the same reason.
 
 ### Fixed
 - **A long frontmatter value no longer corrupts a page.** The page reader
