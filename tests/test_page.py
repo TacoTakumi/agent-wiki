@@ -155,9 +155,26 @@ def test_the_two_readers_differ_on_the_blank_separator_of_every_page(tmp_path):
     assert strip_frontmatter(text) == "# T\n\nbody\n"
 
 
-def test_parse_page_closes_on_the_first_delimiter_found_anywhere(tmp_path):
-    # A value ending in '---' carries the delimiter, so the split lands mid-line.
-    assert _parse(tmp_path, "---\ntitle: a---\n---\n\nbody\n")["meta"] == {"title": "a"}
+def test_delimiter_a_value_ending_in_dashes_stays_in_the_block(tmp_path):
+    assert _parse(tmp_path, "---\ntitle: a---\n---\n\nbody\n")["meta"] == {"title": "a---"}
+
+
+@pytest.mark.parametrize("title", [
+    # yaml.dump folds this onto an indented '  ---' continuation line.
+    "T " + "x" * 72 + " ---",
+    "a\n---\nb",
+])
+def test_delimiter_a_rendered_page_round_trips(tmp_path, title):
+    meta = {"title": title, "topic": "research", "tags": [], "sources": ["raw/src.md"]}
+    parsed = _parse(tmp_path, render_page(meta, "Body line.\n"))
+    assert parsed["meta"] == meta
+    assert parsed["body"] == "\nBody line.\n"
+
+
+def test_delimiter_an_empty_block_still_closes(tmp_path):
+    parsed = _parse(tmp_path, "---\n---\n\nbody\n")
+    assert parsed["meta"] == {}
+    assert parsed["body"] == "\nbody\n"
 
 
 def test_a_closer_with_a_trailing_space_never_closes_the_block(tmp_path):
