@@ -176,6 +176,16 @@ def test_grant_change_empties_the_vault_list_at_the_next_request(app, client):
     assert client.get("/vaults/main/").status_code == 404
 
 
+def test_an_unknown_stored_role_hides_the_vault_and_lists_the_rest(app, client):
+    with open_store(app.state.store_file) as store:
+        store.set_grant(VIEWER_USER, "personal", "owner")
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "/vaults/main/" in response.text
+    assert_hides_personal(response.text)
+    assert client.get("/vaults/personal/").status_code == 404
+
+
 def test_grant_given_shows_the_vault_at_the_next_request(app, client):
     assert_hides_personal(client.get("/").text)
     with open_store(app.state.store_file) as store:

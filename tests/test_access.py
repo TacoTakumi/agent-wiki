@@ -2,7 +2,8 @@
 import pytest
 
 from agent_wiki.server.access import (
-    ROLES, at_least, effective_role, is_role, resolve, role_rank,
+    ROLES, at_least, effective_role, is_role, readable_vaults, resolve,
+    role_rank,
 )
 
 
@@ -81,3 +82,11 @@ def test_example_no_scope_gives_grant_unchanged():
     grants = {"*": "reader", "main": "writer"}
     assert effective_role(grants, None, "main") == "writer"
     assert effective_role(grants, None, "other") == "reader"
+
+
+def test_an_unknown_stored_role_resolves_to_none():
+    assert resolve({"main": "owner"}, "main") == "none"
+    assert resolve({"*": "owner"}, "other") == "none"
+    assert effective_role({"*": "writer"}, {"main": "owner"}, "main") == "none"
+    assert readable_vaults({"main": "owner", "notes": "reader"},
+                           ["main", "notes"]) == ["notes"]

@@ -85,6 +85,15 @@ def test_effective_none_is_refused_403(bare_vault):
     assert r.json()["detail"] == "insufficient role"
 
 
+def test_an_unknown_stored_role_is_refused_403(bare_vault):
+    # A row written outside the CLI (which checks roles) grants nothing.
+    headers = _user("ann", {"*": "reader"})
+    with open_store() as store:
+        store.set_grant("ann", "*", "owner")
+    r = _client(bare_vault).get("/v1/status", headers=headers)
+    assert r.status_code == 403
+
+
 def test_a_user_with_no_grant_is_refused_403(bare_vault):
     headers = _user("ann", {})
     assert _client(bare_vault).get("/v1/status", headers=headers).status_code == 403
