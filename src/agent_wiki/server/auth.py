@@ -31,11 +31,7 @@ def make_require(vault_name: str, store_file: Path | None = None):
                 if token is None:
                     raise HTTPException(status_code=401, detail="invalid token")
                 grants = store.grants(token.owner)
-            try:
-                role = effective_role(grants, token.scope, vault_name)
-            except ValueError:
-                # A role the ladder does not know grants nothing.
-                role = "none"
+            role = effective_role(grants, token.scope, vault_name)
             if not at_least(role, min_role):
                 raise HTTPException(status_code=403, detail="insufficient role")
             return role

@@ -25,12 +25,15 @@ def is_role(value: str) -> bool:
 
 
 def resolve(entries: dict[str, str] | None, vault: str) -> str:
-    """The entry for ``vault``, else the ``'*'`` entry, else ``'none'``."""
+    """The entry for ``vault``, else the ``'*'`` entry, else ``'none'``.
+
+    A stored role the ladder does not know grants nothing: it resolves to
+    ``'none'`` here, the one place every reader of a grant or scope map
+    goes through, so the API and the viewer cannot treat it differently."""
     if not entries:
         return "none"
-    if vault in entries:
-        return entries[vault]
-    return entries.get(WILDCARD, "none")
+    role = entries[vault] if vault in entries else entries.get(WILDCARD, "none")
+    return role if is_role(role) else "none"
 
 
 def effective_role(grants: dict[str, str], scope: dict[str, str] | None,
