@@ -412,3 +412,26 @@ def test_lint_fails_when_one_of_several_vaults_has_a_bad_threshold(
     assert result.exit_code != 0
     assert "page_max_lines" in result.stderr
     assert "skipped" not in result.output
+
+
+def test_lint_reports_unreadable_pages_and_keeps_going(tmp_vault):
+    _create_page(tmp_vault, "research", "good", "Good",
+                 "# Good\n\nSee [[Nowhere]].\n")
+    research = tmp_vault / "research"
+    (research / "bad-yaml.md").write_text("---\ntitle: [unclosed\n---\n\nbody\n")
+    (research / "list-block.md").write_text("---\n- a\n- b\n---\n\nbody\n")
+    (research / "not-utf8.md").write_bytes(b"---\ntitle: \xff\n---\n\nbody\n")
+    (tmp_vault / "raw").mkdir(exist_ok=True)
+
+    issues = lint_vault(tmp_vault)
+
+    meta = {i["path"]: i["detail"] for i in issues
+            if i["type"] == "missing_frontmatter"}
+    assert meta == {
+        "research/bad-yaml.md": "research/bad-yaml.md frontmatter is not valid YAML",
+        "research/list-block.md": "research/list-block.md frontmatter is not a mapping",
+        "research/not-utf8.md": "research/not-utf8.md is not UTF-8",
+    }
+    # The good page is still audited.
+    assert any(i["type"] == "broken_wikilink" and i["path"] == "research/good.md"
+               for i in issues)

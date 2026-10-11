@@ -39,6 +39,8 @@ below are reconstructed from the commits that bumped `__version__`.
   frontmatter cannot be read (a YAML error, a block that is not a mapping,
   bytes that are not UTF-8) is left out of index.md, as the viewer already
   leaves it out of its listings.
+- **`awiki lint` reports an unreadable page instead of crashing.** Such a
+  page is a `META` issue that names the reason, and the audit goes on.
 - **Docs.** The systemd unit and its README sample use `User=you` as the
   placeholder account, and the README says the user page is reached by the
   Settings link in the header.

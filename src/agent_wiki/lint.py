@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from pathlib import Path
+import yaml
 from agent_wiki.config import (
     detect_vocabulary_conflicts, load_vault_config, parse_page_max_lines,
     parse_tag_vocabulary,
@@ -48,6 +49,24 @@ def _as_date(value) -> date | None:
     return None
 
 
+def _read_page(md_file: Path) -> tuple[dict | None, str | None]:
+    """The parsed page, or None and the reason its frontmatter cannot be read.
+
+    The same failures the viewer's index_vault and rebuild_index skip; lint
+    reports them instead, so one bad page does not stop the audit."""
+    try:
+        page = parse_page(md_file)
+    except yaml.YAMLError:
+        return None, "frontmatter is not valid YAML"
+    except UnicodeDecodeError:
+        return None, "is not UTF-8"
+    except OSError as e:
+        return None, f"cannot be read ({e.strerror})"
+    if not isinstance(page["meta"], dict):
+        return None, "frontmatter is not a mapping"
+    return page, None
+
+
 def lint_vault(vault_path: Path, *, refetch: bool = False,
                fetcher: Fetcher | None = None) -> list[dict]:
     """Audit the vault for issues. Returns a list of issue dicts.
@@ -89,8 +108,15 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
         if not topic_dir.is_dir():
             continue
         for md_file in topic_dir.rglob("*.md"):
-            page = parse_page(md_file)
+            page, reason = _read_page(md_file)
             rel = md_file.relative_to(vault_path)
+            if page is None:
+                issues.append({
+                    "type": "missing_frontmatter",
+                    "path": str(rel),
+                    "detail": f"{rel} {reason}",
+                })
+                continue
 
             # Check missing frontmatter
             if not page["meta"]:
@@ -217,7 +243,9 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
             if not topic_dir.is_dir():
                 continue
             for md_file in topic_dir.rglob("*.md"):
-                page = parse_page(md_file)
+                page, _ = _read_page(md_file)
+                if page is None:
+                    continue  # reported as META in the page loop
                 for src in page["meta"].get("sources", []):
                     referenced_raw.add(src)
 
