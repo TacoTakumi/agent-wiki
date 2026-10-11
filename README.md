@@ -4,6 +4,8 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/agent-wiki-kb)](https://pypi.org/project/agent-wiki-kb/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](https://github.com/TacoTakumi/agent-wiki/blob/main/LICENSE)
 
+Website: https://tacotakumi.github.io/agent-wiki/
+
 **AI agents earn hard-won knowledge in every conversation, then lose it the moment
 the session ends.** Agent Wiki is the memory they keep instead: a single
 plain-markdown vault your agents search *before* reaching for the web, and write
