@@ -110,6 +110,25 @@ def served_name(registry: dict, override=None, default_vault=None) -> str:
         return OVERRIDE_PATH_NAME
 
 
+def name_for_vault_path(vault_path) -> str:
+    """The name to serve the vault at `vault_path` under: the configured
+    served name (see `served_vault_name`) when `vault_path` is the vault
+    the configuration selects, else 'local'. A caller that serves some other
+    path never borrows the configured vault's name and its grants."""
+    from click import ClickException
+    from agent_wiki.config import get_vault_path
+    try:
+        configured = get_vault_path()
+    except (ClickException, ValueError):
+        # No vault is configured: nothing to borrow a name from.
+        return OVERRIDE_PATH_NAME
+    try:
+        same = Path(vault_path).resolve() == Path(configured).resolve()
+    except OSError:
+        same = False
+    return served_vault_name() if same else OVERRIDE_PATH_NAME
+
+
 def served_vault_name() -> str:
     """`served_name` against the effective registry, its default_vault and
     the active override (--vault or AWIKI_VAULT), read once."""

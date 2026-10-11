@@ -13,7 +13,7 @@ from agent_wiki.server.auth import make_require
 from agent_wiki.server.routes import build_router
 from agent_wiki.server.store import store_path
 from agent_wiki.server_config import proxy_auth
-from agent_wiki.viewer.catalog import served_vault_name
+from agent_wiki.viewer.catalog import name_for_vault_path
 
 # The minimum access of every route the app serves, keyed by (method, path):
 # "public" answers anyone, "viewer" needs a signed-in browser session, and
@@ -102,8 +102,9 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
 
     Bearer tokens are checked against the user store in the config dir (as
     it is when the app is built), with grants matched against `vault_name`:
-    by default `served_vault_name()`, the name the viewer catalog gives the
-    same vault (a path override is 'local', even on a registered path).
+    by default `name_for_vault_path(vault_path)`: the name the viewer
+    catalog gives the configured vault when `vault_path` is that vault (a
+    path override is 'local', even on a registered path), else 'local'.
     The viewer's browser sessions live in the same store. `server_config`
     is server.yaml's settings; its tokens are never read."""
     # No /docs, /redoc or /openapi.json: the API is documented in the
@@ -112,7 +113,7 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
                   redoc_url=None, openapi_url=None)
     svc = LocalVaultService(vault_path)
     if vault_name is None:
-        vault_name = served_vault_name()
+        vault_name = name_for_vault_path(vault_path)
     store_file = store_path()
     app.state.store_file = store_file
     # Who may name a user in a header (the viewer only, never /v1), and

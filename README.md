@@ -952,8 +952,10 @@ processes on different ports. The HTTP wire contract stays vault-implicit
 several vaults under one port is the planned evolution of this design.
 
 User grants and token scopes name vaults by their registry name, so the same
-grant map applies to every vault you serve. A bare-path `--vault` override
-outside the registry is served under the name `local`. See
+grant map applies to every vault you serve. `--vault NAME` (or
+`AWIKI_VAULT=NAME`) keeps the registry name. A path override is always served
+under the name `local`, even when the path is a registered vault's path, so
+`--vault /home/you/wiki` needs a grant on `local`, not on `main`. See
 [Users and grants](#users-and-grants).
 
 ## Network server
