@@ -208,14 +208,29 @@ def _local_config_if_trusted(global_config: dict) -> "tuple | None":
         return local_file, (yaml.safe_load(f) or {})
 
 
+# (name, config file) pairs already warned about in this process: the
+# registry is loaded several times per command, the warning is printed once.
+_warned_invalid: set = set()
+
+
 def load_effective_config() -> tuple:
     """Return (registry, default_vault) — the global registry with the nearest
     trusted local config merged additively over it, local winning on vault-name
     collision and its default_vault beating the global one. Read-only."""
+    registry, default_vault, _invalid = _load_effective()
+    return registry, default_vault
+
+
+def _load_effective() -> tuple:
+    """load_effective_config's work, plus {name: config file} for each entry
+    left out because its name is not a valid vault name. Each such entry is
+    reported once per process on stderr."""
     from dataclasses import replace
-    from agent_wiki.registry import parse_registry
+    from agent_wiki.registry import (
+        invalid_vault_message, invalid_vault_names, parse_registry)
     global_config = load_user_config()
     global_file = str(get_config_dir() / "config.yaml")
+    invalid = {name: global_file for name in invalid_vault_names(global_config)}
     registry = {
         name: replace(entry, origin=global_file)
         for name, entry in parse_registry(global_config).items()
@@ -224,6 +239,8 @@ def load_effective_config() -> tuple:
     local = _local_config_if_trusted(global_config)
     if local is not None:
         local_file, local_config = local
+        invalid.update({name: str(local_file)
+                        for name in invalid_vault_names(local_config)})
         # A relative path: is anchored to the directory containing .agent-wiki,
         # not the process cwd — the config means the same vault from any subdir.
         base = local_file.parent.parent
@@ -242,7 +259,12 @@ def load_effective_config() -> tuple:
         registry = {**registry, **local_registry}
         if local_config.get("default_vault"):
             default_vault = local_config["default_vault"]
-    return registry, default_vault
+    for name, origin in invalid.items():
+        if (name, origin) not in _warned_invalid:
+            _warned_invalid.add((name, origin))
+            click.echo(f"warning: {invalid_vault_message(name, origin)}. "
+                       "Skipped.", err=True)
+    return registry, default_vault, invalid
 
 
 def load_registry() -> dict:

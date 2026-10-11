@@ -49,12 +49,28 @@ def is_valid_vault_name(name: str) -> bool:
     return bool(name) and slugify(name) == name
 
 
+def invalid_vault_message(name: str, origin: str) -> str:
+    """Why the vault ``name`` that ``origin`` declares is refused."""
+    from agent_wiki.page import slugify
+    return (f"vault '{name}' in {origin} is not a valid name; use lowercase "
+            f"letters, digits and hyphens (e.g. '{slugify(name) or 'my-vault'}')")
+
+
+def invalid_vault_names(config) -> list:
+    """The names under a config's `vaults:` map that parse_registry leaves
+    out because they are not valid vault names, in file order."""
+    vaults = (config or {}).get("vaults") or {}
+    return [str(name) for name in vaults if not is_valid_vault_name(str(name))]
+
+
 def parse_registry(config) -> dict:
     """Parse a loaded user-config dict into {name: VaultEntry}.
 
     A `vaults:` map wins over the legacy keys. Each explicit entry must declare
     `path` or `url` (both is allowed — a migrated legacy config carries the
-    pair); an entry with neither raises a UsageError naming it. With no
+    pair); an entry with neither raises a UsageError naming it. An entry
+    whose name is not a valid vault name is left out (see
+    invalid_vault_names; the config loader warns about it). With no
     `vaults:` map, `vault_path`/`server` synthesize a single entry named
     'main'; an empty config yields an empty registry."""
     config = config or {}
@@ -63,6 +79,7 @@ def parse_registry(config) -> dict:
         return {
             str(name): _parse_entry(str(name), spec)
             for name, spec in vaults.items()
+            if is_valid_vault_name(str(name))
         }
     return _synthesize_legacy(config)
 

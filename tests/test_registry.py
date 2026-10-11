@@ -274,3 +274,30 @@ def test_vault_entry_is_frozen():
 def test_is_valid_vault_name(name, valid):
     from agent_wiki.registry import is_valid_vault_name
     assert is_valid_vault_name(name) is valid
+
+
+def test_invalid_vault_names_are_left_out_and_valid_ones_load(tmp_path):
+    from agent_wiki.registry import invalid_vault_names
+    config = {"vaults": {name: {"path": str(tmp_path / str(i))}
+                         for i, name in enumerate(["a/b", "Work", "my_vault", "ok"])}}
+    assert set(parse_registry(config)) == {"ok"}
+    assert invalid_vault_names(config) == ["a/b", "Work", "my_vault"]
+
+
+def test_cli_warns_once_per_invalid_vault(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    from conftest import make_vault
+    ok = make_vault(tmp_path / "ok")
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / "config.yaml").write_text(yaml.dump({"vaults": {
+        "ok": {"path": str(ok)}, "a/b": {"path": str(ok)}}}))
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cfg))
+    result = CliRunner().invoke(cli, ["search", "anything"])
+    assert result.exit_code == 0, result.output
+    warning = (f"warning: vault 'a/b' in {cfg / 'config.yaml'} is not a valid "
+               "name; use lowercase letters, digits and hyphens (e.g. 'ab'). "
+               "Skipped.")
+    assert result.stderr.splitlines().count(warning) == 1
+    assert "a/b" not in result.stdout
