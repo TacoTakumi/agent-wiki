@@ -292,6 +292,8 @@ def _verdict(fn):
     ("non-mapping", "---\n- just\n- a list\n---\n\nbody\n"),
     ("empty-header", "---\n---\n\nbody\n"),
     ("no-frontmatter", "# Just a page\n\nbody\n"),
+    ("dashes-in-value", "---\ntype: conversation\nagent: a\nsession_id: s\ntitle: t ---\n---\n\nbody\n"),
+    ("folded-dashes", "---\ntype: conversation\nagent: a\nsession_id: s\ntitle: t\n  ---\n---\n\nbody\n"),
     ("long-header", "---\ntype: conversation\nagent: a\nsession_id: s\ntitle: t\n"
                     + "".join(f"k{i}: v{i}\n" for i in range(300)) + "---\n\nbody\n"),
 ])

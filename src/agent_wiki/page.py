@@ -68,10 +68,11 @@ def parse_page(path: Path) -> dict:
     Neither rule contains the other, so they are not interchangeable - on a page
     this package wrote they already differ by that blank line, and elsewhere:
 
-    - this one closes the block on the first literal `---` + newline found
-      anywhere, so a value ending in `---` splits mid-line and a closer
-      carrying a trailing space is never the close; that one closes on the
-      first line whose stripped text is `---`.
+    - this one closes the block on the first line that is exactly `---` and
+      ends in a newline, so a value ending in `---` or folded onto an indented
+      `  ---` line stays in the block, and a closer carrying a trailing space
+      is never the close; that one closes on the first line whose stripped
+      text is `---`.
     - this one lets a YAML error propagate and accepts a block that is not a
       mapping; that one returns the text unchanged in both cases, so prose
       opening on a `---` thematic break keeps its text.
@@ -87,10 +88,11 @@ def parse_page(path: Path) -> dict:
     content = path.read_text()
 
     if content.startswith("---\n"):
-        parts = content.split("---\n", 2)
-        if len(parts) >= 3:
-            meta = yaml.safe_load(parts[1]) or {}
-            body = parts[2]
+        # Search from the opener's own newline so an empty block closes too.
+        close = content.find("\n---\n", 3)
+        if close != -1:
+            meta = yaml.safe_load(content[4:close + 1]) or {}
+            body = content[close + 5:]
             return {"meta": meta, "body": body, "path": path}
 
     return {"meta": {}, "body": content, "path": path}

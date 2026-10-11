@@ -29,6 +29,12 @@ below are reconstructed from the commits that bumped `__version__`.
   even with `auth_proxy` off.
 
 ### Fixed
+- **A long frontmatter value no longer corrupts a page.** The page reader
+  closed the frontmatter on the first `---` + newline anywhere, so a title
+  ending in ` ---` that PyYAML folded onto an indented `  ---` line ended the
+  block early: `topic`, `tags`, `sources` and the rest went into the body,
+  silently, and lint reported the raw file as having no page. The block now
+  closes only on a line that is exactly `---`.
 - **Login CSRF.** The sign-in form carries a token that matches a
   short-lived `awiki_signin` cookie (SameSite=Strict); a sign-in post without
   a matching pair is refused with 403 before any password check, so another

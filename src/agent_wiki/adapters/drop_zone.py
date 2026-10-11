@@ -125,7 +125,7 @@ def _read_frontmatter_header(path: Path) -> dict | None:
     """Parse only the leading frontmatter block, exactly as ``parse_page`` would.
 
     Mirrors ``parse_page``'s rules (the file must start with ``---\\n``; the block
-    ends at the next ``---\\n``; strict UTF-8; YAML errors propagate; a
+    ends at the next line that is exactly ``---\\n``; strict UTF-8; YAML errors propagate; a
     non-mapping is returned as-is) while reading no further than the closing
     delimiter, so the cost is independent of transcript size. Returns ``None``
     when no closing delimiter appears within the line cap; the caller then
@@ -136,9 +136,7 @@ def _read_frontmatter_header(path: Path) -> dict | None:
         if f.readline() != "---\n":
             return {}
         for i, line in enumerate(f):
-            idx = line.find("---\n")
-            if idx != -1:
-                chunks.append(line[:idx])
+            if line == "---\n":
                 return yaml.safe_load("".join(chunks)) or {}
             chunks.append(line)
             if i >= _MAX_HEADER_LINES:
