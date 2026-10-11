@@ -364,15 +364,20 @@ def resolve_vault_override():
 
     A bare value matching a configured vault name narrows to that entry (local
     or remote); any other value is a config-free local vault at that path. The
-    entry is not validated here — callers decide how to report a missing path."""
-    from agent_wiki.registry import VaultEntry
+    entry is not validated here — callers decide how to report a missing path.
+    A bare value naming an entry left out for an invalid name raises a
+    UsageError with that reason, not a path that points nowhere."""
+    from agent_wiki.registry import VaultEntry, invalid_vault_message
     raw = _raw_vault_override()
     if raw is None:
         return None
     if _name_eligible(raw):
-        entry = load_registry().get(raw)
+        registry, _default_vault, invalid = _load_effective()
+        entry = registry.get(raw)
         if entry is not None:
             return entry
+        if raw in invalid:
+            raise click.UsageError(invalid_vault_message(raw, invalid[raw]))
     return VaultEntry(name=raw, path=Path(raw).expanduser())
 
 
@@ -409,9 +414,13 @@ def _stale_vault_error(entry) -> click.UsageError:
 
 def _default_entry():
     """Resolve the default vault entry from the merged (global + trusted
-    local) registry view."""
-    from agent_wiki.registry import resolve_default_vault
-    registry, default_vault = load_effective_config()
+    local) registry view. A default_vault naming an entry left out for an
+    invalid name raises a UsageError with that reason."""
+    from agent_wiki.registry import invalid_vault_message, resolve_default_vault
+    registry, default_vault, invalid = _load_effective()
+    if default_vault is not None and str(default_vault) in invalid:
+        raise click.UsageError(
+            invalid_vault_message(str(default_vault), invalid[str(default_vault)]))
     return resolve_default_vault(registry, default_vault)
 
 
