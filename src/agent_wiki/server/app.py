@@ -12,6 +12,7 @@ from agent_wiki.service import LocalVaultService
 from agent_wiki.server.auth import make_require
 from agent_wiki.server.routes import build_router
 from agent_wiki.server.store import store_path
+from agent_wiki.server_config import proxy_auth
 from agent_wiki.viewer.catalog import served_vault_name
 
 
@@ -31,6 +32,9 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
         vault_name = served_vault_name(vault_path)
     store_file = store_path()
     app.state.store_file = store_file
+    # Who may name a user in a header (the viewer only, never /v1), and
+    # whose X-Forwarded-Proto counts. A bad setting stops the app here.
+    app.state.proxy_auth = proxy_auth(server_config)
     require = make_require(vault_name, store_file)
 
     @app.exception_handler(FileNotFoundError)
@@ -66,11 +70,14 @@ def create_app(vault_path: Path, server_config: dict, viewer=None,
     app.include_router(build_router(svc, require))
     if viewer is not None:
         from agent_wiki.viewer.auth_routes import (build_auth_router,
+                                                   refuse_unknown_proxy_user,
                                                    sign_in_redirect)
         from agent_wiki.viewer.routes import build_viewer_router
-        from agent_wiki.viewer.session import (SessionCookieMiddleware,
+        from agent_wiki.viewer.session import (ProxyUserUnknown,
+                                               SessionCookieMiddleware,
                                                SignInRequired)
         app.add_exception_handler(SignInRequired, sign_in_redirect)
+        app.add_exception_handler(ProxyUserUnknown, refuse_unknown_proxy_user)
         app.add_middleware(SessionCookieMiddleware)
         app.include_router(build_auth_router(store_file))
         app.include_router(build_viewer_router(viewer))
