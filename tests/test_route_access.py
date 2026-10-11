@@ -13,7 +13,7 @@ from agent_wiki.server.app import (ROUTE_ACCESS, app_routes, create_app,
                                    undeclared_routes)
 from agent_wiki.server.store import open_store
 from agent_wiki.viewer.catalog import build_vault_catalog
-from conftest import sign_in, signed_in_client
+from conftest import sign_in, signed_in_client, signin_form
 
 SERVER_CONFIG = {"bind": "127.0.0.1", "port": 8731}
 ACCESS_LEVELS = {"public", "viewer", "reader", "writer", "admin"}
@@ -118,7 +118,10 @@ def _declared(*levels):
 @pytest.mark.parametrize("method, path", _declared("public"))
 def test_a_public_route_answers_without_credentials(viewer_app, method, path):
     client = TestClient(viewer_app, raise_server_exceptions=False)
-    resp = _call(client, method, path)
+    # The sign-in post is public but carries its form's token, as the form
+    # a browser was served does.
+    data = signin_form(client) if (method, path) == ("POST", "/signin") else None
+    resp = _call(client, method, path, data=data)
     assert resp.status_code < 500
     assert resp.status_code not in (401, 403)
     assert "/signin" not in resp.headers.get("location", "")
