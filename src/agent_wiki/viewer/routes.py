@@ -1,8 +1,7 @@
 """HTML routes for the viewer. Built against an injected VaultCatalog so the
 same router works for any set of vaults (and tests never read the real
 config). Every page needs a signed-in session (see viewer.session); only the
-favicons and the theme switch answer without one. The /v1 API keeps its own
-bearer-token auth."""
+favicons answer without one. The /v1 API keeps its own bearer-token auth."""
 from __future__ import annotations
 
 import sys
@@ -22,8 +21,9 @@ from agent_wiki.viewer.catalog import (VaultCatalog, index_vault,
                                        narrow_catalog, resolve_page)
 from agent_wiki.viewer.highlight import highlight
 from agent_wiki.viewer.render import render_markdown
-from agent_wiki.viewer.session import (VIEWER_STATE, current_viewer,
-                                       session_secret, store_file)
+from agent_wiki.viewer.session import (VIEWER_STATE, csrf_refused,
+                                       current_viewer, session_secret,
+                                       store_file)
 
 
 # The static folder is on the search path so base.html can include the
@@ -292,11 +292,15 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     # Kept out of the OpenAPI schema: the schema documents the /v1 API only.
     r = APIRouter(include_in_schema=False)
 
-    # Needs no session: it sets only the browser's own preference, and the
-    # sign-in page carries the switch too.
-    @r.post("/theme")
-    def set_theme(theme: str | None = Form(default=None),
-                  next: str | None = Form(default=None)):
+    # A form that changes state: it needs a signed-in session and the
+    # session's secret in its `session` field, checked before the theme.
+    @r.post("/theme", dependencies=[Depends(current_viewer)])
+    def set_theme(request: Request, theme: str | None = Form(default=None),
+                  next: str | None = Form(default=None),
+                  session: str | None = Form(default=None)):
+        refused = csrf_refused(request, session)
+        if refused is not None:
+            return refused
         if theme not in THEMES:
             raise HTTPException(status_code=400, detail="unknown theme")
         resp = RedirectResponse(same_site_path(next), status_code=303)

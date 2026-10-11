@@ -14,9 +14,11 @@ header only.
 from __future__ import annotations
 
 import dataclasses
+import secrets
 from pathlib import Path
 
 from fastapi import Request, Response
+from fastapi.responses import PlainTextResponse
 from starlette.datastructures import MutableHeaders
 from starlette.requests import HTTPConnection
 
@@ -163,3 +165,37 @@ class SessionCookieMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_cookie)
+
+
+# --- the session field on state-changing forms ---------------------------------
+#
+# Every viewer form that changes state (sign-out, the theme switch, and the
+# user page's forms) carries the session secret in a hidden field named
+# ``session`` (render passes it to every signed-in page as ``session``). Its
+# POST route runs the session guard first, then, before it changes anything,
+#
+#     refused = csrf_refused(request, session)
+#     if refused is not None:
+#         return refused
+#
+# with ``session: str | None = Form(default=None)`` as a route parameter. A
+# post from another site cannot read the secret, so it cannot echo it.
+
+SESSION_FIELD = "session"
+CSRF_REFUSED = "That form did not come from this session."
+
+
+def csrf_refused(request: Request, field_value: str | None) -> Response | None:
+    """The 403 answer for a form post whose ``session`` field is missing or
+    does not match the caller's session, or None when it matches.
+
+    Without a live session secret every post is refused. The values are
+    compared in constant time as bytes: the digest comparison refuses
+    non-ASCII text outright, and a hand-built post may carry any text, so a
+    wrong value of any shape is a refusal, never a fault.
+    """
+    expected = session_secret(request)
+    posted = (field_value or "").encode("utf-8", errors="replace")
+    if expected and secrets.compare_digest(posted, expected.encode("utf-8")):
+        return None
+    return PlainTextResponse(CSRF_REFUSED, status_code=403)
