@@ -9,6 +9,13 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.13.2]
+
+### Changed
+
+- The source distribution no longer includes the website (`site/`) or the GitHub workflows (`.github/`).
+- The package metadata now carries the README, so the PyPI project page shows it.
+
 ## [0.13.1]
 
 ### Added
