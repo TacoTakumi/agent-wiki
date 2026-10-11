@@ -9,6 +9,7 @@ opened with a password, the change-password form.
 """
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 from urllib.parse import quote
 
@@ -40,12 +41,29 @@ PASSWORD_METHOD = "password"
 # One message for every refused sign-in: an unknown user, a user with no
 # password and a wrong password read the same.
 SIGNIN_FAILED = "That user name and password do not sign in."
+# A sign-in post must carry the token its form was served with, and the
+# same token comes back in a cookie only this site's sign-in page can set:
+# a form on another site can do neither, so it cannot sign a browser in to
+# an account of the attacker's choosing.
+SIGNIN_COOKIE = "awiki_signin"
+SIGNIN_FIELD = "signin"
+SIGNIN_TOKEN_TTL = 3600
+SIGNIN_FORM_STALE = "That sign-in form has expired. Sign in again."
 # What the sign-in page says while the store holds no user.
 NO_USERS = (
     "No user exists yet, so nobody can sign in. On the server host, add one"
     " with awiki user add NAME --password and give it a role with"
     " awiki user grant NAME '*' reader."
 )
+
+
+def signin_token_matches(cookie: str | None, field: str | None) -> bool:
+    """Whether a sign-in post's field matches its sign-in cookie, compared
+    in constant time; a missing or empty either side never matches."""
+    if not cookie or not field:
+        return False
+    return secrets.compare_digest(cookie.encode("utf-8", "replace"),
+                                  field.encode("utf-8", "replace"))
 
 
 def sign_in_redirect(request: Request, exc: SignInRequired) -> RedirectResponse:
@@ -156,10 +174,20 @@ def build_auth_router(store_file: Path,
         # same, byte for byte.
         with open_store(store_file) as store:
             no_users = not store.list_users()
-        return render(request, "signin.html", title="Sign in",
-                      header_search=False, status_code=status_code,
-                      error=error, no_users=NO_USERS if no_users else None,
-                      next=same_site_path(next))
+        # A browser that already holds a sign-in cookie keeps it, so a
+        # refused try answers with no cookie at all.
+        held = request.cookies.get(SIGNIN_COOKIE)
+        token = held or secrets.token_urlsafe(32)
+        response = render(request, "signin.html", title="Sign in",
+                          header_search=False, status_code=status_code,
+                          error=error, no_users=NO_USERS if no_users else None,
+                          next=same_site_path(next), signin_token=token)
+        if not held:
+            response.set_cookie(SIGNIN_COOKIE, token, max_age=SIGNIN_TOKEN_TTL,
+                                path=SIGNIN_PATH, httponly=True,
+                                samesite="strict",
+                                secure=request_is_https(request))
+        return response
 
     @r.get(SIGNIN_PATH)
     def sign_in_page(request: Request, next: str = "/"):
@@ -176,7 +204,14 @@ def build_auth_router(store_file: Path,
     @r.post(SIGNIN_PATH)
     def sign_in(request: Request, name: str = Form(default=""),
                 password: str = Form(default=""),
-                next: str = Form(default="/")):
+                next: str = Form(default="/"),
+                signin: str = Form(default="")):
+        # Checked before any password work: a refused post costs no scrypt
+        # run and records no failure.
+        if not signin_token_matches(request.cookies.get(SIGNIN_COOKIE),
+                                    signin):
+            return sign_in_form(request, next, status_code=403,
+                                error=SIGNIN_FORM_STALE)
         with open_store(store_file) as store:
             user, locked = accounts.check_password(store, name.strip(),
                                                    password)
