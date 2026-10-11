@@ -250,3 +250,28 @@ def test_invalid_vault_in_a_local_config_is_left_out(tmp_path, monkeypatch, caps
     assert set(load_registry()) == {"main"}
     err = capsys.readouterr().err
     assert err.count(f"vault 'Work' in {local} is not a valid name") == 1
+
+
+def test_one_invalid_name_in_both_configs_warns_for_each_file(
+        tmp_path, monkeypatch, capsys):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    from agent_wiki.config import get_config_dir, load_registry
+    g_main = make_vault(tmp_path / "g-main")
+    proj = tmp_path / "home" / "proj"
+    _setup(tmp_path, monkeypatch,
+           global_config={"vaults": {"main": {"path": str(g_main)},
+                                     "Work": {"path": str(g_main)}}},
+           trust=(proj,))
+    local = _write_yaml(proj / ".agent-wiki" / "config.yaml",
+                        {"vaults": {"Work": {"path": str(g_main)}}})
+    monkeypatch.chdir(proj)
+    assert set(load_registry()) == {"main"}
+    err = capsys.readouterr().err
+    global_file = get_config_dir() / "config.yaml"
+    assert err.count(f"vault 'Work' in {global_file} is not a valid name") == 1
+    assert err.count(f"vault 'Work' in {local} is not a valid name") == 1
+    # The local config wins a name collision, so the error names it.
+    result = CliRunner().invoke(cli, ["--vault", "Work", "search", "x"])
+    assert result.exit_code != 0
+    assert f"Error: vault 'Work' in {local} is not a valid name" in result.output

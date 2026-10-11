@@ -223,14 +223,17 @@ def load_effective_config() -> tuple:
 
 def _load_effective() -> tuple:
     """load_effective_config's work, plus {name: config file} for each entry
-    left out because its name is not a valid vault name. Each such entry is
-    reported once per process on stderr."""
+    left out because its name is not a valid vault name (the local config
+    wins a name both declare, as it does for valid names). Each left-out
+    entry, in every config that declares it, is reported once per process
+    on stderr."""
     from dataclasses import replace
     from agent_wiki.registry import (
         invalid_vault_message, invalid_vault_names, parse_registry)
     global_config = load_user_config()
     global_file = str(get_config_dir() / "config.yaml")
-    invalid = {name: global_file for name in invalid_vault_names(global_config)}
+    left_out = [(name, global_file)
+                for name in invalid_vault_names(global_config)]
     registry = {
         name: replace(entry, origin=global_file)
         for name, entry in parse_registry(global_config).items()
@@ -239,8 +242,8 @@ def _load_effective() -> tuple:
     local = _local_config_if_trusted(global_config)
     if local is not None:
         local_file, local_config = local
-        invalid.update({name: str(local_file)
-                        for name in invalid_vault_names(local_config)})
+        left_out += [(name, str(local_file))
+                     for name in invalid_vault_names(local_config)]
         # A relative path: is anchored to the directory containing .agent-wiki,
         # not the process cwd — the config means the same vault from any subdir.
         base = local_file.parent.parent
@@ -259,12 +262,12 @@ def _load_effective() -> tuple:
         registry = {**registry, **local_registry}
         if local_config.get("default_vault"):
             default_vault = local_config["default_vault"]
-    for name, origin in invalid.items():
+    for name, origin in left_out:
         if (name, origin) not in _warned_invalid:
             _warned_invalid.add((name, origin))
             click.echo(f"warning: {invalid_vault_message(name, origin)}. "
                        "Skipped.", err=True)
-    return registry, default_vault, invalid
+    return registry, default_vault, dict(left_out)
 
 
 def load_registry() -> dict:
