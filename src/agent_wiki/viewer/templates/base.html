@@ -36,7 +36,8 @@ Agent Wiki
 {% endif %}
 {% if viewer %}
 <div class="account">
-<span class="identity">Signed in as <a href="/user">{{ viewer }}</a></span>
+<span class="identity">Signed in as <strong>{{ viewer }}</strong></span>
+<a class="settings" href="/user">Settings</a>
 <form class="signout" method="post" action="/signout">
 <input type="hidden" name="session" value="{{ session }}">
 <button type="submit">Sign out</button>

@@ -963,10 +963,10 @@ def test_every_page_links_the_favicons(viewer, pages, url):
 @pytest.mark.parametrize("url", ("/", "/search") + VAULT_VIEWS)
 def test_header_has_no_theme_switch(viewer, pages, url):
     # The theme choice lives on the user page; the header keeps the
-    # account block, which links there.
+    # account block, whose Settings link leads there.
     header = site_header(viewer.get(url).text)
     assert 'action="/theme"' not in header
-    assert '<a href="/user">' in header
+    assert '<a class="settings" href="/user">Settings</a>' in header
 
 
 @pytest.mark.parametrize("url", VAULT_VIEWS)
