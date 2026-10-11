@@ -1573,6 +1573,8 @@ def serve(bind, port, viewer):
     if viewer:
         from agent_wiki.viewer.catalog import load_vault_catalog
         catalog = load_vault_catalog()
-    app = create_app(vault_path, server_config, viewer=catalog)
+    from agent_wiki.viewer.catalog import served_vault_name
+    app = create_app(vault_path, server_config, viewer=catalog,
+                     vault_name=served_vault_name(vault_path))
     click.echo(f"Serving vault {vault_path} on http://{host}:{bind_port}")
     uvicorn.run(app, host=host, port=bind_port)

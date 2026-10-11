@@ -19,7 +19,6 @@ from agent_wiki.config import get_config_dir
 
 DEFAULT_BIND = "127.0.0.1"
 DEFAULT_PORT = 8731
-_ROLES = {"reader": 0, "writer": 1, "admin": 2}
 
 
 def server_config_path() -> Path:
@@ -71,14 +70,3 @@ def save_server_config(config: dict) -> None:
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
-
-def role_for_token(token: str, config: dict) -> str | None:
-    h = hash_token(token)
-    for entry in config.get("tokens", []):
-        if entry.get("hash") == h:
-            return entry.get("role")
-    return None
-
-
-def role_rank(role: str) -> int:
-    return _ROLES.get(role, -1)

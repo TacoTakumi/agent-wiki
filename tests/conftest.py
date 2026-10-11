@@ -129,18 +129,37 @@ def tmp_settings(tmp_path):
     return settings_path
 
 
+# The API tests' bearer secrets and the role each acts with: one user,
+# 'tester', holds admin on every vault, and each token's scope narrows it.
+SERVER_TOKEN_ROLES = {
+    "reader-tok": "reader",
+    "writer-tok": "writer",
+    "admin-tok": "admin",
+}
+SERVER_TOKEN_USER = "tester"
+
+
+def seed_server_tokens(store_file=None):
+    """Put the 'tester' user and the API tests' tokens in the user store
+    (default: the store in the current config dir). Returns {secret: role}."""
+    from agent_wiki.server import accounts
+    from agent_wiki.server.store import Token, open_store
+    with open_store(store_file) as store:
+        accounts.add_user(store, SERVER_TOKEN_USER, None)
+        accounts.set_grant(store, SERVER_TOKEN_USER, "*", "admin")
+        for secret, role in SERVER_TOKEN_ROLES.items():
+            store.add_token(Token(
+                owner=SERVER_TOKEN_USER, name=role,
+                hash=accounts.hash_secret(secret), last4=secret[-4:],
+                scope={"*": role}, created="2026-01-01T00:00:00Z"))
+    return dict(SERVER_TOKEN_ROLES)
+
+
 @pytest.fixture
 def server_tokens():
-    from agent_wiki.server_config import hash_token
-    return {
-        "reader-tok": "reader",
-        "writer-tok": "writer",
-        "admin-tok": "admin",
-    }, [
-        {"name": "r", "role": "reader", "hash": hash_token("reader-tok")},
-        {"name": "w", "role": "writer", "hash": hash_token("writer-tok")},
-        {"name": "a", "role": "admin", "hash": hash_token("admin-tok")},
-    ]
+    """The API tests' tokens, in the user store of the current config dir:
+    {secret: role}."""
+    return seed_server_tokens()
 
 
 @pytest.fixture(params=[False, True], ids=["viewer-off", "viewer-on"])
@@ -149,8 +168,7 @@ def server_app(request, tmp_vault, server_tokens, tmp_path, monkeypatch):
     every API test runs against both, proving the viewer leaves /v1 unchanged."""
     monkeypatch.setenv("AGENT_WIKI_STATE_DIR", str(tmp_path / "state"))
     from agent_wiki.server.app import create_app
-    _tokens_map, token_entries = server_tokens
-    cfg = {"bind": "127.0.0.1", "port": 8731, "tokens": token_entries}
+    cfg = {"bind": "127.0.0.1", "port": 8731}
     catalog = None
     if request.param:
         from agent_wiki.registry import VaultEntry
