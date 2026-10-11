@@ -1,6 +1,12 @@
-"""Account logic for awiki serve.
+"""Account logic for awiki serve: user names, users, grants and passwords.
 
-For now this holds password hashing. A password is stored as
+The functions that change accounts take an open store (see
+:mod:`agent_wiki.server.store`), so the CLI and the server share one set of
+rules: a user name is checked and lowercased here, a password change ends
+the user's sessions here, and a grant's role is checked here. A refusal is
+an :class:`AccountError` whose message is fit to show the operator.
+
+A password is stored as
 ``scrypt$N$r$p$salt$hash`` (salt and hash in hex), so each stored string
 names the parameters it was made with: verifying uses those parameters,
 and :func:`needs_rehash` tells when they are older than today's.
@@ -10,9 +16,14 @@ allocating it. Stdlib only.
 """
 from __future__ import annotations
 
+import datetime
 import hashlib
 import hmac
+import re
 import secrets
+
+from agent_wiki.server.access import ROLES, WILDCARD, is_role
+from agent_wiki.server.store import Conflict, User
 
 SCRYPT_N = 16384
 SCRYPT_R = 8
@@ -23,6 +34,164 @@ SCRYPT_KEY_BYTES = 32
 # The most memory a stored hash may make scrypt use. A stored string is
 # data; one that names a huge N must not be able to exhaust the server.
 SCRYPT_MAX_MEMORY = 256 * 1024 * 1024
+
+# A user name: 1 to 64 characters from a-z 0-9 . _ - @, starting with a
+# letter or digit. Short and plain, so it is safe in a URL, a log line and a
+# listing without quoting.
+USER_NAME_PATTERN = re.compile(r"[a-z0-9][a-z0-9._@-]{0,63}")
+USER_NAME_RULE = (
+    "a user name is 1 to 64 characters from a-z 0-9 . _ - @,"
+    " starting with a letter or digit"
+)
+
+
+class AccountError(ValueError):
+    """An account change refused: a bad name or role, a taken or unknown user."""
+
+
+def normalise_user_name(name: str) -> str:
+    """``name`` lowercased, or an :class:`AccountError` naming the rule it breaks.
+
+    The check runs on the lowercased name, so 'Ann' is kept as 'ann'.
+    """
+    lowered = name.lower() if isinstance(name, str) else ""
+    if not USER_NAME_PATTERN.fullmatch(lowered):
+        raise AccountError(f"Bad user name {name!r}: {USER_NAME_RULE}.")
+    return lowered
+
+
+def check_new_user(store, name: str) -> str:
+    """The name a new user would be stored under, or a refusal.
+
+    Refuses a bad name and a name already taken, so a caller can check
+    before it asks for a password.
+    """
+    name = normalise_user_name(name)
+    if store.get_user(name) is not None:
+        raise AccountError(f"A user named {name!r} already exists.")
+    return name
+
+
+def add_user(store, name: str, password: str | None, *, now: str | None = None) -> User:
+    """Add the user ``name``; the user as stored.
+
+    The name is stored lowercase. With ``password`` only its scrypt hash is
+    kept; with None the user has no password and can sign in only through
+    the reverse proxy. An empty password is refused, as is anything
+    :func:`check_new_user` refuses.
+    """
+    name = check_new_user(store, name)
+    _refuse_empty(password)
+    user = User(
+        name=name,
+        password_hash=hash_password(password) if password is not None else None,
+        created=now or _now(),
+    )
+    try:
+        store.add_user(user)
+    except Conflict:
+        raise AccountError(f"A user named {name!r} already exists.") from None
+    return user
+
+
+def require_user(store, name: str) -> User:
+    """The user called ``name``, in any case, or an :class:`AccountError`."""
+    user = store.get_user(name.lower())
+    if user is None:
+        raise AccountError(f"No user named {name.lower()!r}.")
+    return user
+
+
+def set_password(store, name: str, password: str | None) -> User:
+    """Replace the password of ``name``, or clear it with None; the updated user.
+
+    Every session of the user ends with it, so a browser signed in under
+    the old password, or before the account went proxy-only, must sign in
+    again; the user's failed sign-ins go too, so a lockout ends at once.
+    An empty password and an unknown user are refused.
+    """
+    _refuse_empty(password)
+    name = require_user(store, name).name
+    password_hash = hash_password(password) if password is not None else None
+    # The password first, then the sessions: a session opened under the old
+    # password just before the change is still among those dropped.
+    user = store.set_user_password(name, password_hash)
+    store.remove_user_sessions(name)
+    store.clear_signin_failures(name)
+    if user is None:
+        raise AccountError(f"No user named {name!r}.")
+    return user
+
+
+def clear_password(store, name: str) -> User:
+    """Remove the password of ``name``: proxy-only from now on, sessions ended."""
+    return set_password(store, name, None)
+
+
+def remove_user(store, name: str) -> str:
+    """Remove ``name`` with their grants, tokens, sessions and failures; the name removed."""
+    name = name.lower()
+    if not store.remove_user(name):
+        raise AccountError(f"No user named {name!r}.")
+    return name
+
+
+def set_grant(store, name: str, vault: str, role: str) -> str:
+    """Give ``name`` ``role`` on ``vault`` (or ``'*'``), replacing that entry; the user's name.
+
+    An unknown role or user is refused and the grant map stays as it was.
+    """
+    if not is_role(role):
+        raise AccountError(f"Unknown role {role!r}: expected one of {', '.join(ROLES)}.")
+    _refuse_empty_vault(vault)
+    name = require_user(store, name).name
+    store.set_grant(name, vault, role)
+    return name
+
+
+def remove_grant(store, name: str, vault: str) -> str:
+    """Drop the entry for ``vault`` (or ``'*'``) from ``name``'s grants; the user's name."""
+    name = require_user(store, name).name
+    if not store.remove_grant(name, vault):
+        raise AccountError(f"{name} has no grant on {vault!r}.")
+    return name
+
+
+def stale_vault_entries(store, vault_names) -> list[tuple[str, str, str]]:
+    """Every grant or token scope entry that names a vault not in ``vault_names``.
+
+    Each entry is ``(user, where, vault)``, where ``where`` is ``'grant'`` or
+    ``'token <name>'``; ordered by user, grants before tokens, then by
+    vault. ``'*'`` names every vault, so it is never stale.
+    """
+    known = set(vault_names) | {WILDCARD}
+    tokens: dict[str, list] = {}
+    for token in store.list_tokens():
+        tokens.setdefault(token.owner, []).append(token)
+    entries = []
+    for user in store.list_users():
+        for vault in store.grants(user.name):
+            if vault not in known:
+                entries.append((user.name, "grant", vault))
+        for token in tokens.get(user.name, []):
+            for vault in sorted(token.scope or {}):
+                if vault not in known:
+                    entries.append((user.name, f"token {token.name}", vault))
+    return entries
+
+
+def _refuse_empty(password: str | None) -> None:
+    if password is not None and not password:
+        raise AccountError("A password may not be empty.")
+
+
+def _refuse_empty_vault(vault: str) -> None:
+    if not vault:
+        raise AccountError(f"A grant names a vault or {WILDCARD!r}; got an empty name.")
+
+
+def _now() -> str:
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def hash_password(
