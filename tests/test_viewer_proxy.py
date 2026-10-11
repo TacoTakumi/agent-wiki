@@ -264,3 +264,25 @@ def test_https_request_sets_secure(app):
     response = client.get("/")
     assert response.status_code == 200
     assert "secure" in session_cookie(response).lower()
+
+
+@pytest.mark.parametrize("peer, secure", [(("10.0.0.5", 50000), True),
+                                          (("10.0.0.6", 50000), False)])
+def test_a_remote_tls_proxy_in_the_list_sets_secure_with_proxy_off(
+        tmp_vault, tmp_path, peer, secure):
+    app = build_app(tmp_vault, tmp_path,
+                    {"bind": "127.0.0.1", "port": 8731, "auth_proxy": False,
+                     "auth_trusted_proxies": ["10.0.0.5"]})
+    with open_store(app.state.store_file) as store:
+        user_hash = accounts.hash_password("correct horse battery", n=1024)
+        store.connection.execute(
+            "UPDATE users SET password_hash = ? WHERE name = 'alice'",
+            (user_hash,))
+        store.connection.commit()
+    client = client_from(app, peer)
+    data = signin_form(client)
+    data.update(name="alice", password="correct horse battery")
+    response = client.post("/signin", data=data,
+                           headers={"X-Forwarded-Proto": "https"})
+    assert response.status_code == 303
+    assert ("secure" in session_cookie(response).lower()) is secure

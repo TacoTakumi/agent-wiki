@@ -79,10 +79,19 @@ def test_proxy_auth_off_by_default():
                                ipaddress.ip_network("::1"))
 
 
-def test_proxy_auth_off_ignores_bad_list_and_header():
-    setting = proxy_auth({"auth_proxy": False, "auth_proxy_header": "",
-                          "auth_trusted_proxies": ["*"]})
+def test_proxy_auth_off_ignores_the_header_but_checks_the_list():
+    setting = proxy_auth({"auth_proxy": False, "auth_proxy_header": ""})
     assert setting == ProxyAuth()
+    with pytest.raises(ValueError, match="auth_trusted_proxies"):
+        proxy_auth({"auth_proxy": False, "auth_trusted_proxies": ["*"]})
+
+
+def test_proxy_auth_off_keeps_the_trusted_list():
+    setting = proxy_auth({"auth_proxy": False,
+                          "auth_trusted_proxies": ["10.0.0.5"]})
+    assert not setting.enabled
+    assert setting.trusts("10.0.0.5")
+    assert not setting.trusts("10.0.0.6")
 
 
 def test_proxy_auth_on_reads_header_and_list():

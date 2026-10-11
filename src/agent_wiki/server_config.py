@@ -161,16 +161,20 @@ def proxy_auth(config: dict) -> ProxyAuth:
     more, or other, peers than the admin wrote is worse than a server that
     does not start, so a bad setting raises a ValueError naming the key.
 
-    With ``auth_proxy`` off the header and the list are not checked, and read
-    as the defaults: a server that takes no name from a proxy must not fail
-    to start over keys it does not use.
+    The trusted list is read and checked whether or not ``auth_proxy`` is
+    on: it also decides whose ``X-Forwarded-Proto`` counts, so a TLS proxy
+    on another host gets Secure cookies without proxy sign-in. With
+    ``auth_proxy`` off only the header name goes unchecked, as nothing reads
+    it.
     """
     enabled = config.get(AUTH_PROXY, False)
     if not isinstance(enabled, bool):
         raise ValueError(
             f"server.yaml: {AUTH_PROXY} must be true or false, not {enabled!r}.")
+    trusted = _trusted_networks(
+        config.get(AUTH_TRUSTED_PROXIES, list(DEFAULT_TRUSTED_PROXIES)))
     if not enabled:
-        return ProxyAuth()
+        return ProxyAuth(trusted=trusted)
     header = config.get(AUTH_PROXY_HEADER, DEFAULT_AUTH_PROXY_HEADER)
     if not isinstance(header, str) or not header.strip():
         raise ValueError(
@@ -181,6 +185,4 @@ def proxy_auth(config: dict) -> ProxyAuth:
             f"server.yaml: {AUTH_PROXY_HEADER} {header!r} holds an underscore;"
             " proxies and servers disagree on such names, so a client could"
             " slip one past the proxy. Use a name with hyphens.")
-    trusted = config.get(AUTH_TRUSTED_PROXIES, list(DEFAULT_TRUSTED_PROXIES))
-    return ProxyAuth(enabled=True, header=header,
-                     trusted=_trusted_networks(trusted))
+    return ProxyAuth(enabled=True, header=header, trusted=trusted)

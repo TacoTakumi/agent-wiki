@@ -1200,8 +1200,10 @@ HTTPS URL - the server itself does not manage certificates.
 The viewer's session cookie is marked `Secure` when the request arrived over
 https. Behind a proxy that ends TLS, every request reaches `awiki serve` as plain
 http, so the server also counts `X-Forwarded-Proto: https`, but only from a
-trusted socket peer: loopback while `auth_proxy` is off, the
-`auth_trusted_proxies` list while it is on. Have the proxy set that header.
+socket peer in `auth_trusted_proxies` (loopback by default), whether or not
+`auth_proxy` is on. Have the proxy set that header, and list a proxy on
+another host in `auth_trusted_proxies`; `serve` checks that list even with
+`auth_proxy` off.
 
 ### Remote client
 
