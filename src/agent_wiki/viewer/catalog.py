@@ -3,7 +3,8 @@
 `build_vault_catalog` is pure: it decides from a parsed registry and an
 optional override entry alone, so tests drive it without any config.
 `load_vault_catalog` feeds it the real registry and override readers from
-`agent_wiki.config`.
+`agent_wiki.config`. `served_vault_name` names the one vault an API process
+serves: its registry name, or 'local' for a path outside the registry.
 
 `index_vault` lists one vault's pages per topic plus its title-to-URL map, and
 `resolve_page` maps a URL path back to a page file, admitting only files under
@@ -72,6 +73,34 @@ def load_vault_catalog() -> VaultCatalog:
     (--vault or AWIKI_VAULT), read once at startup."""
     from agent_wiki.config import load_registry, resolve_vault_override
     return build_vault_catalog(load_registry(), resolve_vault_override())
+
+
+def vault_name_for_path(registry: dict, vault_path) -> str:
+    """The name the vault at `vault_path` is served under: the first registry
+    name, in sorted order, whose entry has that path (both resolved), else
+    'local', the name a vault outside the registry is served under. Pure:
+    tests pass a registry ({name: VaultEntry}) directly."""
+    target = _resolved(Path(vault_path))
+    for name in sorted(registry):
+        entry = registry[name]
+        if entry.path is not None and _resolved(Path(entry.path)) == target:
+            return name
+    return OVERRIDE_PATH_NAME
+
+
+def served_vault_name(vault_path) -> str:
+    """`vault_name_for_path` against the effective registry, read once."""
+    from agent_wiki.config import load_registry
+    return vault_name_for_path(load_registry(), vault_path)
+
+
+def _resolved(path: Path) -> Path:
+    """`path` with ~ expanded and symlinks followed; as given when it cannot
+    be resolved, such as a symlink loop."""
+    try:
+        return path.expanduser().resolve()
+    except (RuntimeError, OSError):
+        return path.expanduser()
 
 
 @dataclass(frozen=True)

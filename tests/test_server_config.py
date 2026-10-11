@@ -1,21 +1,11 @@
 from agent_wiki.server_config import (
-    hash_token, role_for_token, role_rank, load_server_config, DEFAULT_PORT,
+    hash_token, load_server_config, DEFAULT_PORT,
 )
 
 
 def test_hash_is_sha256_hex():
     h = hash_token("secret")
     assert len(h) == 64 and h == hash_token("secret")
-
-
-def test_role_lookup():
-    cfg = {"tokens": [{"name": "a", "role": "writer", "hash": hash_token("tok")}]}
-    assert role_for_token("tok", cfg) == "writer"
-    assert role_for_token("nope", cfg) is None
-
-
-def test_role_rank_order():
-    assert role_rank("admin") > role_rank("writer") > role_rank("reader")
 
 
 def test_load_defaults_when_missing(tmp_path, monkeypatch):
@@ -26,7 +16,8 @@ def test_load_defaults_when_missing(tmp_path, monkeypatch):
 
 def test_old_token_helpers_are_gone():
     import agent_wiki.server_config as server_config
-    for name in ("add_token", "list_tokens", "revoke_token", "generate_token"):
+    for name in ("add_token", "list_tokens", "revoke_token", "generate_token",
+                 "role_for_token", "role_rank"):
         assert not hasattr(server_config, name)
 
 

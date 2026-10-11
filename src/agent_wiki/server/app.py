@@ -11,14 +11,24 @@ from agent_wiki.ingest import UnchangedURLSkip
 from agent_wiki.service import LocalVaultService
 from agent_wiki.server.auth import make_require
 from agent_wiki.server.routes import build_router
+from agent_wiki.server.store import store_path
+from agent_wiki.viewer.catalog import served_vault_name
 
 
-def create_app(vault_path: Path, server_config: dict, viewer=None) -> FastAPI:
+def create_app(vault_path: Path, server_config: dict, viewer=None,
+               vault_name: str | None = None) -> FastAPI:
     """Build the API app for one vault. `viewer` is a VaultCatalog: given one,
-    the HTML viewer routes are mounted too; without it they do not exist."""
+    the HTML viewer routes are mounted too; without it they do not exist.
+
+    Bearer tokens are checked against the user store in the config dir (as
+    it is when the app is built), with grants matched against `vault_name`:
+    by default the vault's registry name, or 'local' outside the registry.
+    `server_config` is server.yaml's settings; its tokens are never read."""
     app = FastAPI(title="Agent Wiki", version="1")
     svc = LocalVaultService(vault_path)
-    require = make_require(server_config)
+    if vault_name is None:
+        vault_name = served_vault_name(vault_path)
+    require = make_require(vault_name, store_path())
 
     @app.exception_handler(FileNotFoundError)
     async def _not_found(request, exc):

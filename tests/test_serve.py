@@ -11,14 +11,14 @@ def test_serve_builds_app(tmp_config):
 # --- one vault per serve instance ----------------------------------------------
 
 def test_serve_instances_from_one_config_serve_different_vaults(
-        tmp_path, monkeypatch, server_tokens):
+        tmp_path, monkeypatch):
     """Vault selection is per-instance via the --vault/AWIKI_VAULT override;
     two apps built from one config dir serve different vaults."""
     import yaml
     from fastapi.testclient import TestClient
     from agent_wiki.config import get_vault_path
     from agent_wiki.server.app import create_app
-    from conftest import make_vault
+    from conftest import make_vault, seed_server_tokens
 
     work = make_vault(tmp_path / "work-vault")
     personal = make_vault(tmp_path / "personal-vault")
@@ -30,8 +30,8 @@ def test_serve_instances_from_one_config_serve_different_vaults(
                    "personal": {"path": str(personal)}},
     }))
     monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(config_dir))
-    _tokens, token_entries = server_tokens
-    cfg = {"bind": "127.0.0.1", "port": 8731, "tokens": token_entries}
+    seed_server_tokens()
+    cfg = {"bind": "127.0.0.1", "port": 8731}
 
     # Default vault instance.
     app_default = create_app(get_vault_path(), cfg)
