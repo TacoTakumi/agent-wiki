@@ -214,3 +214,27 @@ def test_serve_counts_local_as_known_under_a_bare_path_override(
     assert result.exit_code == 0, result.output
     assert "WARNING" not in result.output
     assert len(calls) == 1
+
+
+def test_serve_leaves_an_invalid_vault_out_and_serves_the_rest(
+        tmp_config, tmp_vault, monkeypatch):
+    import uvicorn
+    import yaml
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    from agent_wiki.config import get_config_dir
+    from conftest import signed_in_client
+    config_file = get_config_dir() / "config.yaml"
+    config_file.write_text(yaml.dump({"vaults": {
+        "ok": {"path": str(tmp_vault)}, "a/b": {"path": str(tmp_vault)}}}))
+    calls = []
+    monkeypatch.setattr(uvicorn, "run", lambda *a, **k: calls.append(a))
+    result = CliRunner().invoke(cli, ["serve", "--viewer"])
+    assert result.exit_code == 0, result.output
+    warning = (f"warning: vault 'a/b' in {config_file} is not a valid name; "
+               "use lowercase letters, digits and hyphens (e.g. 'ab'). Skipped.")
+    assert result.output.splitlines().count(warning) == 1
+    assert len(calls) == 1
+    html = signed_in_client(calls[0][0]).get("/").text
+    assert 'href="/vaults/ok/"' in html
+    assert "a/b" not in html
