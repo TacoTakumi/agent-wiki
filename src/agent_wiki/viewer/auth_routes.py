@@ -21,7 +21,8 @@ from agent_wiki.server import accounts
 from agent_wiki.server.access import ROLES, WILDCARD
 from agent_wiki.server.store import Token, open_store
 from agent_wiki.viewer.catalog import VaultCatalog
-from agent_wiki.viewer.routes import (readable_catalog, render,
+from agent_wiki.viewer.routes import (SIGNED_IN_CACHE_CONTROL,
+                                      readable_catalog, render,
                                       request_target, same_site_path,
                                       templates)
 from agent_wiki.viewer.session import (ProxyUserUnknown, SignInRequired,
@@ -265,7 +266,7 @@ def build_auth_router(store_file: Path,
             scope_grants=SCOPE_GRANTS, scope_entries=SCOPE_ENTRIES,
             scope_rows=[WILDCARD] + vaults, roles=ROLES, **context)
         if minted is not None:
-            response.headers["Cache-Control"] = "no-store"
+            response.headers["Cache-Control"] = SIGNED_IN_CACHE_CONTROL
         return response
 
     def create_token(request: Request, viewer: Viewer, form) -> Response:

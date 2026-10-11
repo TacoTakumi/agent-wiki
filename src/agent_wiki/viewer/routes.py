@@ -79,6 +79,9 @@ def same_site_path(target: str | None) -> str:
     return target
 
 
+SIGNED_IN_CACHE_CONTROL = "private, no-store"
+
+
 def render(request: Request, template: str, *, header_vault: str | None = None,
            header_search: bool = True, tabs: list | None = None,
            crumbs: list | None = None, status_code: int = 200,
@@ -105,8 +108,12 @@ def render(request: Request, template: str, *, header_vault: str | None = None,
         theme_next=request_target(request), header_vault=header_vault,
         header_vault_url=header_vault_url, header_search=header_search,
         tabs=tabs, crumbs=crumbs, **context)
-    return HTMLResponse(html, status_code=status_code,
-                        headers={"Vary": "Cookie"})
+    headers = {"Vary": "Cookie"}
+    if viewer:
+        # The page carries the session secret in its forms: no cache, shared
+        # or the browser's own, may keep a copy.
+        headers["Cache-Control"] = SIGNED_IN_CACHE_CONTROL
+    return HTMLResponse(html, status_code=status_code, headers=headers)
 
 
 def vault_url(name: str) -> str:
