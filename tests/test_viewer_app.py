@@ -961,9 +961,12 @@ def test_every_page_links_the_favicons(viewer, pages, url):
 
 
 @pytest.mark.parametrize("url", ("/", "/search") + VAULT_VIEWS)
-def test_header_has_the_theme_switch(viewer, pages, url):
+def test_header_has_no_theme_switch(viewer, pages, url):
+    # The theme choice lives on the user page; the header keeps the
+    # account block, which links there.
     header = site_header(viewer.get(url).text)
-    assert '<form class="theme" method="post" action="/theme"' in header
+    assert 'action="/theme"' not in header
+    assert '<a href="/user">' in header
 
 
 @pytest.mark.parametrize("url", VAULT_VIEWS)
@@ -1195,7 +1198,7 @@ def test_tabs_mark_the_current_tab(nav_viewer, url, current):
 def test_tabs_sit_in_the_header_below_the_top_row(nav_viewer):
     header = site_header(nav_viewer.get("/vaults/main/").text)
     assert '<div class="container tabs-row">' in header
-    assert header.index('class="theme"') < header.index('class="tabs"')
+    assert header.index('class="account"') < header.index('class="tabs"')
 
 
 def test_tabs_counts_match_the_topic_listings(nav_viewer):

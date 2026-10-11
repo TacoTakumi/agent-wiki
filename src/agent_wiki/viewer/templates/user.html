@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 class="page-title">User settings for {{ user }}</h1>
+{% if error %}
+<p class="error" role="alert">{{ error }}</p>
+{% endif %}
+<section class="box user-section" id="theme">
+<h2>Theme</h2>
+<p class="notice">The theme this browser shows the viewer in. Auto follows the browser's colour scheme.</p>
+<form class="theme" method="post" action="/theme" aria-label="Theme">
+<input type="hidden" name="session" value="{{ session }}">
+<input type="hidden" name="next" value="{{ user_path }}">
+{% for value in themes %}
+<button name="theme" value="{{ value }}" aria-pressed="{{ 'true' if value == theme else 'false' }}">{{ value | capitalize }}</button>
+{% endfor %}
+</form>
+</section>
+<section class="box user-section" id="tokens">
+<h2>My tokens</h2>
+<p class="notice">A token lets a remote client, such as awiki on another machine, act as <strong>{{ user }}</strong> through this server's API. Send it as a bearer token. A scope can only narrow your grants. Revoke a token you no longer use.</p>
+{% if minted %}
+<div class="minted" id="minted">
+<h3>New token {{ minted[0] }}</h3>
+<p class="secret"><code>{{ minted[1] }}</code></p>
+<p class="error" role="status">{{ shown_once }}</p>
+</div>
+{% endif %}
+<h3 id="create">Create a token</h3>
+{% if create_error %}
+<p class="error" role="alert">{{ create_error }}</p>
+{% endif %}
+<form class="token-create" method="post" action="{{ user_path }}">
+<input type="hidden" name="session" value="{{ session }}">
+<input type="hidden" name="op" value="{{ add_token_op }}">
+<label>Name
+<input type="text" name="name" required autocomplete="off">
+</label>
+<fieldset class="scope">
+<legend>Scope</legend>
+<label class="choice"><input type="radio" name="scope_mode" value="{{ scope_grants }}" checked> No scope: all my grants</label>
+<label class="choice"><input type="radio" name="scope_mode" value="{{ scope_entries }}"> Only the roles picked below</label>
+<table class="scope-rows">
+<thead>
+<tr><th scope="col">Vault</th><th scope="col">Role in this token</th></tr>
+</thead>
+<tbody>
+{% for vault in scope_rows %}
+<tr>
+<td>{% if vault == "*" %}<code>*</code> (every vault){% else %}{{ vault }}{% endif %}</td>
+<td><select name="scope" aria-label="Role for {{ vault }}">
+<option value="" selected>not in this token</option>
+{% for role in roles %}
+<option value="{{ vault }}={{ role }}">{{ role }}</option>
+{% endfor %}
+</select></td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</fieldset>
+<button class="btn-accent" type="submit">Create token</button>
+</form>
+<h3 id="token-list">Your tokens</h3>
+{% if revoke_error %}
+<p class="error" role="alert">{{ revoke_error }}</p>
+{% endif %}
+{% if tokens %}
+<div class="table-scroll">
+<table class="token-table">
+<thead>
+<tr>
+<th scope="col">Name</th>
+<th scope="col">Ends in</th>
+<th scope="col">Scope</th>
+<th scope="col">Created</th>
+<th scope="col">Last used</th>
+<th scope="col"><span class="visually-hidden">Revoke</span></th>
+</tr>
+</thead>
+<tbody>
+{% for token in tokens %}
+<tr data-token="{{ token.name }}">
+<td>{{ token.name }}</td>
+<td><code>{{ token.last4 }}</code></td>
+<td>{{ token.scope }}</td>
+<td>{{ token.created }}</td>
+<td>{{ token.last_used }}</td>
+<td>
+<form class="token-revoke" method="post" action="{{ user_path }}">
+<input type="hidden" name="session" value="{{ session }}">
+<input type="hidden" name="op" value="{{ revoke_token_op }}">
+<input type="hidden" name="name" value="{{ token.name }}">
+<button type="submit">Revoke</button>
+</form>
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% else %}
+<p class="notice">{{ no_tokens }}</p>
+{% endif %}
+</section>
+{# The password section goes here: a change-password form, shown for
+   password sessions only, posting to the user page with its own op. #}
+{% endblock %}
