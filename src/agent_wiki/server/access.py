@@ -44,3 +44,11 @@ def effective_role(grants: dict[str, str], scope: dict[str, str] | None,
 def at_least(role: str, minimum: str) -> bool:
     """True when ``role`` ranks at or above ``minimum``."""
     return role_rank(role) >= role_rank(minimum)
+
+
+def readable_vaults(grants: dict[str, str], names) -> list[str]:
+    """The names in ``names``, in their order, on which ``grants`` gives at
+    least reader. Browser sessions use the grant alone (no token scope), so
+    the viewer and every other session-based reader decide here."""
+    return [name for name in names
+            if at_least(effective_role(grants, None, name), "reader")]

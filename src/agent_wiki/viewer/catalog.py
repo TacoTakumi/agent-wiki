@@ -68,6 +68,20 @@ def build_vault_catalog(registry: dict, override=None) -> VaultCatalog:
                         unavailable=tuple(unavailable))
 
 
+def narrow_catalog(catalog: VaultCatalog, names) -> VaultCatalog:
+    """`catalog` cut down to the vault names in `names`: served and
+    unavailable vaults outside it are dropped, so a page built from the
+    result never names them. The remote count names no vault and stays."""
+    keep = set(names)
+    return VaultCatalog(
+        vaults={name: path for name, path in catalog.vaults.items()
+                if name in keep},
+        skipped_remote=catalog.skipped_remote,
+        unavailable=tuple(name for name in catalog.unavailable
+                          if name in keep),
+    )
+
+
 def load_vault_catalog() -> VaultCatalog:
     """Build the catalog from the effective registry and the active override
     (--vault or AWIKI_VAULT), read once at startup."""

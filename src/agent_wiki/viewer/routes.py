@@ -16,12 +16,14 @@ from jinja2 import ChoiceLoader, Environment, PackageLoader, select_autoescape
 from agent_wiki.config import backend_for_entry
 from agent_wiki.page import parse_page
 from agent_wiki.registry import VaultEntry
+from agent_wiki.server.access import readable_vaults
+from agent_wiki.server.store import open_store
 from agent_wiki.viewer.catalog import (VaultCatalog, index_vault,
-                                       resolve_page)
+                                       narrow_catalog, resolve_page)
 from agent_wiki.viewer.highlight import highlight
 from agent_wiki.viewer.render import render_markdown
 from agent_wiki.viewer.session import (VIEWER_STATE, current_viewer,
-                                       session_secret)
+                                       session_secret, store_file)
 
 
 # The static folder is on the search path so base.html can include the
@@ -140,9 +142,26 @@ def vault_nav(name: str, index, current, crumbs: list) -> dict:
     return {"tabs": tabs, "crumbs": parts}
 
 
+def readable_catalog(request: Request, catalog: VaultCatalog) -> VaultCatalog:
+    """`catalog` cut down to the vaults the signed-in user may read: an
+    effective role of at least reader from their grants alone, as a browser
+    session holds no token scope. The grants are read from the store on
+    every call, so a grant change shows at the user's next request. Every
+    vault route builds its vault list from this, and only from this."""
+    viewer = getattr(request.state, VIEWER_STATE, None)
+    if viewer is None:
+        return narrow_catalog(catalog, ())
+    with open_store(store_file(request)) as store:
+        grants = store.grants(viewer.name)
+    names = list(catalog.vaults) + list(catalog.unavailable)
+    return narrow_catalog(catalog, readable_vaults(grants, names))
+
+
 def served_vault(catalog: VaultCatalog, name: str):
     """The path of a served vault, or 404: remote, unavailable and unknown
-    names are all simply not served."""
+    names are all simply not served. Given a readable_catalog, a vault the
+    user may not read is not served either, with the same 404 body as one
+    that does not exist."""
     if name not in catalog.vaults:
         raise HTTPException(status_code=404, detail="vault not found")
     return catalog.vaults[name]
@@ -304,21 +323,23 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
         # Each count is the vault home's About count: every topic's records.
         # A vault that cannot be indexed (no or bad wiki.yaml, its directory
         # gone) gets no count, so one broken vault never takes the list down.
+        visible = readable_catalog(request, catalog)
         counts = {}
-        for name, path in catalog.vaults.items():
+        for name, path in visible.vaults.items():
             try:
                 index = index_vault(path)
             except Exception:
                 counts[name] = None
                 continue
             counts[name] = sum(len(recs) for recs in index.topics.values())
-        return render(request, "vaults.html", title="Vaults", catalog=catalog,
+        return render(request, "vaults.html", title="Vaults", catalog=visible,
                       counts=counts)
 
     @r.get("/vaults/{name}/", response_class=HTMLResponse,
            dependencies=signed_in)
     def vault_home(request: Request, name: str):
-        index = index_vault(served_vault(catalog, name))
+        index = index_vault(served_vault(readable_catalog(request, catalog),
+                                         name))
         every_page = [rec for recs in index.topics.values() for rec in recs]
         # The topic count is the tab row's: every wiki.yaml topic the index
         # lists (its folder exists), empty ones too. The newest date is the
@@ -345,13 +366,14 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
                vault: list[str] = Query(default=[])):
         # Unknown names are dropped; none left means every vault, as when
         # no vault parameter was given.
-        selected = [n for n in catalog.vaults if n in vault] or list(
-            catalog.vaults)
+        visible = readable_catalog(request, catalog)
+        selected = [n for n in visible.vaults if n in vault] or list(
+            visible.vaults)
         query = q.strip()
         out, skipped = None, []
         if query:
             out, skipped = served_search(
-                {n: catalog.vaults[n] for n in selected}, query)
+                {n: visible.vaults[n] for n in selected}, query)
             out = dict(out,
                        all=[search_hit(h) for h in out["all"]],
                        partial=[search_hit(h) for h in out["partial"]])
@@ -361,7 +383,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             header_search=False,
             title=f"{query} - Search" if query else "Search",
             q=query,
-            vaults=list(catalog.vaults),
+            vaults=list(visible.vaults),
             selected=selected,
             out=out,
             skipped=skipped,
@@ -372,7 +394,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     @r.get("/vaults/{name}/{topic}/", response_class=HTMLResponse,
            dependencies=signed_in)
     def topic_view(request: Request, name: str, topic: str, page: int = 1):
-        index = index_vault(served_vault(catalog, name))
+        index = index_vault(served_vault(readable_catalog(request, catalog),
+                                         name))
         if topic not in index.topics:
             raise HTTPException(status_code=404, detail="topic not found")
         pages, last = screen(by_recency(index.topics[topic]), page)
@@ -396,7 +419,8 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     @r.get("/vaults/{name}/-/tags/{tag:path}", response_class=HTMLResponse,
            dependencies=signed_in)
     def tag_view(request: Request, name: str, tag: str, page: int = 1):
-        index = index_vault(served_vault(catalog, name))
+        index = index_vault(served_vault(readable_catalog(request, catalog),
+                                         name))
         wanted = tag.casefold()
         tagged = [rec for recs in index.topics.values() for rec in recs
                   if any(t.casefold() == wanted for t in rec.tags)]
@@ -422,7 +446,7 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
     @r.get("/vaults/{name}/{path:path}", response_class=HTMLResponse,
            dependencies=signed_in)
     def page_view(request: Request, name: str, path: str):
-        vault_dir = served_vault(catalog, name)
+        vault_dir = served_vault(readable_catalog(request, catalog), name)
         page_file = resolve_page(vault_dir, path)
         if page_file is None:
             raise HTTPException(status_code=404, detail="page not found")
