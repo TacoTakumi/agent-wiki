@@ -1553,7 +1553,9 @@ def _is_loopback(host: str) -> bool:
 def serve(bind, port, viewer):
     """Run the agent-wiki HTTP server for the LOCAL vault (server host)."""
     import uvicorn
-    from agent_wiki.server_config import load_server_config, server_config_path
+    from agent_wiki.server_config import (
+        load_server_config, proxy_auth, server_config_path,
+    )
     from agent_wiki.server.app import create_app
 
     server_config = load_server_config()
@@ -1562,6 +1564,10 @@ def serve(bind, port, viewer):
             f"{server_config_path()} still holds tokens; tokens now live in the "
             "user store. Move them there with 'awiki user token migrate --to <user>', "
             "then start again.")
+    try:
+        proxy_auth(server_config)
+    except ValueError as e:
+        raise click.ClickException(f"{e} ({server_config_path()})") from None
     vault_path = get_vault_path()
     host = bind or server_config["bind"]
     bind_port = port or server_config["port"]
@@ -1577,4 +1583,6 @@ def serve(bind, port, viewer):
     app = create_app(vault_path, server_config, viewer=catalog,
                      vault_name=served_vault_name(vault_path))
     click.echo(f"Serving vault {vault_path} on http://{host}:{bind_port}")
-    uvicorn.run(app, host=host, port=bind_port)
+    # Forwarded headers never set the client address: the trusted-proxy
+    # check must see the real peer, not one a client claims.
+    uvicorn.run(app, host=host, port=bind_port, proxy_headers=False)

@@ -1,3 +1,6 @@
+import pytest
+
+
 def test_serve_builds_app(tmp_config):
     from agent_wiki.config import get_vault_path
     from agent_wiki.server_config import load_server_config
@@ -62,3 +65,73 @@ def test_serve_route_set_is_vault_implicit_and_unchanged(tmp_vault):
         "/v1/sync",
     ]
     assert not any("vault" in p for p in paths)
+
+
+# --- proxy sign-in settings and uvicorn's proxy headers -------------------------
+
+@pytest.fixture
+def run_serve(tmp_config, monkeypatch):
+    """Run `awiki serve` with server.yaml set to ``settings`` and uvicorn.run
+    stubbed; returns the CLI result and the recorded uvicorn calls."""
+    import uvicorn
+    import yaml
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    from agent_wiki.server_config import server_config_path
+
+    def run(settings):
+        calls = []
+        monkeypatch.setattr(uvicorn, "run",
+                            lambda *a, **k: calls.append((a, k)))
+        if settings:
+            server_config_path().write_text(yaml.dump(settings))
+        result = CliRunner().invoke(cli, ["serve"])
+        return result, calls
+    return run
+
+
+def test_serve_runs_uvicorn_with_proxy_headers_off(run_serve):
+    result, calls = run_serve({})
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+    assert calls[0][1]["proxy_headers"] is False
+
+
+def test_serve_with_proxy_on_and_defaults_starts(run_serve):
+    result, calls = run_serve({"auth_proxy": True})
+    assert result.exit_code == 0, result.output
+    assert calls[0][1]["proxy_headers"] is False
+
+
+def test_serve_with_proxy_off_ignores_a_bad_list(run_serve):
+    result, calls = run_serve({"auth_proxy": False,
+                               "auth_trusted_proxies": ["*"]})
+    assert result.exit_code == 0, result.output
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("trusted, fault", [
+    ([], "must list at least one"),
+    (["*"], "'*' trusts every address"),
+    (["0.0.0.0/0"], "'0.0.0.0/0' trusts every address"),
+    (["::/0"], "'::/0' trusts every address"),
+    (["proxy.example"], "'proxy.example' is not an address or a CIDR range"),
+])
+def test_serve_refuses_a_bad_trusted_list(run_serve, trusted, fault):
+    result, calls = run_serve({"auth_proxy": True,
+                               "auth_trusted_proxies": trusted})
+    assert result.exit_code != 0
+    assert "auth_trusted_proxies" in result.output
+    assert fault in result.output
+    assert calls == []
+
+
+@pytest.mark.parametrize("header, fault", [
+    ("", "must name a header"),
+    ("X_WEBAUTH_USER", "underscore"),
+])
+def test_serve_refuses_a_bad_proxy_header(run_serve, header, fault):
+    result, calls = run_serve({"auth_proxy": True, "auth_proxy_header": header})
+    assert result.exit_code != 0
+    assert fault in result.output
+    assert calls == []
