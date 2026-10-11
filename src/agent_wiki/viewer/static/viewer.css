@@ -111,7 +111,7 @@ main.container { padding-bottom: 48px; }
    account block moves to the right instead. */
 .brand + .account { margin-left: auto; }
 .account { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg-muted); }
-.account .identity a { color: var(--fg); font-weight: 600; }
+.account .identity strong { color: var(--fg); font-weight: 600; }
 .signout { margin: 0; }
 .signout button { font-size: 12px; padding: 4px 9px; min-height: 0; }
 @media (max-width: 767px) {

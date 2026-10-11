@@ -90,7 +90,8 @@ def test_header_links_the_user_page_and_has_no_theme_switch(client):
     html = client.get("/user").text
     header = re.search(r'<header class="site-header">(.*?)</header>', html,
                        re.S).group(1)
-    assert f'Signed in as <a href="/user">{VIEWER_USER}</a>' in header
+    assert f'Signed in as <strong>{VIEWER_USER}</strong>' in header
+    assert '<a class="settings" href="/user">Settings</a>' in header
     assert 'class="signout"' in header
     assert 'action="/theme"' not in header
 

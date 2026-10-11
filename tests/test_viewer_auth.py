@@ -276,11 +276,12 @@ def test_wrong_password_leaves_an_old_hash_alone(app, anon):
 
 # ---------- the signed-in top bar ----------
 
-def test_signed_in_page_shows_the_user_a_user_link_and_sign_out(app):
+def test_signed_in_page_shows_the_user_a_settings_link_and_sign_out(app):
     client = TestClient(app, raise_server_exceptions=False)
     secret = sign_in(client)
     header = site_header(client.get("/").text)
-    assert f'Signed in as <a href="/user">{VIEWER_USER}</a>' in header
+    assert f'Signed in as <strong>{VIEWER_USER}</strong>' in header
+    assert '<a class="settings" href="/user">Settings</a>' in header
     form = re.search(r'<form class="signout" method="post" action="/signout">'
                      r'(.*?)</form>', header, re.S)
     assert form, header

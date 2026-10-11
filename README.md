@@ -1071,7 +1071,7 @@ sign-in page and the favicons needs a signed-in session; without one it
 redirects to `/signin`. A signed-in user sees only the vaults their grants give
 them at least `reader` on, in the vault list, search and tag pages, and a vault
 they cannot read answers `404`, the same as one that does not exist. Every page
-shows "Signed in as NAME", a link to the user page and a sign-out button.
+shows "Signed in as NAME", a Settings link to the user page and a sign-out button.
 
 Sessions are kept server-side; the browser holds only the `awiki_session`
 cookie (`HttpOnly`, `SameSite=Lax`, and `Secure` over https). A session ends 12
