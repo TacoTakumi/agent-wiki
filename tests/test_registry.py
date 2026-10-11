@@ -264,3 +264,13 @@ def test_vault_entry_is_frozen():
     entry = VaultEntry(name="x", path=None, url="https://e.com", token=None)
     with pytest.raises(Exception):
         entry.name = "y"
+
+
+@pytest.mark.parametrize("name, valid", [
+    ("ok", True), ("my-vault", True), ("v2", True),
+    ("", False), ("a/b", False), ("Work", False), ("my_vault", False),
+    ("sp ace", False), ("-edge", False),
+])
+def test_is_valid_vault_name(name, valid):
+    from agent_wiki.registry import is_valid_vault_name
+    assert is_valid_vault_name(name) is valid

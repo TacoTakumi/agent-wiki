@@ -41,6 +41,14 @@ class VaultEntry:
         return self.url is not None
 
 
+def is_valid_vault_name(name: str) -> bool:
+    """True when ``name`` may name a vault: non-empty and its own slug
+    (lowercase letters, digits and hyphens). The one rule for vault add,
+    init and reading a config."""
+    from agent_wiki.page import slugify
+    return bool(name) and slugify(name) == name
+
+
 def parse_registry(config) -> dict:
     """Parse a loaded user-config dict into {name: VaultEntry}.
 
