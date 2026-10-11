@@ -288,3 +288,26 @@ def test_doctor_stale_config_without_override_errors(tmp_path, isolated_env):
     assert result.exit_code != 0
     assert str(cfg) in result.output
     assert "--vault" in result.output
+
+
+@pytest.mark.parametrize("how", ["default_vault", "--vault", "AWIKI_VAULT"])
+def test_naming_an_invalid_vault_stops_with_the_reason(tmp_path, monkeypatch, how):
+    vault = _make_vault(tmp_path / "v")
+    config = {"vaults": {"ok": {"path": str(vault)},
+                         "Work": {"path": str(vault)}}}
+    if how == "default_vault":
+        config["default_vault"] = "Work"
+    cfg_dir = tmp_path / "cfg"
+    _write_config(cfg_dir, config)
+    monkeypatch.setenv("AGENT_WIKI_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.chdir(tmp_path)
+    args = ["search", "x"]
+    if how == "--vault":
+        args = ["--vault", "Work"] + args
+    if how == "AWIKI_VAULT":
+        monkeypatch.setenv("AWIKI_VAULT", "Work")
+    result = CliRunner().invoke(cli, args)
+    assert result.exit_code != 0
+    # The error itself, not only the warning that also names the vault.
+    assert (f"Error: vault 'Work' in {cfg_dir / 'config.yaml'} is not a valid "
+            "name") in result.output
