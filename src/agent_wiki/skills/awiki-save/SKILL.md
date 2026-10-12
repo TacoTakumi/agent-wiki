@@ -27,15 +27,17 @@ first (`awiki search "<query>"`) so you don't create a duplicate.
 Pages are **generated from an immutable-by-convention source in `raw/`** — never
 hand-edit a page in a topic folder. To fold a finding into an existing page:
 
-1. **Find the raw source**: The page's raw is `raw/<stem>.md`, where `<stem>` is
-   the page's filename without the topic folder or `.md` (the page's `sources:`
-   frontmatter also lists it). Run `awiki status` if you need the vault path.
+1. **Find the raw source**: Run `awiki raw <page>`, where `<page>` is the page's
+   path (`projects/my-page.md`), slug or title. It prints the raw file's path,
+   taken from the page's `sources:` frontmatter. The raw name can differ from
+   the page slug: ingest names the raw after the input file and the page after
+   its `# H1`.
 
-2. **Edit the raw** (`raw/<stem>.md`), not the page.
+2. **Edit the raw**, not the page.
 
-3. **Reingest**: Run `awiki reingest <stem>` — note it takes the bare **stem**
-   (`my-page`), not a vault-relative path like `projects/my-page.md`. This
-   re-renders the page from the raw; it does not author changes itself.
+3. **Reingest**: Run `awiki reingest <page>` with the same page reference (a raw
+   name also works). This re-renders the page from the raw; it does not author
+   changes itself.
 
 4. **Review the diff**: On a normal edit-the-raw loop, reingest will stop with a
    divergence diff (the page's pre-edit lines differ from your edited raw). That

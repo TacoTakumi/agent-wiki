@@ -371,6 +371,64 @@ def test_resolve_raw_ambiguous_raises(tmp_vault):
         resolve_raw(tmp_vault, "doc")
 
 
+def test_resolve_raw_from_page_path_slug_and_title(tmp_vault, tmp_path):
+    from agent_wiki.ingest import resolve_raw
+    src = tmp_path / "notes-file.md"
+    src.write_text("# Different Page Title\n\nbody\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    raw = tmp_vault / "raw" / "notes-file.md"
+    rel = str(page.relative_to(tmp_vault))
+    assert resolve_raw(tmp_vault, rel) == raw                    # page path
+    assert resolve_raw(tmp_vault, rel[:-len(".md")]) == raw      # path, no .md
+    assert resolve_raw(tmp_vault, page.stem) == raw              # page slug
+    assert resolve_raw(tmp_vault, "different page title") == raw  # title
+
+
+def test_resolve_raw_prefers_raw_name_over_page(tmp_vault):
+    from agent_wiki.ingest import resolve_raw
+    raw = tmp_vault / "raw" / "doc.md"
+    raw.write_text("x\n")
+    (tmp_vault / "research" / "doc.md").write_text(
+        "---\ntitle: Doc\nsources: [raw/other.md]\n---\nbody\n")
+    assert resolve_raw(tmp_vault, "doc") == raw
+
+
+def test_resolve_raw_page_with_several_sources_is_ambiguous(tmp_vault):
+    from agent_wiki.ingest import resolve_raw
+    (tmp_vault / "raw" / "a.md").write_text("a\n")
+    (tmp_vault / "raw" / "b.md").write_text("b\n")
+    (tmp_vault / "research" / "merged.md").write_text(
+        "---\ntitle: Merged\nsources: [raw/a.md, raw/b.md]\n---\nbody\n")
+    with pytest.raises(ValueError, match="several raw sources"):
+        resolve_raw(tmp_vault, "research/merged.md")
+
+
+def test_resolve_raw_page_with_only_session_source_raises(tmp_vault):
+    from agent_wiki.ingest import resolve_raw
+    (tmp_vault / "raw" / "sessions").mkdir()
+    (tmp_vault / "raw" / "sessions" / "s.jsonl").write_text("{}\n")
+    (tmp_vault / "research" / "chat.md").write_text(
+        "---\ntitle: Chat\nsources: [raw/sessions/s.jsonl]\n---\nbody\n")
+    with pytest.raises(FileNotFoundError, match="no reingestable"):
+        resolve_raw(tmp_vault, "chat")
+
+
+def test_cli_raw_and_reingest_accept_page_path(tmp_config, tmp_vault, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    src = tmp_path / "notes-file.md"
+    src.write_text("# Different Page Title\n\nbody\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    rel = str(page.relative_to(tmp_vault))
+    runner = CliRunner()
+    out = runner.invoke(cli, ["raw", rel])
+    assert out.exit_code == 0, out.output
+    assert out.output.strip().endswith("raw/notes-file.md")
+    out = runner.invoke(cli, ["reingest", rel])
+    assert out.exit_code == 0, out.output
+    assert f"-> {rel}" in out.output
+
+
 def test_service_reingest_rebuilds_from_edited_raw_with_force(tmp_vault):
     from agent_wiki.service import LocalVaultService
     svc = LocalVaultService(tmp_vault)
