@@ -107,13 +107,15 @@ def resolve_raw(vault_path: Path, name: str) -> Path:
     """Resolve a user-given raw name to a file in raw/.
 
     Accepts 'foo', 'foo.md', or 'raw/foo.md'. Exact basename match wins; otherwise
-    a unique stem match is used. Raises FileNotFoundError if nothing matches and
+    a unique stem match is used. When no raw matches, the name is tried as a page
+    reference (see _raw_from_page). Raises FileNotFoundError if nothing matches and
     ValueError if the name is ambiguous.
     """
     raw_dir = vault_path / "raw"
     if not raw_dir.is_dir():
         raise FileNotFoundError("vault has no raw/ directory")
-    name = name.strip()
+    original = name.strip()
+    name = original
     if name.startswith("raw/"):
         name = name[len("raw/"):]
     name = Path(name).name  # drop any other path components
@@ -130,7 +132,57 @@ def resolve_raw(vault_path: Path, name: str) -> Path:
     if len(candidates) > 1:
         joined = ", ".join(p.name for p in candidates)
         raise ValueError(f"ambiguous raw name {name!r}; matches: {joined}")
-    raise FileNotFoundError(f"no raw file matching {name!r} in raw/")
+    from_page = _raw_from_page(vault_path, original)
+    if from_page is not None:
+        return from_page
+    raise FileNotFoundError(f"no raw file matching {name!r} in raw/, and no page matching it")
+
+
+def _raw_from_page(vault_path: Path, ref: str) -> Path | None:
+    """Resolve a page reference to the raw file named in its `sources`.
+
+    `ref` is a page path ('research/foo.md' or 'research/foo'), a page slug
+    ('foo'), or a page title (case-insensitive). Returns None when no page
+    matches. Raises ValueError when several pages match, or when the page has
+    several raw/ sources; FileNotFoundError when it has none in raw/.
+    """
+    if ref.startswith("raw/"):
+        return None
+    topics = load_vault_config(vault_path).get("topics", [])
+    rel = ref if ref.endswith(".md") else f"{ref}.md"
+    direct = vault_path / rel
+    if "/" in ref and rel.split("/", 1)[0] in topics and direct.is_file():
+        pages = [direct]
+    else:
+        slug = Path(rel).stem
+        wanted = ref.casefold()
+        pages = []
+        for topic in topics:
+            topic_dir = vault_path / topic
+            if not topic_dir.is_dir():
+                continue
+            for md_file in sorted(topic_dir.rglob("*.md")):
+                title = str(parse_page(md_file)["meta"].get("title", ""))
+                if md_file.stem == slug or title.casefold() == wanted:
+                    pages.append(md_file)
+    if not pages:
+        return None
+    if len(pages) > 1:
+        joined = ", ".join(str(p.relative_to(vault_path)) for p in pages)
+        raise ValueError(f"ambiguous page reference {ref!r}; matches: {joined}")
+    page_rel = pages[0].relative_to(vault_path)
+    sources = parse_page(pages[0])["meta"].get("sources") or []
+    # Only top-level raw/ files are reingestable; raw/sessions/ bundles are not.
+    raws = [s for s in sources
+            if isinstance(s, str) and s.startswith("raw/") and s.count("/") == 1
+            and (vault_path / s).is_file()]
+    if not raws:
+        raise FileNotFoundError(
+            f"page {page_rel} has no reingestable raw/ source (sources: {sources})")
+    if len(raws) > 1:
+        raise ValueError(
+            f"page {page_rel} has several raw sources; name one: {', '.join(raws)}")
+    return vault_path / raws[0]
 
 
 def _find_pages_by_source(vault_path: Path, raw_ref: str, topics: list[str]) -> list[Path]:

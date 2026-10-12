@@ -9,6 +9,13 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.13.3]
+
+### Changed
+
+- `awiki raw` and `awiki reingest` also accept a page path, slug or title. They find the raw file through the page's `sources:` frontmatter, so you no longer need to know the raw file name, which can differ from the page slug. A raw name still matches first.
+- The `awiki-save` skill now tells agents to find a page's raw with `awiki raw <page>`.
+
 ## [0.13.2]
 
 ### Changed

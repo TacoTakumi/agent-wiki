@@ -593,6 +593,9 @@ def ingest(files, topic, tags, update, force, tag_mode):
 def reingest(name, force):
     """Rebuild a page from its existing raw/<name> after you edit the raw.
 
+    NAME is a raw name, or a page path, slug or title (resolved through the
+    page's `sources:` frontmatter).
+
     The canonical loop: edit raw/<name>, then `awiki reingest <name>`. It compares
     the page to the raw and, if they differ, prints a diff and stops — review it
     (fold anything worth keeping into the raw), then re-run with --force.
@@ -747,7 +750,7 @@ def show(ctx, path, outline, section, head, tail):
 @cli.command()
 @click.argument("name")
 def raw(name):
-    """Print the raw source path for a page, by its raw <name>.
+    """Print the raw source path for a page, by raw name or page path/slug/title.
 
     A page's raw/<name> file is its source of truth: edit the raw, then
     `awiki reingest <name>`. On a local vault this prints the raw file's absolute
