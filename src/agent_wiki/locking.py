@@ -10,15 +10,37 @@ logic. On timeout we raise ``TimeoutError`` (mapped to HTTP 503 at the edge).
 from __future__ import annotations
 
 import errno
-import fcntl
 import hashlib
 import os
+import sys
 import time
 from contextlib import contextmanager
 from pathlib import Path
 
 DEFAULT_TIMEOUT = 10.0
 _POLL_INTERVAL = 0.05
+
+# The lock primitive is platform-specific. ``fcntl`` is POSIX-only, so a
+# module-scope import of it breaks every lock-dependent command on Windows.
+# Each ``_try_lock`` raises ``OSError`` with ``EAGAIN``/``EACCES`` when another
+# holder has the lock; ``file_lock`` polls on that until its deadline.
+if sys.platform == "win32":
+    import msvcrt
+
+    def _try_lock(fd: int) -> None:
+        # Lock the first byte; the file is never read, so the range is enough.
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+    def _unlock(fd: int) -> None:
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+else:
+    import fcntl
+
+    def _try_lock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
 
 
 def _state_dir() -> Path:
@@ -60,7 +82,7 @@ def file_lock(vault_path: Path, name: str, timeout: float = DEFAULT_TIMEOUT):
     try:
         while True:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                _try_lock(fd)
                 break
             except OSError as e:
                 if e.errno not in (errno.EAGAIN, errno.EACCES):
@@ -74,6 +96,6 @@ def file_lock(vault_path: Path, name: str, timeout: float = DEFAULT_TIMEOUT):
         yield
     finally:
         try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+            _unlock(fd)
         finally:
             os.close(fd)

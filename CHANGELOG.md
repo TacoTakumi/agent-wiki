@@ -9,6 +9,12 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.13.4]
+
+### Fixed
+
+- The vault lock now works on Windows. `locking.py` imported `fcntl` at module scope, so every command that takes the lock (`search`, `show`, `index`, `status`, `ingest`, ...) crashed with `ModuleNotFoundError: No module named 'fcntl'` while `init` and `vault list` still worked. The lock primitive is now chosen by platform: `fcntl.flock` on POSIX, `msvcrt.locking` on Windows, with the same non-blocking poll and timeout on both. Reported in GitHub issue #1.
+
 ## [0.13.3]
 
 ### Changed
