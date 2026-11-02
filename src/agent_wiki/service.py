@@ -26,7 +26,7 @@ from agent_wiki.lint import lint_vault
 from agent_wiki.locking import DEFAULT_TIMEOUT as DEFAULT_LOCK_TIMEOUT
 from agent_wiki.locking import file_lock
 from agent_wiki.log import read_log
-from agent_wiki.page import is_sidecar, parse_page, render_page
+from agent_wiki.page import is_sidecar, load_sidecar, parse_page, render_page
 from agent_wiki.search import search_vault
 from agent_wiki.show import read_vault_bytes, read_vault_file
 from agent_wiki.sync import sync as _sync
@@ -246,10 +246,28 @@ class LocalVaultService(VaultService):
 
     def reingest(self, name: str, force: bool = False) -> dict:
         raw_path = resolve_raw(self.vault_path, name)
+        if raw_path.parent == self.vault_path / "raw" / "assets":
+            # A document parent resolves to its archived original: re-convert
+            # it as an update. The sidecars keep recording the file the user
+            # first ingested, read from a surviving chapter sidecar; with none
+            # left they record the archive itself.
+            return self.ingest(raw_path, update=True, force=force,
+                               provenance_source=self._document_source(raw_path.stem))
         # In-place rebuild: ingest_file detects samefile and skips the copy. A
         # raw with a document extension (an .html filed verbatim before
         # documents were converted) is rebuilt verbatim too, not converted.
         return self._ingest_verbatim(raw_path, update=True, force=force)
+
+    def _document_source(self, doc: str) -> str | None:
+        """The source path a chapter sidecar of document ``doc`` records."""
+        raw_dir = self.vault_path / "raw" / doc
+        if not raw_dir.is_dir():
+            return None
+        for raw in sorted(raw_dir.glob("*.md")):
+            source = load_sidecar(raw).get("source")
+            if source:
+                return str(source)
+        return None
 
     def ingest_conversation(self, bundle: Path, no_summarize: bool = False) -> dict:
         config = load_vault_config(self.vault_path)

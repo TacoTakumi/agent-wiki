@@ -4,7 +4,7 @@ import shutil
 import tempfile
 from dataclasses import replace
 from datetime import date, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse, urlunparse
 
 import click
@@ -147,8 +147,12 @@ def resolve_raw(vault_path: Path, name: str) -> Path:
     Accepts 'foo', 'foo.md', or 'raw/foo.md', and a document's chapter raw as
     '<doc>/NN-slug', '<doc>/NN-slug.md' or 'raw/<doc>/NN-slug.md'. Exact
     basename match wins; otherwise a unique stem match is used. When no raw
-    matches, the name is tried as a page reference (see _raw_from_page). Raises
-    FileNotFoundError if nothing matches and ValueError if the name is ambiguous.
+    matches, the name is tried as a page reference (see _raw_from_page). A
+    multi-chapter document's parent resolves to its archived original
+    raw/assets/<doc>.<ext>: by its page path ('<topic>/<doc>[.md]', checked
+    before raw names), and by its doc name or title only when no file in raw/
+    matches that name. Raises FileNotFoundError if nothing matches and
+    ValueError if the name is ambiguous.
     """
     raw_dir = vault_path / "raw"
     if not raw_dir.is_dir():
@@ -163,6 +167,15 @@ def resolve_raw(vault_path: Path, name: str) -> Path:
         doc_dir = raw_dir / parts[0]
         if doc_dir.is_dir():
             candidates = _match_raw(doc_dir, parts[1])
+    if not candidates and "/" in name and not original.startswith("raw/"):
+        # An explicit page path names one page, so a document parent there
+        # wins over a raw that merely shares its basename.
+        page = vault_path / (name if name.endswith(".md") else f"{name}.md")
+        topics = load_vault_config(vault_path).get("topics", [])
+        if name.split("/", 1)[0] in topics and page.is_file():
+            archive = _document_parent_archive(vault_path, parse_page(page)["meta"])
+            if archive is not None:
+                return archive
     if not candidates:
         name = Path(name).name  # drop any other path components
         candidates = _match_raw(raw_dir, name)
@@ -177,12 +190,28 @@ def resolve_raw(vault_path: Path, name: str) -> Path:
     raise FileNotFoundError(f"no raw file matching {name!r} in raw/, and no page matching it")
 
 
+def _document_parent_archive(vault_path: Path, meta: dict) -> Path | None:
+    """The archived original raw/assets/<doc>.<ext> of a multi-chapter
+    document's parent page (``document`` set, no ``chapter``), or None for any
+    other page. Reingesting it re-converts the whole document."""
+    doc = (meta or {}).get("document")
+    if not doc or "chapter" in meta:
+        return None
+    for ref in meta.get("sources") or []:
+        path = PurePosixPath(str(ref))
+        if (path.parent == PurePosixPath("raw/assets") and path.stem == doc
+                and (vault_path / path).is_file()):
+            return vault_path / path
+    return None
+
+
 def _raw_from_page(vault_path: Path, ref: str) -> Path | None:
     """Resolve a page reference to the raw file named in its `sources`.
 
     `ref` is a page path ('research/foo.md' or 'research/foo'), a page slug
     ('foo'), or a page title (case-insensitive). Returns None when no page
-    matches. Raises ValueError when several pages match, or when the page has
+    matches; a multi-chapter document's parent page resolves to its archived
+    original. Raises ValueError when several pages match, or when the page has
     several raw/ sources; FileNotFoundError when it has none in raw/.
     """
     if ref.startswith("raw/"):
@@ -210,7 +239,11 @@ def _raw_from_page(vault_path: Path, ref: str) -> Path | None:
         joined = ", ".join(str(p.relative_to(vault_path)) for p in pages)
         raise ValueError(f"ambiguous page reference {ref!r}; matches: {joined}")
     page_rel = pages[0].relative_to(vault_path)
-    sources = parse_page(pages[0])["meta"].get("sources") or []
+    meta = parse_page(pages[0])["meta"]
+    archive = _document_parent_archive(vault_path, meta)
+    if archive is not None:
+        return archive
+    sources = meta.get("sources") or []
     # Top-level raw/ files and document chapter raws are reingestable;
     # raw/sessions/ bundles and raw/assets/ originals are not.
     raws = [s for s in sources

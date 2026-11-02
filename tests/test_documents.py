@@ -541,3 +541,155 @@ def test_cli_update_over_hand_edit_prints_diff_then_force_completes(
     assert forced.exit_code == 0, forced.output
     assert "(2 chapters)" in forced.stdout
     assert not (tmp_vault / "raw" / "a-book" / "03-chapter-three.md").exists()
+
+
+# --- reingest ------------------------------------------------------------------
+
+
+def _ingest_v1_through_service(tmp_vault, tmp_path):
+    from agent_wiki.service import LocalVaultService
+    svc = LocalVaultService(tmp_vault)
+    src = _v1(tmp_path)
+    svc.ingest(src)
+    return svc, src
+
+
+def _delete_chapter_two(vault: Path) -> None:
+    for path in (vault / "research" / "a-book" / "02-chapter-two.md",
+                 vault / "raw" / "a-book" / "02-chapter-two.md",
+                 vault / "raw" / "a-book" / "02-chapter-two.meta.yaml"):
+        path.unlink()
+
+
+@pytest.mark.parametrize("ref", ["a-book", "research/a-book.md", "research/a-book",
+                                 "A Book", "a book"])
+def test_reingest_parent_restores_a_deleted_chapter(tmp_vault, tmp_path, ref):
+    svc, _ = _ingest_v1_through_service(tmp_vault, tmp_path)
+    before = _tree(tmp_vault)
+    log_before = _log_lines(tmp_vault)
+    _delete_chapter_two(tmp_vault)
+
+    out = svc.reingest(ref)
+
+    assert out["page"] == "research/a-book.md"
+    assert out["chapters"] == 3
+    after = _tree(tmp_vault)
+    for rel in ("research/a-book/02-chapter-two.md", "raw/a-book/02-chapter-two.md",
+                "research/a-book.md", "raw/assets/a-book.epub"):
+        assert after[rel] == before[rel], rel
+    log_after = _log_lines(tmp_vault)
+    assert log_after[:-1] == log_before
+    assert log_after[-1].endswith("update: a-book.epub -> research/a-book.md (3 chapters)")
+
+
+def test_reingest_parent_keeps_the_original_source_in_every_sidecar(tmp_vault, tmp_path):
+    svc, src = _ingest_v1_through_service(tmp_vault, tmp_path)
+    _delete_chapter_two(tmp_vault)
+    svc.reingest("a-book")
+    for stem in CHAPTERS:
+        sidecar = load_sidecar(tmp_vault / "raw" / "a-book" / f"{stem}.md")
+        assert sidecar["source"] == str(src)
+
+
+def test_reingest_parent_with_no_chapter_sidecar_records_the_archive(tmp_vault, tmp_path):
+    import shutil
+    svc, _ = _ingest_v1_through_service(tmp_vault, tmp_path)
+    shutil.rmtree(tmp_vault / "raw" / "a-book")
+    svc.reingest("a-book")
+    archive = tmp_vault / "raw" / "assets" / "a-book.epub"
+    for stem in CHAPTERS:
+        sidecar = load_sidecar(tmp_vault / "raw" / "a-book" / f"{stem}.md")
+        assert sidecar["source"] == str(archive)
+
+
+def test_reingest_parent_over_hand_edited_chapter_is_refused_then_forced(
+        tmp_vault, tmp_path):
+    svc, _ = _ingest_v1_through_service(tmp_vault, tmp_path)
+    page = tmp_vault / "research" / "a-book" / "03-chapter-three.md"
+    _hand_edit(page)
+    before = _tree(tmp_vault)
+    with pytest.raises(PageDriftError):
+        svc.reingest("a-book")
+    assert _tree(tmp_vault) == before
+    svc.reingest("a-book", force=True)
+    assert "A NOTE ADDED BY HAND" not in page.read_text()
+
+
+def test_reingest_bare_name_prefers_a_flat_raw_over_the_document(tmp_vault, tmp_path):
+    """A bare name that matches a file in raw/ reingests that raw; the parent
+    page path and the document title still reach the document."""
+    svc, _ = _ingest_v1_through_service(tmp_vault, tmp_path)
+    note = tmp_path / "notes" / "a-book.md"
+    note.parent.mkdir()
+    note.write_text("# Unrelated Note\n\nbody\n")
+    svc.ingest(note)
+    _delete_chapter_two(tmp_vault)
+
+    out = svc.reingest("a-book")
+    assert out["page"] == "research/unrelated-note.md"
+    assert not (tmp_vault / "research" / "a-book" / "02-chapter-two.md").exists()
+
+    assert svc.reingest("research/a-book.md")["page"] == "research/a-book.md"
+    assert (tmp_vault / "research" / "a-book" / "02-chapter-two.md").is_file()
+    _delete_chapter_two(tmp_vault)
+    assert svc.reingest("A Book")["page"] == "research/a-book.md"
+    assert (tmp_vault / "research" / "a-book" / "02-chapter-two.md").is_file()
+
+
+def test_reingest_single_page_document_rebuilds_from_its_raw(tmp_vault, tmp_path):
+    from agent_wiki.service import LocalVaultService
+    svc = LocalVaultService(tmp_vault)
+    src = build_html(tmp_path / "one.html", sections=[(1, "Only Heading", "Body.")],
+                     nav=False, image=None)
+    svc.ingest(src)
+    raw = tmp_vault / "raw" / "sample-document.md"
+    raw.write_text(raw.read_text() + "\nEDITED IN THE RAW\n")
+    archive = tmp_vault / "raw" / "assets" / "sample-document.html"
+    archive_before = archive.read_bytes()
+
+    out = svc.reingest("sample-document")
+
+    assert out["chapters"] == 1
+    assert "EDITED IN THE RAW" in (tmp_vault / out["page"]).read_text()
+    assert archive.read_bytes() == archive_before
+
+
+@pytest.mark.parametrize("ref", ["a-book/02-chapter-two", "raw/a-book/02-chapter-two.md",
+                                 "research/a-book/02-chapter-two.md",
+                                 "Chapter Two (A Book)"])
+def test_reingest_chapter_rerenders_only_that_page(tmp_vault, tmp_path, ref):
+    svc, _ = _ingest_v1_through_service(tmp_vault, tmp_path)
+    raw = tmp_vault / "raw" / "a-book" / "02-chapter-two.md"
+    raw.write_text(raw.read_text() + "\nA LINE EDITED IN THE RAW\n")
+    before = _tree(tmp_vault)
+
+    out = svc.reingest(ref)
+
+    page_rel = "research/a-book/02-chapter-two.md"
+    assert out["page"] == page_rel
+    page = parse_page(tmp_vault / page_rel)
+    assert "A LINE EDITED IN THE RAW" in page["body"]
+    assert not page_raw_diverged(page["body"], raw.read_text())
+    assert page["meta"]["title"] == "Chapter Two (A Book)"
+    after = _tree(tmp_vault)
+    assert after.keys() == before.keys()
+    changed = {rel for rel in after if after[rel] != before[rel]}
+    assert changed <= {page_rel, "log.md", "raw/a-book/02-chapter-two.meta.yaml"}
+    assert page_rel in changed
+
+
+def test_cli_reingest_parent_prints_the_parent_page(tmp_config, tmp_vault, tmp_path):
+    assert CliRunner().invoke(cli, ["ingest", str(_v1(tmp_path))]).exit_code == 0
+    _delete_chapter_two(tmp_vault)
+    result = CliRunner().invoke(cli, ["reingest", "a-book"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "Reingested a-book -> research/a-book.md\n"
+    assert (tmp_vault / "research" / "a-book" / "02-chapter-two.md").is_file()
+
+
+def test_raw_and_reingest_name_the_archive_for_a_document_parent(
+        tmp_config, tmp_vault, tmp_path):
+    assert CliRunner().invoke(cli, ["ingest", str(_v1(tmp_path))]).exit_code == 0
+    result = CliRunner().invoke(cli, ["raw", "a-book"])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == f"{tmp_vault / 'raw' / 'assets' / 'a-book.epub'}\n"
