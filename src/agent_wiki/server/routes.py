@@ -78,6 +78,7 @@ def build_router(svc, require) -> APIRouter:
             update = str(form.get("update") or "").lower() in ("1", "true", "yes")
             force = str(form.get("force") or "").lower() in ("1", "true", "yes")
             tag_mode = form.get("tag_mode") or None
+            source_path = form.get("source_path") or None
         elif ctype.startswith("application/json"):
             body = await request.json()
             try:
@@ -89,14 +90,19 @@ def build_router(svc, require) -> APIRouter:
             update = bool(body.get("update", False))
             force = bool(body.get("force", False))
             tag_mode = body.get("tag_mode")
+            source_path = body.get("source_path") or None
         else:
             raise HTTPException(status_code=400, detail="send multipart file or JSON body")
         tag_list = [s.strip() for s in tags.split(",")] if tags else None
         with tempfile.TemporaryDirectory() as d:
             tmp = Path(d) / Path(name).name
             tmp.write_bytes(data)
+            # The sidecars record the client's path (source_path) rather than
+            # this temp file, which is gone once the request ends. It is
+            # provenance text only: the server never opens it.
             return svc.ingest(tmp, topic=topic, tags=tag_list, update=update,
-                              force=force, tag_mode=tag_mode)
+                              force=force, tag_mode=tag_mode,
+                              provenance_source=source_path)
 
     # Client-side fetch + extract: the client sends already-extracted
     # markdown plus the original asset; this handler ingests them and NEVER fetches.

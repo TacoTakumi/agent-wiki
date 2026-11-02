@@ -179,27 +179,34 @@ class LocalVaultService(VaultService):
     # --- writes ---
     def ingest(self, source: Path, topic: str | None = None,
                tags: list[str] | None = None, update: bool = False,
-               force: bool = False, tag_mode: str | None = None) -> dict:
+               force: bool = False, tag_mode: str | None = None,
+               provenance_source: str | None = None) -> dict:
         """Ingest a local file. A .pdf, .html, .htm or .epub is converted to
         markdown (one page, or a parent plus one page per chapter); every other
         file is copied verbatim. The result's ``chapters`` is the number of
-        chapter pages written (1 for a single page)."""
+        chapter pages written (1 for a single page). ``provenance_source``
+        is the path the sidecars record instead of ``source`` (the server
+        passes the client's path for its upload temp file)."""
         if Path(source).suffix.lower() in DOCUMENT_SUFFIXES:
             with file_lock(self.vault_path, "log"):
                 result = ingest_document(Path(source), self.vault_path, topic=topic,
-                                         tags=tags, tag_mode=tag_mode)
+                                         tags=tags, tag_mode=tag_mode,
+                                         provenance_source=provenance_source)
             return {**self._page_result(result.page, topic),
                     "chapters": result.chapters}
         return self._ingest_verbatim(source, topic=topic, tags=tags, update=update,
-                                     force=force, tag_mode=tag_mode)
+                                     force=force, tag_mode=tag_mode,
+                                     provenance_source=provenance_source)
 
     def _ingest_verbatim(self, source: Path, topic: str | None = None,
                          tags: list[str] | None = None, update: bool = False,
-                         force: bool = False, tag_mode: str | None = None) -> dict:
+                         force: bool = False, tag_mode: str | None = None,
+                         provenance_source: str | None = None) -> dict:
         with file_lock(self.vault_path, "log"):
             page_path = ingest_file(source, self.vault_path, topic=topic,
                                     tags=tags, update=update, force=force,
-                                    tag_mode=tag_mode)
+                                    tag_mode=tag_mode,
+                                    provenance_source=provenance_source)
         return {**self._page_result(page_path, topic), "chapters": 1}
 
     def ingest_url(self, url: str, topic: str | None = None,

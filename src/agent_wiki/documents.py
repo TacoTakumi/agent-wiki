@@ -58,20 +58,23 @@ def convert_document(source: Path, pdf_extractor: str = "pymupdf4llm") -> Conver
 
 def ingest_document(source: Path, vault_path: Path, topic: str | None = None,
                     tags: list[str] | None = None,
-                    tag_mode: str | None = None) -> DocumentIngest:
+                    tag_mode: str | None = None,
+                    provenance_source: str | None = None) -> DocumentIngest:
     """Convert ``source`` and write it into the vault (see ``write_document``).
-    The PDF extractor is the vault's ``pdf_extractor`` setting."""
+    The PDF extractor is the vault's ``pdf_extractor`` setting.
+    ``provenance_source`` is the path the sidecars record instead of ``source``."""
     if not source.exists():
         raise FileNotFoundError(f"Source file not found: {source}")
     pdf_extractor = load_vault_config(vault_path).get("pdf_extractor", "pymupdf4llm")
     doc = convert_document(source, pdf_extractor=pdf_extractor)
     return write_document(doc, source, vault_path, topic=topic, tags=tags,
-                          tag_mode=tag_mode)
+                          tag_mode=tag_mode, provenance_source=provenance_source)
 
 
 def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
                    topic: str | None = None, tags: list[str] | None = None,
-                   tag_mode: str | None = None) -> DocumentIngest:
+                   tag_mode: str | None = None,
+                   provenance_source: str | None = None) -> DocumentIngest:
     """Write a converted document, archiving ``source`` as its original.
 
     Every check (existing archive, unsafe image path, topic, tags) runs before
@@ -99,7 +102,7 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
     if len(doc.chapters) == 1:
         chapter = doc.chapters[0]
         page = ingest_extracted(
-            vault_path, source_url=str(source),
+            vault_path, source_url=provenance_source or str(source),
             content_type="application/octet-stream", asset=source.read_bytes(),
             markdown=_rewrite_images(chapter.markdown, chapter.images,
                                      f"../raw/assets/{name}"),
@@ -137,7 +140,7 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
                                f"../../raw/assets/{name}").rstrip("\n") + "\n"
         raw = raw_dir / f"{stem}.md"
         raw.write_text(body)
-        _write_sidecar(raw, source=str(source), fetcher="local")
+        _write_sidecar(raw, source=provenance_source or str(source), fetcher="local")
         title = f"{chapter.title} ({doc.title})"
         _write_page(page_dir / f"{stem}.md", {
             "title": title,

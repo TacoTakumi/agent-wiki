@@ -160,3 +160,55 @@ def test_session_titles_doctor_fix_through_the_server(client, admin_h, tmp_vault
     assert r.status_code == 200
     assert "session-titles" in [f["name"] for f in r.json()["findings"]]
     assert parse_page(page)["meta"]["title"] == "Fix the login bug"
+
+
+def test_ingest_multipart_epub_returns_chapter_count(client, writer_h, tmp_path):
+    from convert_fixtures import build_epub
+    book = build_epub(tmp_path / "book.epub")
+    r = client.post(
+        "/v1/ingest",
+        files={"file": ("book.epub", book.read_bytes(), "application/octet-stream")},
+        data={"topic": "research"},
+        headers=writer_h,
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert body["page"] == "research/a-book.md"
+    assert body["chapters"] == 3
+
+
+def test_ingest_json_markdown_returns_one_chapter(client, writer_h):
+    r = client.post("/v1/ingest", json={"filename": "c.md", "content": "# C\n\nx\n"},
+                    headers=writer_h)
+    assert r.status_code == 201
+    assert r.json()["chapters"] == 1
+
+
+def test_ingest_records_the_client_source_path(client, writer_h, tmp_vault, tmp_path):
+    # The upload lands in a server temp file; the sidecar records the path the
+    # client sent instead, for a converted document and a verbatim file alike.
+    import yaml
+    from convert_fixtures import build_epub
+    book = build_epub(tmp_path / "book.epub")
+    client.post(
+        "/v1/ingest",
+        files={"file": ("book.epub", book.read_bytes(), "application/octet-stream")},
+        data={"topic": "research", "source_path": "/home/you/books/book.epub"},
+        headers=writer_h,
+    )
+    client.post("/v1/ingest", json={"filename": "s.md", "content": "# S\n\nx\n",
+                                    "source_path": "notes/s.md"}, headers=writer_h)
+    chapter = tmp_vault / "raw" / "a-book" / "01-chapter-one.meta.yaml"
+    note = tmp_vault / "raw" / "s.meta.yaml"
+    assert yaml.safe_load(chapter.read_text())["source"] == "/home/you/books/book.epub"
+    assert yaml.safe_load(note.read_text())["source"] == "notes/s.md"
+
+
+def test_ingest_mismatched_document_is_400(client, writer_h, tmp_vault):
+    r = client.post(
+        "/v1/ingest",
+        files={"file": ("bad.epub", b"not a zip", "application/octet-stream")},
+        headers=writer_h,
+    )
+    assert r.status_code == 400
+    assert not (tmp_vault / "raw" / "assets" / "bad.epub").exists()

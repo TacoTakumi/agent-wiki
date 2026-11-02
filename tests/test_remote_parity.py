@@ -191,3 +191,147 @@ def test_show_slicing_issues_one_page_get_only(remote_service, tmp_vault,
     _show_stdout(remote_service, monkeypatch,
                  ["research/log.md", "--section", "check log", "--head", "1"])
     assert calls == [("GET", "/v1/pages/research/log.md")]
+
+
+# --- converted documents (EPUB, HTML, PDF) through the server -----------------
+
+def _ingest_cli(service, monkeypatch, path, topic="research"):
+    """Run `awiki ingest <path> --topic <topic>` against ``service``."""
+    from click.testing import CliRunner
+    from agent_wiki import cli as cli_mod
+    monkeypatch.setattr(cli_mod, "_ingest_service", lambda t: (service, t))
+    return CliRunner().invoke(cli_mod.cli, ["ingest", str(path), "--topic", topic])
+
+
+def _vault_tree(vault):
+    """Every file under ``vault`` with its content, minus what depends on the
+    clock: a sidecar's ``ingested`` time and the log line's timestamp."""
+    import re
+    tree = {}
+    for f in sorted(p for p in vault.rglob("*") if p.is_file()):
+        rel = f.relative_to(vault).as_posix()
+        if rel.endswith(".meta.yaml"):
+            meta = yaml.safe_load(f.read_text())
+            meta.pop("ingested", None)
+            tree[rel] = meta
+        elif rel == "log.md":
+            tree[rel] = re.sub(r"\*\*[0-9: -]+\*\*", "**TIME**", f.read_text())
+        else:
+            tree[rel] = f.read_bytes()
+    return tree
+
+
+def _record_requests(monkeypatch, service):
+    """Record every request the remote client sends (method, path, headers, body)."""
+    sent = []
+    original = service._c.send
+
+    def _send(request, *args, **kwargs):
+        sent.append(request)
+        return original(request, *args, **kwargs)
+
+    monkeypatch.setattr(service._c, "send", _send)
+    return sent
+
+
+def _book(tmp_path):
+    from convert_fixtures import build_epub
+    return build_epub(tmp_path / "books" / "book.epub")
+
+
+def test_epub_ingest_parity(remote_service, tmp_vault, tmp_path, monkeypatch):
+    # The same EPUB ingested into a local vault and through the server: the
+    # vault trees match file for file (sidecars included, the source path being
+    # the client's path in both) and the CLI prints the same line.
+    from conftest import make_vault
+    book = _book(tmp_path)
+    local_vault = make_vault(tmp_path / "local-vault")
+
+    local = _ingest_cli(LocalVaultService(local_vault), monkeypatch, book)
+    remote = _ingest_cli(remote_service, monkeypatch, book)
+
+    assert local.exit_code == 0, local.output
+    assert remote.exit_code == 0, remote.output
+    assert local.stdout == "Ingested book.epub -> research/a-book.md (3 chapters)\n"
+    assert remote.stdout == local.stdout
+
+    assert _vault_tree(tmp_vault) == _vault_tree(local_vault)
+    side = yaml.safe_load(
+        sidecar_path(tmp_vault / "raw" / "a-book" / "01-chapter-one.md").read_text())
+    assert side["source"] == str(book)
+
+
+def test_epub_ingest_request_body_is_the_raw_file(remote_service, tmp_path,
+                                                  monkeypatch):
+    # The client uploads the file's own bytes; the server converts. No
+    # client-side markdown travels in the request.
+    book = _book(tmp_path)
+    sent = _record_requests(monkeypatch, remote_service)
+
+    out = remote_service.ingest(book, topic="research")
+
+    assert out["page"] == "research/a-book.md"
+    assert out["chapters"] == 3
+    [request] = sent
+    assert (request.method, request.url.path) == ("POST", "/v1/ingest")
+    assert request.headers["content-type"].startswith("multipart/form-data")
+    body = request.read()
+    assert book.read_bytes() in body
+    assert b'name="markdown"' not in body
+    assert b"BODY1" not in body.replace(book.read_bytes(), b"")
+
+
+def test_single_chapter_document_parity(remote_service, tmp_vault, tmp_path,
+                                        monkeypatch):
+    # A one-chapter document is one page: both vaults print the unchanged
+    # single-page line, with no chapter count, and hold the same files.
+    from convert_fixtures import build_html
+    from conftest import make_vault
+    src = build_html(tmp_path / "docs" / "one.html",
+                     sections=[(1, "Only Heading", "Body.")], image=None)
+    local_vault = make_vault(tmp_path / "local-vault")
+
+    local = _ingest_cli(LocalVaultService(local_vault), monkeypatch, src)
+    remote = _ingest_cli(remote_service, monkeypatch, src)
+
+    assert local.exit_code == 0, local.output
+    assert local.stdout == "Ingested one.html -> research/sample-document.md\n"
+    assert remote.stdout == local.stdout
+    assert _vault_tree(tmp_vault) == _vault_tree(local_vault)
+
+
+def test_mismatched_document_error_parity(remote_service, tmp_vault, tmp_path,
+                                          monkeypatch):
+    # A file whose content does not match its extension: the server's
+    # conversion error reaches the CLI as the same one-line error and exit 1,
+    # and the remote vault is left untouched.
+    from conftest import make_vault
+    bad = tmp_path / "docs" / "bad.epub"
+    bad.parent.mkdir()
+    bad.write_bytes(b"this is not a zip archive")
+    local_vault = make_vault(tmp_path / "local-vault")
+    before = _vault_tree(tmp_vault)
+
+    local = _ingest_cli(LocalVaultService(local_vault), monkeypatch, bad)
+    remote = _ingest_cli(remote_service, monkeypatch, bad)
+
+    assert local.exit_code == remote.exit_code == 1
+    assert local.stderr.startswith("error: could not ingest bad.epub: ")
+    assert remote.stderr == local.stderr
+    assert remote.stdout == local.stdout == ""
+    assert _vault_tree(tmp_vault) == before
+
+
+def test_markdown_ingest_records_the_client_path(remote_service, tmp_vault,
+                                                 tmp_path):
+    # A verbatim file sent through the server records the client's path as
+    # its source, as a local ingest does, not the server's upload temp file.
+    note = tmp_path / "notes" / "n.md"
+    note.parent.mkdir()
+    note.write_text("# N\n\nx\n")
+
+    out = remote_service.ingest(note, topic="research")
+
+    assert out["chapters"] == 1
+    side = yaml.safe_load(sidecar_path(tmp_vault / "raw" / "n.md").read_text())
+    assert side["source"] == str(note)

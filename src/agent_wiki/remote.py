@@ -90,15 +90,21 @@ class RemoteVaultService(VaultService):
     # --- writes ---
     def ingest(self, source: Path, topic=None, tags=None, update=False, force=False,
                tag_mode=None) -> dict:
+        # The file's own bytes go up (the server converts a document); its
+        # client-side path goes along so the sidecars record it, as locally.
         return self.ingest_path_bytes(
             Path(source).name, Path(source).read_bytes(),
             topic=topic, tags=tags, update=update, force=force, tag_mode=tag_mode,
+            source_path=str(source),
         )
 
     def ingest_path_bytes(self, filename, data, topic=None, tags=None,
-                          update=False, force=False, tag_mode=None) -> dict:
+                          update=False, force=False, tag_mode=None,
+                          source_path=None) -> dict:
         files = {"file": (filename, data, "application/octet-stream")}
         form = {}
+        if source_path:
+            form["source_path"] = source_path
         if topic:
             form["topic"] = topic
         if tags:
