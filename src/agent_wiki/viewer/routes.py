@@ -9,10 +9,12 @@ import hashlib
 import secrets
 import sys
 from importlib.resources import files
+from pathlib import Path
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import (FileResponse, HTMLResponse,
+                               RedirectResponse, Response)
 from jinja2 import ChoiceLoader, Environment, PackageLoader, select_autoescape
 
 from agent_wiki.config import backend_for_entry
@@ -20,7 +22,7 @@ from agent_wiki.page import parse_page
 from agent_wiki.registry import VaultEntry
 from agent_wiki.server.access import readable_vaults
 from agent_wiki.server.store import open_store
-from agent_wiki.viewer.catalog import (VaultCatalog, index_vault,
+from agent_wiki.viewer.catalog import (VaultCatalog, _inside, index_vault,
                                        narrow_catalog, resolve_page)
 from agent_wiki.viewer.highlight import highlight
 from agent_wiki.viewer.render import render_markdown
@@ -207,6 +209,44 @@ def tag_url(name: str, tag: str) -> str:
     """The viewer URL of a tag page. The /-/ segment keeps it clear of any
     topic folder; the tag is quoted whole, so spaces and & round-trip."""
     return f"/vaults/{quote(name, safe='')}/-/tags/{quote(tag, safe='')}"
+
+
+# The image types an imported document keeps under raw/assets/, by lower-case
+# extension: the only files the viewer serves from raw/.
+ASSET_TYPES = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+}
+# An SVG can carry script. Inside an img it never runs, but a user who opens
+# the image URL directly would run it on this origin: the policy loads
+# nothing and sandboxes the document, and nosniff keeps every image from
+# being read as another type.
+ASSET_HEADERS = {
+    "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "private",
+}
+
+
+def resolve_asset(vault_dir, path: str):
+    """The file under the vault's raw/assets/ that `path` names, or None when
+    the viewer must not serve it: empty, '.' and '..' segments and NUL bytes
+    are refused, and the file, with symlinks followed, must be inside
+    raw/assets/ with an image extension both as named and as resolved."""
+    parts = path.split("/")
+    if "\0" in path or any(part in ("", ".", "..") for part in parts):
+        return None
+    if Path(parts[-1]).suffix.lower() not in ASSET_TYPES:
+        return None
+    candidate = Path(vault_dir).joinpath("raw", "assets", *parts)
+    if not _inside(candidate, Path(vault_dir).resolve() / "raw" / "assets"):
+        return None
+    real = candidate.resolve()
+    return real if real.suffix.lower() in ASSET_TYPES else None
 
 
 def source_entries(sources) -> list[tuple[str, bool]]:
@@ -475,6 +515,17 @@ def build_viewer_router(catalog: VaultCatalog) -> APIRouter:
             **vault_nav(name, index, None, [(name, vault_url(name)),
                                             ("tags", None), (tag, None)]),
         )
+
+    # Registered before the page view, which would 404 it: raw/ is not a
+    # topic. Read access is a page's: the vault must be readable.
+    @r.get("/vaults/{name}/raw/assets/{path:path}", dependencies=signed_in)
+    def asset_view(request: Request, name: str, path: str):
+        vault_dir = served_vault(readable_catalog(request, catalog), name)
+        asset = resolve_asset(vault_dir, path)
+        if asset is None:
+            raise HTTPException(status_code=404, detail="file not found")
+        return FileResponse(asset, media_type=ASSET_TYPES[asset.suffix.lower()],
+                            headers=ASSET_HEADERS)
 
     # Registered after the vault home, topic and tag routes, so those keep
     # their URLs.

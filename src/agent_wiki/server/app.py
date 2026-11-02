@@ -54,6 +54,7 @@ ROUTE_ACCESS: dict[tuple[str, str], str] = {
     ("GET", "/vaults/{name}/"): VIEWER,
     ("GET", "/vaults/{name}/{topic}/"): VIEWER,
     ("GET", "/vaults/{name}/-/tags/{tag:path}"): VIEWER,
+    ("GET", "/vaults/{name}/raw/assets/{path:path}"): VIEWER,
     ("GET", "/vaults/{name}/{path:path}"): VIEWER,
 }
 
