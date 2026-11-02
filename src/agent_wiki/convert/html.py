@@ -25,6 +25,7 @@ import posixpath
 import re
 import secrets
 from collections import Counter
+from html import escape
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -171,7 +172,9 @@ class _Document:
             el = self.anchors.get(entry.target)
             if index and el is not None:
                 el.addprevious(etree.Comment(f"awiki-cut-{token}:{index}"))
-        html = (self.body.text or "") + "".join(
+        # Leading text is book text: escape it as tostring escapes the
+        # text of the children, or an escaped '<!--' would become markup.
+        html = escape(self.body.text or "", quote=False) + "".join(
             etree.tostring(ch, method="html", encoding="unicode")
             for ch in self.body)
         parts = cut.split(html)
