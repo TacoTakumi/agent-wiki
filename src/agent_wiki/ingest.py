@@ -43,6 +43,19 @@ class StrictTagError(ValueError):
         )
 
 
+def _load_vocab(vault_config: dict, tag_mode: str | None):
+    """The vault's tag vocabulary, with ``tag_mode`` (off|warn|strict) overriding
+    its configured mode for one ingest without mutating wiki.yaml."""
+    vocab = parse_tag_vocabulary(vault_config)
+    if tag_mode is not None:
+        if tag_mode not in TAG_MODES:
+            raise ValueError(
+                f"invalid tag mode {tag_mode!r}; expected one of {', '.join(TAG_MODES)}"
+            )
+        vocab = replace(vocab, mode=tag_mode)
+    return vocab
+
+
 def _resolve_tags(tags: list[str], vocab) -> list[str]:
     """Canonicalize a page's tags pre-flight and return the canonical list.
 
@@ -247,13 +260,7 @@ def ingest_file(
         raise FileNotFoundError(f"Source file not found: {source}")
 
     vault_config = load_vault_config(vault_path)
-    vocab = parse_tag_vocabulary(vault_config)
-    if tag_mode is not None:
-        if tag_mode not in TAG_MODES:
-            raise ValueError(
-                f"invalid tag mode {tag_mode!r}; expected one of {', '.join(TAG_MODES)}"
-            )
-        vocab = replace(vocab, mode=tag_mode)
+    vocab = _load_vocab(vault_config, tag_mode)
     raw_ref = f"raw/{source.name}"
     raw_dest = vault_path / "raw" / source.name
 
@@ -406,14 +413,15 @@ def _asset_ext(content_type: str) -> str:
 
 
 def _archive_asset(vault_path: Path, name: str, body: bytes,
-                   content_type: str, raw_dest: Path) -> None:
+                   content_type: str, raw_dest: Path,
+                   asset_ext: str | None = None) -> None:
     """Archive the original fetched artifact byte-identically under raw/assets/
     and record its own sha256 (and path) in the raw body's sidecar, alongside the
-    raw-body sha256."""
+    raw-body sha256. ``asset_ext`` overrides the extension the content type maps to."""
     data = body if isinstance(body, bytes) else body.encode()
     assets_dir = vault_path / "raw" / "assets"
     assets_dir.mkdir(parents=True, exist_ok=True)
-    asset_rel = f"raw/assets/{name}{_asset_ext(content_type)}"
+    asset_rel = f"raw/assets/{name}{asset_ext or _asset_ext(content_type)}"
     (vault_path / asset_rel).write_bytes(data)
 
     meta = load_sidecar(raw_dest)
@@ -480,9 +488,19 @@ def ingest_extracted(
     update: bool = False,
     force: bool = False,
     tag_mode: str | None = None,
+    *,
+    name: str | None = None,
+    fetcher: str = "http",
+    asset_ext: str | None = None,
 ) -> Path:
     """Server-side half of URL ingest: ingest already-fetched, already-extracted
     content into ``raw/<name>.md`` with an http-provenance sidecar.
+
+    A converted local document that came out as one chapter reuses this path
+    with ``fetcher="local"``: ``source_url`` is then the local file path, there
+    is no URL dedup and no ``source_url`` frontmatter. ``name`` overrides the
+    URL-derived stem of the raw, page and archived asset, and ``asset_ext``
+    the extension the content type maps to.
 
     Makes NO network call and constructs no ``Fetcher`` — this is the seam the
     awiki server runs so it performs no outbound fetch. ``markdown``
@@ -494,15 +512,16 @@ def ingest_extracted(
     page/sidecar/log machinery, overriding only the recorded provenance.
     Returns the path to the created/updated wiki page.
     """
-    canonical = normalize_url(source_url)
-    name = url_to_name(canonical)
+    is_url = fetcher == "http"
+    canonical = normalize_url(source_url) if is_url else source_url
+    name = name or url_to_name(canonical)
     raw_dest = vault_path / "raw" / f"{name}.md"
 
     # Dedup: re-fetching the same URL updates its page in place rather than
     # orphaning a title-named duplicate. The match key is the normalized URL; an
     # unchanged body (matching the stored sidecar sha256) is a no-op skip unless
     # --force.
-    if raw_dest.exists():
+    if is_url and raw_dest.exists():
         prior = load_sidecar(raw_dest)
         prior_source = prior.get("source")
         if prior_source is not None and normalize_url(prior_source) == canonical:
@@ -520,15 +539,15 @@ def ingest_extracted(
         staged.write_text(markdown)
         page_path = ingest_file(
             staged, vault_path, topic=topic, tags=tags, update=update, force=force,
-            provenance_source=source_url, provenance_fetcher="http",
-            extra_frontmatter={"source_url": source_url},
+            provenance_source=source_url, provenance_fetcher=fetcher,
+            extra_frontmatter={"source_url": source_url} if is_url else None,
             slug_override=name, title_override=title, tag_mode=tag_mode,
         )
 
     # Archive the original fetched artifact next to the raw body and record its
     # own sha256 in the sidecar.
     raw_dest = vault_path / "raw" / f"{name}.md"
-    _archive_asset(vault_path, name, asset, content_type, raw_dest)
+    _archive_asset(vault_path, name, asset, content_type, raw_dest, asset_ext)
     return page_path
 
 
