@@ -15,6 +15,7 @@ import os
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Sequence
 
 import httpx
 
@@ -115,21 +116,37 @@ def _extract_html(body: bytes | str) -> ExtractResult:
 
 def _extract_pdf(body: bytes | str, extractor: str) -> ExtractResult:
     data = body if isinstance(body, bytes) else body.encode()
+    markdown = pdf_to_markdown(data, extractor)
+    if not markdown or not markdown.strip():
+        raise ValueError("no text could be extracted from the PDF")
+    return ExtractResult(markdown=markdown.strip() + "\n", title=None)
+
+
+def pdf_to_markdown(data: bytes, extractor: str = "pymupdf4llm",
+                    pages: Sequence[int] | None = None) -> str:
+    """Return the markdown of a PDF, or of only ``pages`` (0-based page
+    numbers, in order) when given, from the named extractor (``pymupdf4llm``
+    by default, ``pdfplumber`` as the permissive alternative).
+
+    An unknown extractor or an unreadable PDF raises ``ValueError``. The result
+    may be empty (an empty range, or image-only pages); callers decide whether
+    that is an error.
+    """
+    if extractor == "pdfplumber":
+        run = _pdf_pdfplumber
+    elif extractor in ("pymupdf4llm", "", None):
+        run = _pdf_pymupdf4llm
+    else:
+        raise ValueError(f"unknown pdf_extractor: {extractor!r} "
+                         "(expected 'pymupdf4llm' or 'pdfplumber')")
+    if pages is not None and not pages:
+        return ""
     try:
-        if extractor == "pdfplumber":
-            markdown = _pdf_pdfplumber(data)
-        elif extractor in ("pymupdf4llm", "", None):
-            markdown = _pdf_pymupdf4llm(data)
-        else:
-            raise ValueError(f"unknown pdf_extractor: {extractor!r} "
-                             "(expected 'pymupdf4llm' or 'pdfplumber')")
+        return run(data, pages)
     except ValueError:
         raise
     except Exception as e:  # malformed/unreadable PDF -> a clean extractor failure
         raise ValueError(f"could not extract PDF: {e}") from e
-    if not markdown or not markdown.strip():
-        raise ValueError("no text could be extracted from the PDF")
-    return ExtractResult(markdown=markdown.strip() + "\n", title=None)
 
 
 @contextlib.contextmanager
@@ -155,19 +172,21 @@ def _silence_native_stdout():
         os.close(saved_fd)
 
 
-def _pdf_pymupdf4llm(data: bytes) -> str:
+def _pdf_pymupdf4llm(data: bytes, pages: Sequence[int] | None = None) -> str:
     import pymupdf
     import pymupdf4llm
 
     doc = pymupdf.open(stream=data, filetype="pdf")
+    kwargs = {} if pages is None else {"pages": list(pages)}
     with _silence_native_stdout():
-        return pymupdf4llm.to_markdown(doc, show_progress=False)
+        return pymupdf4llm.to_markdown(doc, show_progress=False, **kwargs)
 
 
-def _pdf_pdfplumber(data: bytes) -> str:
+def _pdf_pdfplumber(data: bytes, pages: Sequence[int] | None = None) -> str:
     import io
 
     import pdfplumber
 
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        return "\n\n".join((page.extract_text() or "") for page in pdf.pages)
+        chosen = pdf.pages if pages is None else [pdf.pages[i] for i in pages]
+        return "\n\n".join((page.extract_text() or "") for page in chosen)
