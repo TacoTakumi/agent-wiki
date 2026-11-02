@@ -116,13 +116,39 @@ def _resolve_title(extractor_title: str | None, markdown: str, slug: str) -> str
     return _first_h1(markdown) or slug
 
 
+# Subfolders of raw/ that hold no reingestable raws: archived originals and
+# extracted images (assets), conversation bundles (sessions). Any other
+# subfolder holds the chapter raws of one converted document.
+_RAW_NON_SOURCE_DIRS = ("assets", "sessions")
+
+
+def _is_reingestable_ref(ref: str) -> bool:
+    """A raw/ reference to a top-level raw or to a document's chapter raw."""
+    parts = ref.split("/")
+    return (parts[0] == "raw"
+            and (len(parts) == 2
+                 or (len(parts) == 3 and parts[1] not in _RAW_NON_SOURCE_DIRS)))
+
+
+def _match_raw(folder: Path, name: str) -> list[Path]:
+    """The file ``folder/name`` if it exists, else the files whose stem is
+    ``name``'s stem."""
+    direct = folder / name
+    if direct.is_file():
+        return [direct]
+    stem = Path(name).stem
+    return sorted(p for p in folder.iterdir()
+                  if p.is_file() and (p.name == name or p.stem == stem))
+
+
 def resolve_raw(vault_path: Path, name: str) -> Path:
     """Resolve a user-given raw name to a file in raw/.
 
-    Accepts 'foo', 'foo.md', or 'raw/foo.md'. Exact basename match wins; otherwise
-    a unique stem match is used. When no raw matches, the name is tried as a page
-    reference (see _raw_from_page). Raises FileNotFoundError if nothing matches and
-    ValueError if the name is ambiguous.
+    Accepts 'foo', 'foo.md', or 'raw/foo.md', and a document's chapter raw as
+    '<doc>/NN-slug', '<doc>/NN-slug.md' or 'raw/<doc>/NN-slug.md'. Exact
+    basename match wins; otherwise a unique stem match is used. When no raw
+    matches, the name is tried as a page reference (see _raw_from_page). Raises
+    FileNotFoundError if nothing matches and ValueError if the name is ambiguous.
     """
     raw_dir = vault_path / "raw"
     if not raw_dir.is_dir():
@@ -131,19 +157,19 @@ def resolve_raw(vault_path: Path, name: str) -> Path:
     name = original
     if name.startswith("raw/"):
         name = name[len("raw/"):]
-    name = Path(name).name  # drop any other path components
-    direct = raw_dir / name
-    if direct.is_file():
-        return direct
-    stem = Path(name).stem
-    candidates = sorted(
-        p for p in raw_dir.iterdir()
-        if p.is_file() and (p.name == name or p.stem == stem)
-    )
+    candidates: list[Path] = []
+    parts = name.split("/")
+    if len(parts) == 2 and _is_reingestable_ref(f"raw/{name}"):
+        doc_dir = raw_dir / parts[0]
+        if doc_dir.is_dir():
+            candidates = _match_raw(doc_dir, parts[1])
+    if not candidates:
+        name = Path(name).name  # drop any other path components
+        candidates = _match_raw(raw_dir, name)
     if len(candidates) == 1:
         return candidates[0]
     if len(candidates) > 1:
-        joined = ", ".join(p.name for p in candidates)
+        joined = ", ".join(p.relative_to(raw_dir).as_posix() for p in candidates)
         raise ValueError(f"ambiguous raw name {name!r}; matches: {joined}")
     from_page = _raw_from_page(vault_path, original)
     if from_page is not None:
@@ -185,9 +211,10 @@ def _raw_from_page(vault_path: Path, ref: str) -> Path | None:
         raise ValueError(f"ambiguous page reference {ref!r}; matches: {joined}")
     page_rel = pages[0].relative_to(vault_path)
     sources = parse_page(pages[0])["meta"].get("sources") or []
-    # Only top-level raw/ files are reingestable; raw/sessions/ bundles are not.
+    # Top-level raw/ files and document chapter raws are reingestable;
+    # raw/sessions/ bundles and raw/assets/ originals are not.
     raws = [s for s in sources
-            if isinstance(s, str) and s.startswith("raw/") and s.count("/") == 1
+            if isinstance(s, str) and _is_reingestable_ref(s)
             and (vault_path / s).is_file()]
     if not raws:
         raise FileNotFoundError(
@@ -263,6 +290,13 @@ def ingest_file(
     vocab = _load_vocab(vault_config, tag_mode)
     raw_ref = f"raw/{source.name}"
     raw_dest = vault_path / "raw" / source.name
+    # A document's chapter raw (raw/<doc>/<file>) is reingested in place.
+    raw_dir = (vault_path / "raw").resolve()
+    chapter_raw = (source.resolve().parent.parent == raw_dir
+                   and source.parent.name not in _RAW_NON_SOURCE_DIRS)
+    if chapter_raw:
+        raw_ref = f"raw/{source.parent.name}/{source.name}"
+        raw_dest = source
 
     if raw_dest.exists() and not update:
         raise FileExistsError(
@@ -325,7 +359,12 @@ def ingest_file(
                         diff=diff,
                     )
             eff_topic = topic or old_meta.get("topic") or vault_config.get("default_topic")
-            if eff_topic:
+            if chapter_raw:
+                # A chapter page keeps its "<chapter> (<document>)" title and
+                # its place in the document folder; the raw holds only the body.
+                title = old_meta.get("title", title)
+                new_path = old_path
+            elif eff_topic:
                 new_path = vault_path / eff_topic / f"{slug}.md"
                 if new_path.resolve() != old_path.resolve() and new_path.exists():
                     raise ValueError(
@@ -380,7 +419,8 @@ def ingest_file(
         stamp_render_hash(new_path)
         if new_path.resolve() != old_path.resolve():
             old_path.unlink()
-        append_log(vault_path, "update", f"{source.name} -> {eff_topic}/{slug}.md")
+        append_log(vault_path, "update",
+                   f"{raw_ref[len('raw/'):]} -> {new_path.relative_to(vault_path).as_posix()}")
         return new_path
 
     # Fresh page: a normal ingest, or an update whose raw had no linked page.

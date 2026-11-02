@@ -435,3 +435,67 @@ def test_lint_reports_unreadable_pages_and_keeps_going(tmp_vault):
     # The good page is still audited.
     assert any(i["type"] == "broken_wikilink" and i["path"] == "research/good.md"
                for i in issues)
+
+
+# --- converted documents and nested raws ---------------------------------------
+# A document lands as a parent page, chapter pages under <topic>/<doc>/, chapter
+# raws under raw/<doc>/ and the archived original under raw/assets/.
+
+def _ingest_document(vault, src):
+    from agent_wiki.documents import ingest_document
+    from agent_wiki.index import rebuild_index
+    result = ingest_document(src, vault)
+    rebuild_index(vault)  # ingest never rebuilds the index; any ingest needs it
+    return result
+
+
+def test_lint_document_ingest_is_clean(tmp_vault, tmp_path):
+    from convert_fixtures import build_epub
+    result = _ingest_document(tmp_vault, build_epub(tmp_path / "book.epub"))
+    assert result.chapters == 3
+    assert lint_vault(tmp_vault) == []
+
+
+def test_lint_html_document_parent_is_not_compared_with_archived_original(
+        tmp_vault, tmp_path):
+    # The archived HTML is text, but it is the conversion input, not the
+    # parent page body, so it must not count as raw/page drift.
+    from convert_fixtures import build_html
+    result = _ingest_document(tmp_vault, build_html(tmp_path / "doc.html"))
+    assert result.chapters > 1
+    assert (tmp_vault / "raw" / "assets" / "sample-document.html").is_file()
+    assert lint_vault(tmp_vault) == []
+
+
+def test_lint_document_parent_without_document_field_is_still_an_orphan(tmp_vault):
+    _create_page(tmp_vault, "research", "lonely", "Lonely", "body\n")
+    assert [i["path"] for i in lint_vault(tmp_vault) if i["type"] == "orphan"] == [
+        "research/lonely.md"]
+
+
+def test_lint_nested_raw_stray_file_is_one_raw_issue(tmp_vault, tmp_path):
+    from convert_fixtures import build_epub
+    _ingest_document(tmp_vault, build_epub(tmp_path / "book.epub"))
+    (tmp_vault / "raw" / "a-book" / "99-stray.md").write_text("stray\n")
+    issues = lint_vault(tmp_vault)
+    assert [(i["type"], i["path"]) for i in issues] == [
+        ("raw_not_ingested", "raw/a-book/99-stray.md")]
+    assert "a-book/99-stray.md" in issues[0]["detail"]
+
+
+def test_lint_nested_raw_skips_assets_and_sessions(tmp_vault, tmp_path):
+    from convert_fixtures import build_epub
+    _ingest_document(tmp_vault, build_epub(tmp_path / "book.epub"))
+    (tmp_vault / "raw" / "assets" / "loose.html").write_text("<p>x</p>\n")
+    (tmp_vault / "raw" / "sessions").mkdir(exist_ok=True)
+    (tmp_vault / "raw" / "sessions" / "s.md").write_text("bundle\n")
+    assert lint_vault(tmp_vault) == []
+
+
+def test_lint_nested_raw_source_drift(tmp_vault, tmp_path):
+    from convert_fixtures import build_epub
+    _ingest_document(tmp_vault, build_epub(tmp_path / "book.epub"))
+    raw = tmp_vault / "raw" / "a-book" / "02-chapter-two.md"
+    raw.write_text(raw.read_text() + "\nedited in place\n")
+    types = {(i["type"], i["path"]) for i in lint_vault(tmp_vault)}
+    assert ("source_drift", "raw/a-book/02-chapter-two.md") in types

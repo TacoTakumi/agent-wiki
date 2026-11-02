@@ -32,6 +32,11 @@ LINT_TYPES = (
     "tag_audit",
 )
 
+# Subfolders of raw/ that hold no page sources of their own: archived originals
+# and extracted images (assets), conversation bundles (sessions). Every other
+# subfolder holds the chapter raws of one converted document.
+_RAW_NON_SOURCE_DIRS = ("assets", "sessions")
+
 
 def _as_date(value) -> date | None:
     """Coerce a frontmatter/sidecar date value to a ``date``. Handles ``date``,
@@ -128,7 +133,10 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
 
             title = page["meta"].get("title", md_file.stem)
             all_titles.add(title)
-            all_pages.append({"title": title, "path": rel})
+            # A document's parent page is the entry point to its chapters;
+            # nothing in the document links back to it, so it is no orphan.
+            is_parent = bool(page["meta"].get("document")) and "chapter" not in page["meta"]
+            all_pages.append({"title": title, "path": rel, "is_parent": is_parent})
 
             # index-completeness: a frontmatter-bearing page should appear in
             # index.md. Guarded on meta because rebuild_index only lists pages
@@ -143,7 +151,9 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
 
             # raw <-> page body drift (read-only; direction-neutral report)
             for src in (page["meta"].get("sources") or []):
-                if not src.startswith("raw/"):
+                # An archived original under raw/assets/ is the input of a
+                # conversion, not the text of the page body.
+                if not src.startswith("raw/") or src.startswith("raw/assets/"):
                     continue
                 raw_path = vault_path / src
                 if not raw_path.is_file():
@@ -226,7 +236,7 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
 
     # Check orphan pages (no incoming links)
     for p in all_pages:
-        if p["title"] not in pages_with_incoming_links:
+        if p["title"] not in pages_with_incoming_links and not p["is_parent"]:
             issues.append({
                 "type": "orphan",
                 "path": str(p["path"]),
@@ -249,9 +259,17 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
                 for src in page["meta"].get("sources", []):
                     referenced_raw.add(src)
 
-        for raw_file in raw_dir.iterdir():
-            if raw_file.is_file() and not is_sidecar(raw_file):
-                raw_ref = f"raw/{raw_file.name}"
+        # Top-level raws plus one level of document folders (raw/<doc>/<file>).
+        raw_files = []
+        for entry in sorted(raw_dir.iterdir()):
+            if entry.is_file():
+                raw_files.append(entry)
+            elif entry.is_dir() and entry.name not in _RAW_NON_SOURCE_DIRS:
+                raw_files.extend(sorted(p for p in entry.iterdir() if p.is_file()))
+
+        for raw_file in raw_files:
+            if not is_sidecar(raw_file):
+                raw_ref = raw_file.relative_to(vault_path).as_posix()
                 sidecar = load_sidecar(raw_file)
 
                 # source-drift: a raw edited in place no longer matches the sha256
@@ -288,7 +306,7 @@ def lint_vault(vault_path: Path, *, refetch: bool = False,
                     issues.append({
                         "type": "raw_not_ingested",
                         "path": raw_ref,
-                        "detail": f"{raw_file.name} in raw/ has no wiki page",
+                        "detail": f"{raw_ref[len('raw/'):]} in raw/ has no wiki page",
                     })
 
     return issues

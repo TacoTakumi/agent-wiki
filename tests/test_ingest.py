@@ -582,3 +582,73 @@ def test_tofu_unhashed_diverged_page_refuses_then_force_stamps(tmp_vault, tmp_pa
     parsed = parse_page(forced)
     assert parsed["meta"]["render_hash"] == render_hash(parsed["body"])  # stamped
     assert "hand edit" not in parsed["body"]                            # rebuilt from raw
+
+
+# --- nested chapter raws of a converted document -------------------------------
+
+def _ingest_book(vault, tmp_path):
+    from convert_fixtures import build_epub
+    from agent_wiki.documents import ingest_document
+    ingest_document(build_epub(tmp_path / "book.epub"), vault)
+    return vault / "raw" / "a-book" / "02-chapter-two.md"
+
+
+@pytest.mark.parametrize("name", [
+    "a-book/02-chapter-two", "a-book/02-chapter-two.md",
+    "raw/a-book/02-chapter-two.md", "research/a-book/02-chapter-two",
+    "research/a-book/02-chapter-two.md", "Chapter Two (A Book)",
+    "chapter two (a book)",
+])
+def test_resolve_raw_nested_chapter(tmp_vault, tmp_path, name):
+    from agent_wiki.ingest import resolve_raw
+    raw = _ingest_book(tmp_vault, tmp_path)
+    assert resolve_raw(tmp_vault, name) == raw
+
+
+def test_resolve_raw_nested_name_does_not_reach_assets(tmp_vault, tmp_path):
+    from agent_wiki.ingest import resolve_raw
+    _ingest_book(tmp_vault, tmp_path)
+    with pytest.raises(FileNotFoundError):
+        resolve_raw(tmp_vault, "assets/a-book.epub")
+
+
+def _assert_chapter_page_kept(vault, page):
+    meta = parse_page(page)["meta"]
+    assert meta["title"] == "Chapter Two (A Book)"
+    assert meta["document"] == "a-book"
+    assert meta["chapter"] == 2
+    assert meta["sources"] == ["raw/a-book/02-chapter-two.md"]
+    assert sorted(p.name for p in (vault / "research").glob("*.md")) == ["a-book.md"]
+    assert sorted(p.name for p in (vault / "research" / "a-book").glob("*.md")) == [
+        "01-chapter-one.md", "02-chapter-two.md", "03-chapter-three.md"]
+
+
+def test_reingest_nested_chapter_by_title_rerenders_body(tmp_vault, tmp_path):
+    from agent_wiki.service import LocalVaultService
+    raw = _ingest_book(tmp_vault, tmp_path)
+    raw.write_text(raw.read_text() + "\nAdded in the raw.\n")
+    out = LocalVaultService(tmp_vault).reingest("Chapter Two (A Book)")
+    assert out["page"] == "research/a-book/02-chapter-two.md"
+    page = tmp_vault / out["page"]
+    parsed = parse_page(page)
+    assert parsed["body"].strip() == raw.read_text().strip()
+    _assert_chapter_page_kept(tmp_vault, page)
+    assert "update: a-book/02-chapter-two.md -> research/a-book/02-chapter-two.md" in (
+        tmp_vault / "log.md").read_text()
+
+
+def test_cli_raw_and_reingest_nested_name(tmp_config, tmp_vault, tmp_path):
+    from click.testing import CliRunner
+    from agent_wiki.cli import cli
+    raw = _ingest_book(tmp_vault, tmp_path)
+    runner = CliRunner()
+    out = runner.invoke(cli, ["raw", "a-book/02-chapter-two"])
+    assert out.exit_code == 0, out.output
+    assert out.output.strip() == str(raw)
+    raw.write_text(raw.read_text() + "\nAdded in the raw.\n")
+    out = runner.invoke(cli, ["reingest", "a-book/02-chapter-two"])
+    assert out.exit_code == 0, out.output
+    assert "-> research/a-book/02-chapter-two.md" in out.output
+    page = tmp_vault / "research" / "a-book" / "02-chapter-two.md"
+    assert "Added in the raw." in parse_page(page)["body"]
+    _assert_chapter_page_kept(tmp_vault, page)
