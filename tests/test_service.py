@@ -218,3 +218,71 @@ def test_rebuild_index_uses_index_lock(tmp_vault, monkeypatch, tmp_path):
     monkeypatch.setattr("agent_wiki.service.file_lock", traced)
     _svc(tmp_vault).rebuild_index()
     assert names == ["index"]
+
+
+# --- local documents: dispatch by extension ---------------------------------
+
+
+def _vault_tree(vault):
+    return {str(p.relative_to(vault)): p.read_bytes()
+            for p in sorted(vault.rglob("*")) if p.is_file()}
+
+
+def test_ingest_document_epub_goes_to_the_converter(tmp_vault, tmp_path):
+    from convert_fixtures import build_epub
+    src = build_epub(tmp_path / "book.epub")
+    out = _svc(tmp_vault).ingest(src, topic="research")
+    assert out["page"] == "research/a-book.md"
+    assert out["title"] == "A Book"
+    assert out["topic"] == "research"
+    assert out["sources"] == ["raw/assets/a-book.epub"]
+    assert out["chapters"] == 3
+    assert (tmp_vault / "research" / "a-book" / "01-chapter-one.md").exists()
+
+
+@pytest.mark.parametrize("name", ["note.md", "note.txt"])
+def test_ingest_document_plain_text_keeps_verbatim_body(tmp_vault, tmp_path, name):
+    from agent_wiki.page import parse_page
+    content = "# Plain Note\n\n<b>kept</b> as is\n"
+    src = tmp_path / name
+    src.write_text(content)
+    out = _svc(tmp_vault).ingest(src, topic="research")
+    assert out["chapters"] == 1
+    assert out["sources"] == [f"raw/{name}"]
+    assert parse_page(tmp_vault / out["page"])["body"].strip() == content.strip()
+
+
+def test_ingest_document_html_is_converted_markdown(tmp_vault, tmp_path):
+    from convert_fixtures import build_html
+    from agent_wiki.page import parse_page
+    src = build_html(tmp_path / "page.HTM", sections=[(1, "Only Heading", "Body.")],
+                     nav=False, image=None)
+    out = _svc(tmp_vault).ingest(src, topic="research")
+    assert out["chapters"] == 1
+    body = parse_page(tmp_vault / out["page"])["body"]
+    assert "# Only Heading" in body
+    assert "<h1" not in body and "<p>" not in body
+
+
+@pytest.mark.parametrize("name", ["x.pdf", "x.epub"])
+def test_ingest_mismatch_raises_value_error_and_vault_unchanged(tmp_vault, tmp_path, name):
+    src = tmp_path / name
+    src.write_text("just some plain text, not the format the name claims\n")
+    before = _vault_tree(tmp_vault)
+    with pytest.raises(ValueError):
+        _svc(tmp_vault).ingest(src, topic="research")
+    assert _vault_tree(tmp_vault) == before
+
+
+def test_reingest_legacy_html_raw_stays_verbatim_not_a_document(tmp_vault, tmp_path):
+    # An .html filed verbatim before documents were converted is rebuilt from
+    # its raw as before; reingest does not run it through the converter.
+    src = tmp_path / "legacy.html"
+    src.write_text("<h1>Legacy</h1>\n<p>kept</p>\n")
+    page = ingest_file(src, tmp_vault, topic="research")
+    before = page.read_text()
+    out = _svc(tmp_vault).reingest("legacy.html")
+    assert out["page"] == str(page.relative_to(tmp_vault))
+    assert "<p>kept</p>" in page.read_text()
+    assert not (tmp_vault / "raw" / "assets").exists()
+    assert before.split("---", 2)[2] == page.read_text().split("---", 2)[2]

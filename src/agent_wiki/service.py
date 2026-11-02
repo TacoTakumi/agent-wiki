@@ -16,6 +16,7 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.context import run_context
 from agent_wiki.conversation import BUNDLE_SUBDIR, write_bundle
 from agent_wiki.conversation import ingest_conversation as _ingest_conversation
+from agent_wiki.documents import DOCUMENT_SUFFIXES, ingest_document
 from agent_wiki.doctor import (
     RawContentDrift, RenderHashDivergent, SourcePathMissing, run_checks,
 )
@@ -179,11 +180,27 @@ class LocalVaultService(VaultService):
     def ingest(self, source: Path, topic: str | None = None,
                tags: list[str] | None = None, update: bool = False,
                force: bool = False, tag_mode: str | None = None) -> dict:
+        """Ingest a local file. A .pdf, .html, .htm or .epub is converted to
+        markdown (one page, or a parent plus one page per chapter); every other
+        file is copied verbatim. The result's ``chapters`` is the number of
+        chapter pages written (1 for a single page)."""
+        if Path(source).suffix.lower() in DOCUMENT_SUFFIXES:
+            with file_lock(self.vault_path, "log"):
+                result = ingest_document(Path(source), self.vault_path, topic=topic,
+                                         tags=tags, tag_mode=tag_mode)
+            return {**self._page_result(result.page, topic),
+                    "chapters": result.chapters}
+        return self._ingest_verbatim(source, topic=topic, tags=tags, update=update,
+                                     force=force, tag_mode=tag_mode)
+
+    def _ingest_verbatim(self, source: Path, topic: str | None = None,
+                         tags: list[str] | None = None, update: bool = False,
+                         force: bool = False, tag_mode: str | None = None) -> dict:
         with file_lock(self.vault_path, "log"):
             page_path = ingest_file(source, self.vault_path, topic=topic,
                                     tags=tags, update=update, force=force,
                                     tag_mode=tag_mode)
-        return self._page_result(page_path, topic)
+        return {**self._page_result(page_path, topic), "chapters": 1}
 
     def ingest_url(self, url: str, topic: str | None = None,
                    tags: list[str] | None = None, update: bool = False,
@@ -221,8 +238,10 @@ class LocalVaultService(VaultService):
 
     def reingest(self, name: str, force: bool = False) -> dict:
         raw_path = resolve_raw(self.vault_path, name)
-        # In-place rebuild: ingest_file detects samefile and skips the copy.
-        return self.ingest(raw_path, update=True, force=force)
+        # In-place rebuild: ingest_file detects samefile and skips the copy. A
+        # raw with a document extension (an .html filed verbatim before
+        # documents were converted) is rebuilt verbatim too, not converted.
+        return self._ingest_verbatim(raw_path, update=True, force=force)
 
     def ingest_conversation(self, bundle: Path, no_summarize: bool = False) -> dict:
         config = load_vault_config(self.vault_path)

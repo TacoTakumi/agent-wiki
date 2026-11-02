@@ -1,3 +1,4 @@
+import pytest
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -720,3 +721,74 @@ def test_init_name_rejects_illegal_and_duplicate_names(tmp_path, monkeypatch):
         cli, ["init", str(tmp_path / "v3"), "--name", "personal"])
     assert dup.exit_code != 0
     assert not (tmp_path / "v3").exists()
+
+
+# --- local documents: dispatch by extension and the result line -------------
+
+
+def _vault_tree(vault):
+    return {str(p.relative_to(vault)): p.read_bytes()
+            for p in sorted(vault.rglob("*")) if p.is_file()}
+
+
+def test_ingest_document_epub_line_carries_chapter_count(tmp_path, monkeypatch):
+    from convert_fixtures import build_epub
+    vault = _setup_vault(tmp_path, monkeypatch)
+    src = build_epub(tmp_path / "src" / "book.epub")
+    result = CliRunner().invoke(cli, ["ingest", str(src)])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "Ingested book.epub -> research/a-book.md (3 chapters)\n"
+    assert (vault / "research" / "a-book" / "03-chapter-three.md").exists()
+
+
+def test_ingest_document_single_chapter_line_has_no_count(tmp_path, monkeypatch):
+    from convert_fixtures import build_html
+    _setup_vault(tmp_path, monkeypatch)
+    src = build_html(tmp_path / "src" / "one.html",
+                     sections=[(1, "Only Heading", "Body.")], nav=False, image=None)
+    result = CliRunner().invoke(cli, ["ingest", str(src)])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == "Ingested one.html -> research/sample-document.md\n"
+
+
+@pytest.mark.parametrize("name", ["notes.md", "notes.txt"])
+def test_ingest_document_dispatch_leaves_md_and_txt_unchanged(tmp_path, monkeypatch, name):
+    from agent_wiki.page import parse_page
+    vault = _setup_vault(tmp_path, monkeypatch)
+    content = "# Plain Notes\n\n<p>kept verbatim</p>\n"
+    src = tmp_path / name
+    src.write_text(content)
+    result = CliRunner().invoke(cli, ["ingest", str(src)])
+    assert result.exit_code == 0, result.output
+    assert result.stdout == f"Ingested {name} -> research/plain-notes.md\n"
+    assert parse_page(vault / "research" / "plain-notes.md")["body"].strip() == content.strip()
+
+
+@pytest.mark.parametrize("name", ["x.pdf", "x.epub"])
+def test_ingest_mismatch_document_prints_error_and_exits_1(tmp_path, monkeypatch, name):
+    vault = _setup_vault(tmp_path, monkeypatch)
+    src = tmp_path / name
+    src.write_text("plain text, not the format the name claims\n")
+    before = _vault_tree(vault)
+    result = CliRunner().invoke(cli, ["ingest", str(src)])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    lines = result.stderr.splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith(f"error: could not ingest {name}: ")
+    assert _vault_tree(vault) == before
+
+
+def test_ingest_mismatch_does_not_change_the_md_skip_line(tmp_path, monkeypatch):
+    # A ValueError on a non-document file keeps its existing 'skipped:' line.
+    _setup_vault(tmp_path, monkeypatch)
+
+    def refuse(*args, **kwargs):
+        raise ValueError("refused for the test")
+
+    monkeypatch.setattr("agent_wiki.service.ingest_file", refuse)
+    src = tmp_path / "notes.md"
+    src.write_text("# Notes\n\nbody\n")
+    result = CliRunner().invoke(cli, ["ingest", str(src)])
+    assert result.exit_code == 1
+    assert result.stderr == "skipped: notes.md: refused for the test\n"

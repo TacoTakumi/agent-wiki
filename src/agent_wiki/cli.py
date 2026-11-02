@@ -11,6 +11,7 @@ from agentsquire.cli import skills_command_group
 from agent_wiki import __version__
 from agent_wiki.adapters import ADAPTER_NAMES
 from agent_wiki.config import get_vault_path
+from agent_wiki.documents import DOCUMENT_SUFFIXES
 from agent_wiki.doctor import (
     RawContentDrift, RenderHashDivergent, RenderHashUnstamped,
     SourcePathMissing, run_checks,
@@ -566,7 +567,9 @@ def ingest(files, topic, tags, update, force, tag_mode):
             out = svc.ingest(path, topic=topic, tags=tag_list, update=update,
                              force=force, tag_mode=tag_mode)
             verb = "Updated" if update else "Ingested"
-            click.echo(f"{verb} {path.name} -> {out['page']}")
+            chapters = out.get("chapters", 1)
+            count = f" ({chapters} chapters)" if chapters > 1 else ""
+            click.echo(f"{verb} {path.name} -> {out['page']}{count}")
         except PageDriftError as e:
             click.echo(f"refused: {path.name}: {e}", err=True)
             if e.diff:
@@ -580,7 +583,13 @@ def ingest(files, topic, tags, update, force, tag_mode):
             click.echo(f"skipped: {e}", err=True)
             skipped += 1
         except ValueError as e:
-            click.echo(f"skipped: {path.name}: {e}", err=True)
+            if path.suffix.lower() in DOCUMENT_SUFFIXES:
+                # A document that cannot be converted (content does not match
+                # its extension): the same one-line error as a failed URL.
+                msg = " ".join(str(e).split())
+                click.echo(f"error: could not ingest {path.name}: {msg}", err=True)
+            else:
+                click.echo(f"skipped: {path.name}: {e}", err=True)
             skipped += 1
     if skipped:
         sys.exit(1)
