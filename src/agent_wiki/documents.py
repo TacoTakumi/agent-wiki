@@ -10,9 +10,10 @@ it is laid out as:
 - <topic>/<doc>.md                  the parent: metadata, cover line, chapter links
 - <topic>/<doc>/NN-<chapter-slug>.md one page per chapter
 
-where <doc> is the slug of the document title. A chapter raw holds exactly the
-chapter page body, image references included (written relative to the page),
-so rebuilding a chapter page from its raw is a plain render.
+where <doc> is the slug of the document title ('<slug>-document' when the
+slug names a reserved raw/ folder, sessions or assets). A chapter raw holds
+exactly the chapter page body, image references included (written relative to
+the page), so rebuilding a chapter page from its raw is a plain render.
 
 Ingesting a document whose files are already in the vault needs ``update``: the
 new conversion replaces the whole set, and files the old set owned that the new
@@ -23,14 +24,15 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NamedTuple
 
 from agent_wiki.config import load_vault_config
 from agent_wiki.convert.model import ConvertedDocument
 from agent_wiki.convert.split import format_ordinal
 from agent_wiki.ingest import (
-    PageDriftError, _load_vocab, _resolve_tags, _write_sidecar, ingest_extracted,
+    _RAW_NON_SOURCE_DIRS, PageDriftError, _load_vocab, _resolve_tags, _write_sidecar,
+    ingest_extracted,
 )
 from agent_wiki.log import append_log
 from agent_wiki.page import (
@@ -39,6 +41,8 @@ from agent_wiki.page import (
 )
 
 DOCUMENT_SUFFIXES = frozenset({".pdf", ".html", ".htm", ".epub"})
+# The image types extracted under raw/assets/<doc>/: the types the viewer serves.
+_IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"})
 
 
 class DocumentIngest(NamedTuple):
@@ -97,10 +101,17 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
     pages keep their ``created`` (matched by raw path), the parent keeps its
     ``created``, topic and tags unless new ones are given, and the pages, raws,
     sidecars and extracted images the new conversion no longer produces are
-    deleted. A chapter page edited by hand since it was written refuses the
-    update with a diff unless ``force``.
+    deleted. A chapter or parent page edited by hand since it was written
+    refuses the update with a diff unless ``force``. A conversion with no
+    chapters is refused.
     """
+    if not doc.chapters:
+        raise ValueError(f"no content: {source.name} converted to no chapters")
     name = slugify(doc.title) or slugify(source.stem) or "document"
+    if name in _RAW_NON_SOURCE_DIRS:
+        # raw/<doc>/ holds the chapter raws, and raw/assets/ and raw/sessions/
+        # hold other files an update would otherwise count as the document's.
+        name = f"{name}-document"
     ext = source.suffix.lower()
     archive = vault_path / "raw" / "assets" / f"{name}{ext}"
     if not update:
@@ -115,15 +126,20 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
     if doc.cover and len(doc.chapters) > 1:
         members.append(doc.cover)
     for member in members:
-        path = PurePosixPath(member)
-        if path.is_absolute() or ".." in path.parts:
-            raise ValueError(f"unsafe image path in document: {member}")
+        _check_member(member, assets_dir)
 
     vault_config = load_vault_config(vault_path)
     old = (_existing_set(vault_path, name, vault_config.get("topics", []))
            if update else _DocumentSet())
+    titles = [f"{chapter.title} ({doc.title})" for chapter in doc.chapters]
+    if len(doc.chapters) == 1:
+        new_top = _rewrite_images(doc.chapters[0].markdown, doc.chapters[0].images,
+                                  f"../raw/assets/{name}")
+    else:
+        cover = f"![cover](../raw/assets/{name}/{doc.cover})\n\n" if doc.cover else ""
+        new_top = cover + "\n".join(f"- [[{t}]]" for t in titles) + "\n"
     if not force:
-        _check_drift(vault_path, old)
+        _check_drift(vault_path, old, new_top)
     eff_tags = tags if tags is not None else old.tags
 
     if len(doc.chapters) == 1:
@@ -131,8 +147,7 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
         page = ingest_extracted(
             vault_path, source_url=provenance_source or str(source),
             content_type="application/octet-stream", asset=source.read_bytes(),
-            markdown=_rewrite_images(chapter.markdown, chapter.images,
-                                     f"../raw/assets/{name}"),
+            markdown=new_top,
             extractor_title=doc.title, topic=topic or old.topic, tags=eff_tags,
             update=update, force=force, tag_mode=tag_mode,
             name=name, fetcher="local", asset_ext=ext,
@@ -161,9 +176,8 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
     page_dir = vault_path / eff_topic / name
     raw_dir.mkdir(parents=True, exist_ok=True)
     page_dir.mkdir(parents=True, exist_ok=True)
-    links = []
     written: set[Path] = set()
-    for chapter in doc.chapters:
+    for chapter, title in zip(doc.chapters, titles):
         ordinal = format_ordinal(chapter.ordinal, total)
         slug = slugify(chapter.title)
         stem = f"{ordinal}-{slug}" if slug else ordinal
@@ -172,7 +186,6 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
         raw = raw_dir / f"{stem}.md"
         raw.write_text(body)
         _write_sidecar(raw, source=provenance_source or str(source), fetcher="local")
-        title = f"{chapter.title} ({doc.title})"
         raw_ref = f"raw/{name}/{stem}.md"
         _write_page(page_dir / f"{stem}.md", {
             "title": title,
@@ -184,10 +197,8 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
             "updated": today,
             "sources": [raw_ref],
         }, body)
-        links.append(f"- [[{title}]]")
         written.update({raw, sidecar_path(raw), page_dir / f"{stem}.md"})
 
-    cover = f"![cover](../raw/assets/{name}/{doc.cover})\n\n" if doc.cover else ""
     parent = vault_path / eff_topic / f"{name}.md"
     _write_page(parent, {
         "title": doc.title,
@@ -198,7 +209,7 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
         "updated": today,
         "sources": [f"raw/assets/{name}{ext}"],
         **doc.metadata,
-    }, cover + "\n".join(links) + "\n")
+    }, new_top)
     _remove_stale(old, written | {parent}, archive, assets_dir, members)
     append_log(vault_path, "update" if update else "ingest",
                f"{source.name} -> {eff_topic}/{name}.md ({total} chapters)")
@@ -210,10 +221,12 @@ class _DocumentSet:
     """The files a document already in the vault owns, as an update finds them.
 
     ``guarded`` holds (page, parsed page, raw ref) for every page generated from
-    a raw (chapter pages, or the single page); ``files`` every page, raw and
+    a raw (chapter pages, or the single page); ``parent`` the multi-chapter
+    parent page, which has no text raw; ``files`` every page, raw and
     sidecar of the set; ``archive`` the archived original it records."""
 
     guarded: list[tuple[Path, dict, str | None]] = field(default_factory=list)
+    parent: tuple[Path, dict] | None = None
     files: list[Path] = field(default_factory=list)
     dirs: list[Path] = field(default_factory=list)
     topic: str | None = None
@@ -253,6 +266,7 @@ def _existing_set(vault_path: Path, name: str, topics: list[str]) -> _DocumentSe
             meta = parsed["meta"] or {}
             sources = meta.get("sources") or []
             if meta.get("document") == name and "chapter" not in meta:
+                found.parent = (top, parsed)
                 for ref in sources:
                     found.archive = (found.archive
                                      or _document_archive(vault_path, name, ref))
@@ -289,11 +303,22 @@ def _existing_set(vault_path: Path, name: str, topics: list[str]) -> _DocumentSe
     return found
 
 
-def _check_drift(vault_path: Path, found: _DocumentSet) -> None:
+def _check_drift(vault_path: Path, found: _DocumentSet, new_top: str) -> None:
     """Refuse, with a diff per page, when any page of ``found`` was edited by
     hand since it was written: its body no longer hashes to its stored
-    render_hash (or, for an unstamped page, differs from its raw). Reads only."""
+    render_hash (or, for an unstamped page, differs from its raw). The parent
+    has no text raw, so it is checked by its render_hash only and diffed
+    against ``new_top``, the body the write puts at its path. Reads only."""
     problems, diffs = [], []
+    if found.parent is not None:
+        page, parsed = found.parent
+        body, stored = parsed["body"], (parsed["meta"] or {}).get("render_hash")
+        if stored is not None and render_hash(body) != stored:
+            rel = page.relative_to(vault_path).as_posix()
+            lost = page_lines_lost(body, new_top)
+            problems.append(f"page {rel} was edited by hand: {lost} page line(s) "
+                            f"are not in the new conversion")
+            diffs.append(page_raw_diff(body, new_top, f"page:{rel}", f"new:{rel}"))
     for page, parsed, raw_ref in found.guarded:
         meta, body = parsed["meta"] or {}, parsed["body"]
         raw_text = None
@@ -324,6 +349,21 @@ def _check_drift(vault_path: Path, found: _DocumentSet) -> None:
             "pass --force to discard the edits.",
             diff="".join(diffs),
         )
+
+
+def _check_member(member: str, assets_dir: Path) -> None:
+    """Refuse an image member that is not a plain relative path to an image
+    file inside ``assets_dir``: absolute, drive or UNC paths, backslashes,
+    '..', a suffix other than an image type, or a target that resolves outside
+    the folder (a symlink already in it). Reads only."""
+    path = PurePosixPath(member)
+    win = PureWindowsPath(member)
+    target = assets_dir / member
+    if ("\\" in member or path.is_absolute() or ".." in path.parts
+            or win.drive or win.root
+            or path.suffix.lower() not in _IMAGE_SUFFIXES
+            or not target.resolve().is_relative_to(assets_dir.resolve())):
+        raise ValueError(f"unsafe image path in document: {member}")
 
 
 def _remove_stale(found: _DocumentSet, keep: set[Path], archive: Path,
