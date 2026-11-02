@@ -191,6 +191,7 @@ class LocalVaultService(VaultService):
             with file_lock(self.vault_path, "log"):
                 result = ingest_document(Path(source), self.vault_path, topic=topic,
                                          tags=tags, tag_mode=tag_mode,
+                                         update=update, force=force,
                                          provenance_source=provenance_source)
             return {**self._page_result(result.page, topic),
                     "chapters": result.chapters}

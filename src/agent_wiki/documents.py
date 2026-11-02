@@ -13,10 +13,15 @@ it is laid out as:
 where <doc> is the slug of the document title. A chapter raw holds exactly the
 chapter page body, image references included (written relative to the page),
 so rebuilding a chapter page from its raw is a plain render.
+
+Ingesting a document whose files are already in the vault needs ``update``: the
+new conversion replaces the whole set, and files the old set owned that the new
+one no longer produces are deleted.
 """
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
@@ -25,10 +30,13 @@ from agent_wiki.config import load_vault_config
 from agent_wiki.convert.model import ConvertedDocument
 from agent_wiki.convert.split import format_ordinal
 from agent_wiki.ingest import (
-    _load_vocab, _resolve_tags, _write_sidecar, ingest_extracted,
+    PageDriftError, _load_vocab, _resolve_tags, _write_sidecar, ingest_extracted,
 )
 from agent_wiki.log import append_log
-from agent_wiki.page import render_page, slugify, stamp_render_hash
+from agent_wiki.page import (
+    is_sidecar, load_sidecar, page_lines_lost, page_raw_diff, page_raw_diverged,
+    parse_page, render_hash, render_page, sidecar_path, slugify, stamp_render_hash,
+)
 
 DOCUMENT_SUFFIXES = frozenset({".pdf", ".html", ".htm", ".epub"})
 
@@ -57,8 +65,8 @@ def convert_document(source: Path, pdf_extractor: str = "pymupdf4llm") -> Conver
 
 
 def ingest_document(source: Path, vault_path: Path, topic: str | None = None,
-                    tags: list[str] | None = None,
-                    tag_mode: str | None = None,
+                    tags: list[str] | None = None, tag_mode: str | None = None,
+                    update: bool = False, force: bool = False,
                     provenance_source: str | None = None) -> DocumentIngest:
     """Convert ``source`` and write it into the vault (see ``write_document``).
     The PDF extractor is the vault's ``pdf_extractor`` setting.
@@ -68,28 +76,40 @@ def ingest_document(source: Path, vault_path: Path, topic: str | None = None,
     pdf_extractor = load_vault_config(vault_path).get("pdf_extractor", "pymupdf4llm")
     doc = convert_document(source, pdf_extractor=pdf_extractor)
     return write_document(doc, source, vault_path, topic=topic, tags=tags,
-                          tag_mode=tag_mode, provenance_source=provenance_source)
+                          tag_mode=tag_mode, update=update, force=force,
+                          provenance_source=provenance_source)
 
 
 def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
                    topic: str | None = None, tags: list[str] | None = None,
-                   tag_mode: str | None = None,
+                   tag_mode: str | None = None, update: bool = False,
+                   force: bool = False,
                    provenance_source: str | None = None) -> DocumentIngest:
     """Write a converted document, archiving ``source`` as its original.
 
-    Every check (existing archive, unsafe image path, topic, tags) runs before
-    the first write, so a refusal leaves the vault unchanged. ``topic`` and
-    ``tags`` apply to the parent and every chapter; tags are canonicalized once
-    against the vault vocabulary. Appends one log entry.
+    Every check (existing archive, unsafe image path, hand-edited pages, topic,
+    tags) runs before the first write, so a refusal leaves the vault unchanged.
+    ``topic`` and ``tags`` apply to the parent and every chapter; tags are
+    canonicalized once against the vault vocabulary. Appends one log entry.
+
+    Without ``update`` a document already in the vault is refused. With it the
+    new conversion replaces the document: every page is rewritten, chapter
+    pages keep their ``created`` (matched by raw path), the parent keeps its
+    ``created``, topic and tags unless new ones are given, and the pages, raws,
+    sidecars and extracted images the new conversion no longer produces are
+    deleted. A chapter page edited by hand since it was written refuses the
+    update with a diff unless ``force``.
     """
     name = slugify(doc.title) or slugify(source.stem) or "document"
     ext = source.suffix.lower()
     archive = vault_path / "raw" / "assets" / f"{name}{ext}"
-    if archive.exists():
-        raise FileExistsError(
-            f"raw/assets/{name}{ext} already exists; pass --update to overwrite "
-            f"and update the document's pages"
-        )
+    if not update:
+        for existing in (archive, vault_path / "raw" / name):
+            if existing.exists():
+                raise FileExistsError(
+                    f"{existing.relative_to(vault_path).as_posix()} already exists; "
+                    f"pass --update to overwrite and update the document's pages"
+                )
     assets_dir = vault_path / "raw" / "assets" / name
     members = [m for ch in doc.chapters for m in ch.images]
     if doc.cover and len(doc.chapters) > 1:
@@ -99,6 +119,13 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
         if path.is_absolute() or ".." in path.parts:
             raise ValueError(f"unsafe image path in document: {member}")
 
+    vault_config = load_vault_config(vault_path)
+    old = (_existing_set(vault_path, name, vault_config.get("topics", []))
+           if update else _DocumentSet())
+    if not force:
+        _check_drift(vault_path, old)
+    eff_tags = tags if tags is not None else old.tags
+
     if len(doc.chapters) == 1:
         chapter = doc.chapters[0]
         page = ingest_extracted(
@@ -106,20 +133,23 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
             content_type="application/octet-stream", asset=source.read_bytes(),
             markdown=_rewrite_images(chapter.markdown, chapter.images,
                                      f"../raw/assets/{name}"),
-            extractor_title=doc.title, topic=topic, tags=tags, tag_mode=tag_mode,
+            extractor_title=doc.title, topic=topic or old.topic, tags=eff_tags,
+            update=update, force=force, tag_mode=tag_mode,
             name=name, fetcher="local", asset_ext=ext,
         )
         _extract_images(doc, chapter.images, assets_dir)
+        single_raw = vault_path / "raw" / f"{name}.md"
+        _remove_stale(old, {page, single_raw, sidecar_path(single_raw)}, archive,
+                      assets_dir, chapter.images)
         return DocumentIngest(page, 1)
 
-    vault_config = load_vault_config(vault_path)
-    eff_topic = topic or vault_config.get("default_topic")
+    eff_topic = topic or old.topic or vault_config.get("default_topic")
     if not eff_topic:
         raise ValueError(
             "no topic: pass --topic or set default_topic in wiki.yaml "
             "(this vault declares no default_topic)"
         )
-    canonical_tags = _resolve_tags(tags or [], _load_vocab(vault_config, tag_mode))
+    canonical_tags = _resolve_tags(eff_tags or [], _load_vocab(vault_config, tag_mode))
     today = date.today().isoformat()
     total = len(doc.chapters)
 
@@ -132,6 +162,7 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
     raw_dir.mkdir(parents=True, exist_ok=True)
     page_dir.mkdir(parents=True, exist_ok=True)
     links = []
+    written: set[Path] = set()
     for chapter in doc.chapters:
         ordinal = format_ordinal(chapter.ordinal, total)
         slug = slugify(chapter.title)
@@ -142,17 +173,19 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
         raw.write_text(body)
         _write_sidecar(raw, source=provenance_source or str(source), fetcher="local")
         title = f"{chapter.title} ({doc.title})"
+        raw_ref = f"raw/{name}/{stem}.md"
         _write_page(page_dir / f"{stem}.md", {
             "title": title,
             "document": name,
             "chapter": chapter.ordinal,
             "topic": eff_topic,
             "tags": canonical_tags,
-            "created": today,
+            "created": old.created_by_raw.get(raw_ref, today),
             "updated": today,
-            "sources": [f"raw/{name}/{stem}.md"],
+            "sources": [raw_ref],
         }, body)
         links.append(f"- [[{title}]]")
+        written.update({raw, sidecar_path(raw), page_dir / f"{stem}.md"})
 
     cover = f"![cover](../raw/assets/{name}/{doc.cover})\n\n" if doc.cover else ""
     parent = vault_path / eff_topic / f"{name}.md"
@@ -161,14 +194,162 @@ def write_document(doc: ConvertedDocument, source: Path, vault_path: Path,
         "document": name,
         "topic": eff_topic,
         "tags": canonical_tags,
-        "created": today,
+        "created": old.created or today,
         "updated": today,
         "sources": [f"raw/assets/{name}{ext}"],
         **doc.metadata,
     }, cover + "\n".join(links) + "\n")
-    append_log(vault_path, "ingest",
+    _remove_stale(old, written | {parent}, archive, assets_dir, members)
+    append_log(vault_path, "update" if update else "ingest",
                f"{source.name} -> {eff_topic}/{name}.md ({total} chapters)")
     return DocumentIngest(parent, total)
+
+
+@dataclass
+class _DocumentSet:
+    """The files a document already in the vault owns, as an update finds them.
+
+    ``guarded`` holds (page, parsed page, raw ref) for every page generated from
+    a raw (chapter pages, or the single page); ``files`` every page, raw and
+    sidecar of the set; ``archive`` the archived original it records."""
+
+    guarded: list[tuple[Path, dict, str | None]] = field(default_factory=list)
+    files: list[Path] = field(default_factory=list)
+    dirs: list[Path] = field(default_factory=list)
+    topic: str | None = None
+    tags: list[str] | None = None
+    created: str | None = None
+    created_by_raw: dict[str, str] = field(default_factory=dict)
+    archive: Path | None = None
+
+
+def _document_archive(vault_path: Path, name: str, ref: str | None) -> Path | None:
+    """``ref`` as a path when it is this document's archived original."""
+    if not ref:
+        return None
+    path = PurePosixPath(ref)
+    if (path.parent == PurePosixPath("raw/assets") and path.stem == name
+            and path.suffix in DOCUMENT_SUFFIXES):
+        return vault_path / path
+    return None
+
+
+def _existing_set(vault_path: Path, name: str, topics: list[str]) -> _DocumentSet:
+    """Find the document ``name`` in the layout this module writes: the parent or
+    single page at <topic>/<name>.md, chapter pages in <topic>/<name>/ that
+    carry ``document: <name>``, raws and sidecars in raw/<name>/, and the single
+    raw raw/<name>.md when its sidecar records this document's archive. Pages
+    and raws that do not belong to the document are left out."""
+    found = _DocumentSet()
+    single_raw = vault_path / "raw" / f"{name}.md"
+    single_ref = f"raw/{name}.md"
+    single_archive = (_document_archive(vault_path, name,
+                                        load_sidecar(single_raw).get("asset"))
+                      if single_raw.is_file() else None)
+    for topic in topics:
+        top = vault_path / topic / f"{name}.md"
+        if top.is_file():
+            parsed = parse_page(top)
+            meta = parsed["meta"] or {}
+            sources = meta.get("sources") or []
+            if meta.get("document") == name and "chapter" not in meta:
+                for ref in sources:
+                    found.archive = (found.archive
+                                     or _document_archive(vault_path, name, ref))
+            elif single_archive and single_ref in sources:
+                found.guarded.append((top, parsed, single_ref))
+                found.files += [single_raw, sidecar_path(single_raw)]
+                found.archive = single_archive
+            else:
+                meta = None
+            if meta is not None:
+                found.files.append(top)
+                found.topic = found.topic or meta.get("topic") or topic
+                found.tags = meta.get("tags") or []
+                found.created = meta.get("created")
+        folder = vault_path / topic / name
+        if folder.is_dir():
+            found.dirs.append(folder)
+            for page in sorted(folder.glob("*.md")):
+                parsed = parse_page(page)
+                meta = parsed["meta"] or {}
+                if meta.get("document") != name or "chapter" not in meta:
+                    continue
+                ref = (meta.get("sources") or [None])[0]
+                found.guarded.append((page, parsed, ref))
+                found.files.append(page)
+                found.topic = found.topic or meta.get("topic") or topic
+                if ref and meta.get("created"):
+                    found.created_by_raw[ref] = meta["created"]
+    raw_dir = vault_path / "raw" / name
+    if raw_dir.is_dir():
+        found.dirs.append(raw_dir)
+        found.files += [p for p in sorted(raw_dir.iterdir())
+                        if p.is_file() and (p.suffix == ".md" or is_sidecar(p))]
+    return found
+
+
+def _check_drift(vault_path: Path, found: _DocumentSet) -> None:
+    """Refuse, with a diff per page, when any page of ``found`` was edited by
+    hand since it was written: its body no longer hashes to its stored
+    render_hash (or, for an unstamped page, differs from its raw). Reads only."""
+    problems, diffs = [], []
+    for page, parsed, raw_ref in found.guarded:
+        meta, body = parsed["meta"] or {}, parsed["body"]
+        raw_text = None
+        raw = vault_path / raw_ref if raw_ref else None
+        if raw is not None and raw.is_file():
+            try:
+                raw_text = raw.read_text()
+            except UnicodeDecodeError:
+                raw_text = None
+        stored = meta.get("render_hash")
+        if stored is not None:
+            drifted = render_hash(body) != stored
+        else:
+            drifted = raw_text is not None and page_raw_diverged(body, raw_text)
+        if not drifted:
+            continue
+        rel = page.relative_to(vault_path).as_posix()
+        lost = page_lines_lost(body, raw_text or "")
+        problems.append(f"page {rel} differs from {raw_ref}: {lost} page line(s) "
+                        f"are not in the raw")
+        diffs.append(page_raw_diff(body, raw_text or "", f"page:{rel}",
+                                   f"raw:{raw_ref}"))
+    if problems:
+        raise PageDriftError(
+            "; ".join(problems) + ". awiki treats pages as generated from raw and "
+            "--update rewrites every page of the document from the new file, so "
+            "review before overwriting: keep what is worth keeping elsewhere, then "
+            "pass --force to discard the edits.",
+            diff="".join(diffs),
+        )
+
+
+def _remove_stale(found: _DocumentSet, keep: set[Path], archive: Path,
+                  assets_dir: Path, members: list[str]) -> None:
+    """Delete what the old set owned that the new write did not produce: its
+    pages, raws and sidecars outside ``keep``, an archived original under
+    another extension, and extracted images under ``assets_dir`` no chapter
+    references. Folders left empty go too. No-op for a fresh ingest."""
+    for path in found.files:
+        if path not in keep and path.is_file():
+            path.unlink()
+    if found.archive is not None and found.archive != archive and found.archive.is_file():
+        found.archive.unlink()
+    if found.files and assets_dir.is_dir():
+        wanted = {PurePosixPath(m) for m in members}
+        for path in assets_dir.rglob("*"):
+            if path.is_file() and PurePosixPath(
+                    path.relative_to(assets_dir).as_posix()) not in wanted:
+                path.unlink()
+        found.dirs.append(assets_dir)
+    for folder in found.dirs:
+        for sub in sorted((p for p in folder.rglob("*") if p.is_dir()), reverse=True):
+            if not any(sub.iterdir()):
+                sub.rmdir()
+        if folder.is_dir() and not any(folder.iterdir()):
+            folder.rmdir()
 
 
 def _rewrite_images(markdown: str, images: list[str], prefix: str) -> str:
