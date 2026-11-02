@@ -12,7 +12,11 @@ document is cut at the anchors of the chapter starts that point into it, the
 content before the first start goes to chapter 1, and every slice is rendered
 through the shared markdown renderer. Image ``src`` values become archive
 member paths (``OEBPS/images/a.jpg``); the bytes of each referenced image and
-of the declared cover go into ``assets``.
+of the declared cover go into ``assets``. An image the document writer would
+refuse to extract (an extension outside the common web image types, none at
+all, or a path with a drive, a backslash, a leading '/' or '..') is skipped:
+its ``<img>`` keeps the ``src`` as written and a cover like that gives no
+cover, so the book still imports without that image.
 """
 from __future__ import annotations
 
@@ -21,13 +25,14 @@ import re
 import secrets
 import warnings
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import unquote
 
 from ebooklib import ITEM_COVER
 from ebooklib.epub import EpubException, EpubHtml, EpubNav, EpubNcx, EpubReader
 from lxml import etree
 
+from agent_wiki.convert.html import _IMAGE_EXTS
 from agent_wiki.convert.markdown import html_to_markdown
 from agent_wiki.convert.model import Chapter, ConvertedDocument, TocEntry
 from agent_wiki.convert.split import plan_chapters
@@ -78,6 +83,17 @@ def _check_archive(path: Path) -> None:
 
 def _join(base: str, href: str) -> str:
     return posixpath.normpath(posixpath.join(base, href))
+
+
+def _extractable(member: str) -> bool:
+    """True when the document writer will extract ``member``: a plain
+    relative POSIX path with a common image extension. The writer checks the
+    same again (and the symlinks of the vault) as the backstop."""
+    path = PurePosixPath(member)
+    win = PureWindowsPath(member)
+    return not ("\\" in member or path.is_absolute() or ".." in path.parts
+                or win.drive or win.root
+                or path.suffix.lower() not in _IMAGE_EXTS)
 
 
 def _text(el) -> str:
@@ -230,7 +246,9 @@ class _Book:
             if not src or _SCHEME.match(src) or src.startswith("/"):
                 return None
             target = _join(posixpath.dirname(item), unquote(src))
-            return target if target in self.items else None
+            if target not in self.items or not _extractable(target):
+                return None
+            return target
         return resolve
 
     def _meta(self, name: str) -> str | None:
@@ -248,7 +266,8 @@ class _Book:
                     break
         if item is None or not (item.media_type or "").startswith("image/"):
             return None
-        return next(p for p, i in self.items.items() if i is item)
+        member = next(p for p, i in self.items.items() if i is item)
+        return member if _extractable(member) else None
 
     def convert(self) -> ConvertedDocument:
         title = self._meta("title") or next(

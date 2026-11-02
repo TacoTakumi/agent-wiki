@@ -164,11 +164,14 @@ def _epub_referencing(tmp_path: Path, member: str) -> Path:
     "OEBPS/images\\..\\..\\evil.png",
     "OEBPS/images/evil.txt",
 ])
-def test_epub_with_an_unsafe_image_member_is_refused(tmp_vault, tmp_path, member):
-    before = _tree(tmp_vault)
-    with pytest.raises(ValueError, match="image"):
-        ingest_document(_epub_referencing(tmp_path, member), tmp_vault)
-    assert _tree(tmp_vault) == before
+def test_epub_with_an_unsafe_image_member_imports_without_it(tmp_vault, tmp_path, member):
+    # The converter skips a member the writer would refuse, so the book
+    # imports without that image.
+    result = ingest_document(_epub_referencing(tmp_path, member), tmp_vault)
+    assert result.chapters == 2
+    assets = tmp_vault / "raw" / "assets" / "a-book"
+    assert not assets.exists() or not any(p.is_file() for p in assets.rglob("*"))
+    assert "BODY1" in (tmp_vault / "research" / "a-book" / "01-chapter-one.md").read_text()
 
 
 def test_member_resolving_outside_the_assets_folder_is_refused(tmp_vault, tmp_path):
