@@ -9,6 +9,23 @@ The single source of truth for the version is `__version__` in
 derive from it. Release tags begin at `v0.5.0`; earlier versions and dates
 below are reconstructed from the commits that bumped `__version__`.
 
+## [0.14.0]
+
+### Added
+
+- `awiki ingest` converts local `.pdf`, `.html` / `.htm` and `.epub` files to markdown. A long document is split into chapters from its table of contents (EPUB), outline (PDF) or heading levels (HTML), using the shallowest level with at least 3 entries, and filed as a parent page `<topic>/<doc>.md` plus one page per chapter `<topic>/<doc>/NN-<slug>.md`, titled `<chapter> (<document title>)`. Each chapter has its own raw `raw/<doc>/NN-<slug>.md` with a sidecar; the original is archived byte-identical as `raw/assets/<doc>.<ext>`. A one-chapter document becomes a single page. The output line gains ` (N chapters)` for a multi-chapter document. `.md`, `.txt` and other files are ingested as before.
+- Images a document references, and an EPUB cover, are extracted to `raw/assets/<doc>/...` and linked from the pages by relative path. The web viewer serves image files (jpg, jpeg, png, gif, webp, svg) under `raw/assets/` with the vault's page access rules.
+- `ingest --update` on a document replaces the whole set: it rewrites every chapter raw and page, deletes chapters, sidecars and images the new version no longer produces, rebuilds the parent, replaces the archived original and keeps `created` on surviving chapters. A hand-edited chapter page stops the update with a diff unless `--force`.
+- An EPUB with more than 2000 members or more than 256 MB declared uncompressed is refused before it is read, and XML entities in an EPUB are never expanded.
+- New core dependencies: `ebooklib` (AGPL-3.0) and `markdownify` (MIT). PDF text still comes from the vault's `pdf_extractor` setting.
+
+### Changed
+
+- `.pdf`, `.html`, `.htm` and `.epub` files given to `awiki ingest` are converted instead of copied verbatim into a page. A file that cannot be converted (for example content that does not match its extension) prints `error: could not ingest <file>: <reason>` and exits 1 with the vault unchanged; other files keep the `skipped:` line.
+- `awiki reingest` and `awiki raw` accept a chapter raw (`<doc>/NN-<slug>`, the chapter page path or its title) and a document parent (its doc name, page path or title). Reingest on a chapter re-renders only that page from its raw; on a parent it re-converts the document from its archived original, as `--update` would. `awiki raw <parent>` prints the archived original's path.
+- `awiki lint` checks the chapter raws one level down in `raw/<doc>/` for a missing page, does not compare an archived original under `raw/assets/` with its page body, and does not report a document parent page as an orphan.
+- Ingest to a remote vault sends the client-side path of the file, so the sidecars written on the server record it, the same as a local ingest. This also applies to `.md` files.
+
 ## [0.13.4]
 
 ### Fixed

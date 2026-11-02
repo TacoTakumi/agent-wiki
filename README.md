@@ -24,6 +24,7 @@ search the wiki first, read a page whole or in slices, and save what is worth ke
 - **Plain markdown, no database** - the whole vault is files with YAML frontmatter and `[[wikilinks]]`. `cat` it, `grep` it, open it in Obsidian/Logseq, or script against it in Python. Nothing to run. See [How the vault works](#how-the-vault-works).
 - **OKF-aligned format** - the vault is ~80% conformant with Google's [Open Knowledge Format](https://cloud.google.com/blog/products/data-analytics/how-the-open-knowledge-format-can-improve-data-sharing/) by convergent design (markdown + frontmatter, generated `index.md` / `log.md`, no prescribed taxonomy, untyped links, arbitrary frontmatter keys preserved).
 - **Ingest files _and_ URLs** - copy a file or fetch a web page into an immutable `raw/` archive (HTML via trafilatura, PDFs supported). Every ingest writes a sha256 **provenance sidecar** so drift is detectable. See [`awiki ingest`](#awiki-ingest-files-or-urls).
+- **PDF, HTML and EPUB import** - a local `.pdf`, `.html` or `.epub` is converted to markdown and a long document is filed as one page per chapter, with its images. See [Importing PDF, HTML and EPUB files](#importing-pdf-html-and-epub-files).
 - **Edit-the-raw, re-ingest** - pages are *rendered* from their `raw/` source. Edit the source and `awiki reingest`; if a page has drifted, you get a diff instead of a silent clobber. See [`awiki reingest`](#awiki-reingest-name).
 - **Fast search + full-page read** - multi-word AND search with coverage ranking (ripgrep-backed), then `awiki show <path>` prints any page verbatim. See [`awiki search`](#awiki-search-query).
 - **Ongoing session ingestion** - every time Claude Code, pi, or OpenCode starts, a one-line hook kicks off a detached, lock-safe `awiki sync` that files every finished session from all three agents into the vault. Set it up once per agent; never run sync by hand again. See [Ongoing session ingestion](#ongoing-session-ingestion).
@@ -417,6 +418,7 @@ awiki ingest notes.md --update                 # overwrite raw + update the link
 - `--update` overwrites `raw/<basename>` from an **external** source and rewrites its linked wiki page (located via the page's `sources:` frontmatter): the body is refreshed, `created` is preserved, `updated` is bumped, and tags are kept unless `--tags` is given. If the title or `--topic` changed, the page file is renamed/moved to match. (To rebuild a page after editing the vault's *own* `raw/` copy, use [`awiki reingest`](#awiki-reingest-name) instead.)
 - `--force` proceeds even when the target page has diverged from its `raw/` source (otherwise ingest shows the diff and stops).
 - `--tag-mode off|warn|strict` forces the tag-vocabulary mode for this ingest only (see [`awiki tag`](#awiki-tag-addsuggestfix)); it does not change the vault's configured mode.
+- A local `.pdf`, `.html`, `.htm` or `.epub` file is converted, and a long one is split into chapter pages. See [Importing PDF, HTML and EPUB files](#importing-pdf-html-and-epub-files).
 
 **Ingesting URLs.** `awiki ingest <url>` fetches the page and ingests it like any
 other source:
@@ -456,6 +458,7 @@ awiki reingest my-notes.md             # re-render the page from it
 
 - Errors exactly as `reingest` does on a missing or ambiguous `<name>`.
 - On a **remote** vault the raw lives on the server: `raw` prints the server-side reference and notes on stderr that it is not directly editable from the client.
+- For a converted document, `raw <chapter>` prints the chapter raw `raw/<doc>/NN-<slug>.md` and `raw <parent>` prints the archived original `raw/assets/<doc>.<ext>`. See [Importing PDF, HTML and EPUB files](#importing-pdf-html-and-epub-files).
 
 #### `awiki sync [--source claude-code|opencode|pi|drop-zone] [--since DATE] [--include-live] [--dry-run] [--detach]`
 
@@ -649,6 +652,72 @@ ever typed at a prompt. See [Users and grants](#users-and-grants).
 Manage a user's bearer tokens and their optional scopes, and move tokens from an
 older `server.yaml` into the user store. A secret is printed once, when it is
 made. See [Tokens and scopes](#tokens-and-scopes).
+
+## Importing PDF, HTML and EPUB files
+
+`awiki ingest` converts a local `.pdf`, `.html` / `.htm` or `.epub` file to
+markdown. A long document becomes one parent page plus one page per chapter.
+Every other file (`.md`, `.txt`, ...) is ingested verbatim as before. There are
+no extra flags.
+
+```bash
+awiki ingest a-book.epub --topic research
+# Ingested a-book.epub -> research/a-book.md (3 chapters)
+awiki ingest manual.pdf
+awiki ingest saved-page.html
+```
+
+**How chapters are found.** An EPUB uses its table of contents (the EPUB3
+navigation document, else the NCX), a PDF its outline (bookmarks), and an HTML
+file its `h1`-`h6` headings, one TOC level per heading level.
+
+- The chapter level is the shallowest TOC level with at least 3 entries. Deeper entries do not start chapters; their text stays in the chapter they belong to.
+- A chapter entry with exactly one sub-entry and no text between the two gets a joined title, so `CHAPTER: 1` over `My Parents and Early Life` becomes `Chapter 1: My Parents and Early Life`.
+- An EPUB with no TOC, or a TOC that points into fewer than half of its spine items, gets one chapter per spine item, titled from its first heading.
+- A PDF with no outline, or an HTML file with no heading level that has 3 headings, is one chapter.
+- The document title comes from the file's metadata (EPUB `dc:title`, PDF title, HTML `<title>`), else its first heading, else the file name.
+- PDF text comes from the vault's `pdf_extractor` setting (`pymupdf4llm` by default, or `pdfplumber`; see [Optional extras](#optional-extras)). HTML is converted whole, with no boilerplate removal, unlike a fetched URL.
+
+**Layout.** `<doc>` is the slug of the document title. A document with two or
+more chapters is filed as:
+
+```
+raw/assets/<doc>.<ext>          # the original file, byte-identical
+raw/assets/<doc>/<image path>   # images the chapters reference, and the cover
+raw/<doc>/NN-<slug>.md          # one raw per chapter, with its .meta.yaml sidecar
+<topic>/<doc>.md                # parent: metadata, cover, ordered chapter links
+<topic>/<doc>/NN-<slug>.md      # one page per chapter
+```
+
+- Chapter pages are titled `<chapter> (<document title>)`, for example `Chapter One (A Book)`, and carry `document` and `chapter` frontmatter. The parent links them in order as `[[wikilinks]]` and carries `author`, `language` and `publisher` when the file declares them.
+- A document with one chapter becomes a single page: `raw/<doc>.md`, `raw/assets/<doc>.<ext>` and `<topic>/<doc>.md`.
+- Images are copied out of the file (EPUB members, or for HTML relative paths inside the file's folder) to `raw/assets/<doc>/...`, and pages link them by relative path. They render in Obsidian and in the web viewer, which serves image files under `raw/assets/`. Remote, `data:` and out-of-folder HTML images are left as written.
+
+**Updating.** Ingesting a document that is already in the vault is refused
+(exit 1, the message names `--update`). `ingest --update` re-converts the new
+file and replaces the whole set: every chapter raw and page is rewritten,
+chapters, sidecars and images the new version no longer has are deleted, the
+parent is rebuilt and the archived original is replaced. Chapters that survive
+(matched by raw path) keep `created`; topic and tags are kept unless `--topic`
+or `--tags` is given. Before it writes anything, `--update` checks every chapter
+page against its raw; a hand-edited page stops the update with a diff and
+nothing changes. `--force` proceeds anyway.
+
+**Reingest.** `awiki reingest` on the parent (doc name, page path or title)
+re-converts the document from its archived original, the same as `--update`
+with that file. On a chapter (`<doc>/NN-<slug>`, page path or title) it
+re-renders only that page from its raw; the parent and the other chapters stay
+as they are. `awiki raw <parent>` prints the archived original's path, and
+`awiki raw <chapter>` the chapter raw.
+
+**Limits and errors.** An EPUB is refused before it is read if it has more than
+2000 members or declares more than 256 MB uncompressed, and XML entities are
+never expanded. A file whose content does not match its extension (or is
+damaged) prints `error: could not ingest <file>: <reason>`, exits 1 and leaves
+the vault unchanged.
+
+**Remote vaults** work the same: the client uploads the file, the server
+converts it, and the output line is the same as for a local vault.
 
 ## Ingesting conversations
 
