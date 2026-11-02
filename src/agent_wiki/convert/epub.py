@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+import secrets
 import warnings
 import zipfile
 from pathlib import Path
@@ -35,7 +36,6 @@ MAX_MEMBERS = 2000
 MAX_UNCOMPRESSED = 256 * 1024 * 1024
 
 _HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
-_CUT = re.compile(r"<!--awiki-cut:(\d+)-->")
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 
 
@@ -192,12 +192,19 @@ class _Book:
                    for e in events[start:end])
 
     def _slices(self, n_chapters: int, starts: list[TocEntry]):
-        """(spine item, html) slices per chapter index."""
+        """(spine item, html) slices per chapter index.
+
+        Each chapter start gets a comment marker and the serialized HTML is
+        split on them. Text in script, style or CDATA is serialized raw, so
+        the marker carries a random token the book cannot know: no book text
+        can pose as a marker."""
+        token = secrets.token_hex(16)
+        cut = re.compile(rf"<!--awiki-cut-{token}:(\d+)-->")
         for index, entry in enumerate(starts):
             file, body, el = self._locate(entry)
             if body is None:
                 continue
-            mark = etree.Comment(f"awiki-cut:{index}")
+            mark = etree.Comment(f"awiki-cut-{token}:{index}")
             if el is None or el is body:
                 mark.tail, body.text = body.text, None
                 body.insert(0, mark)
@@ -210,7 +217,7 @@ class _Book:
             html = (body.text or "") + "".join(
                 etree.tostring(ch, method="html", encoding="unicode")
                 for ch in body)
-            parts = _CUT.split(html)
+            parts = cut.split(html)
             slices[current].append((item, parts[0]))
             for i in range(1, len(parts), 2):
                 current = int(parts[i])

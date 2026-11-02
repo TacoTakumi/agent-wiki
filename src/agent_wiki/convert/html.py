@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import posixpath
 import re
+import secrets
 from collections import Counter
 from pathlib import Path
 from urllib.parse import unquote
@@ -34,7 +35,6 @@ from agent_wiki.convert.model import Chapter, ConvertedDocument, TocEntry
 from agent_wiki.convert.split import plan_chapters
 
 _HEADINGS = ("h1", "h2", "h3", "h4", "h5", "h6")
-_CUT = re.compile(r"<!--awiki-cut:(\d+)-->")
 _SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
 _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 # A level needs this many headings before the file is split by it.
@@ -160,15 +160,21 @@ class _Document:
 
     def _slices(self, starts: list[TocEntry]) -> list[str]:
         """The body HTML cut before each chapter's heading; the content before
-        the first cut goes to the first chapter."""
+        the first cut goes to the first chapter.
+
+        Text in script, style or CDATA is serialized raw, so the comment
+        marker carries a random token the file cannot know: no text in the
+        file can pose as a marker."""
+        token = secrets.token_hex(16)
+        cut = re.compile(rf"<!--awiki-cut-{token}:(\d+)-->")
         for index, entry in enumerate(starts):
             el = self.anchors.get(entry.target)
             if index and el is not None:
-                el.addprevious(etree.Comment(f"awiki-cut:{index}"))
+                el.addprevious(etree.Comment(f"awiki-cut-{token}:{index}"))
         html = (self.body.text or "") + "".join(
             etree.tostring(ch, method="html", encoding="unicode")
             for ch in self.body)
-        parts = _CUT.split(html)
+        parts = cut.split(html)
         slices = [""] * len(starts)
         slices[0] = parts[0]
         for i in range(1, len(parts), 2):
