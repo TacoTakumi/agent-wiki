@@ -66,6 +66,16 @@ def _write_config(vault_path: Path, config: dict[str, Any]) -> None:
     )
 
 
+def _is_page_text_source(src: str) -> bool:
+    """True when a page source is raw/ text the page body was rendered from.
+
+    An archived original under raw/assets/ (the HTML, PDF or EPUB a document
+    was converted from) is the input of a conversion, not the text of the page
+    body: never compare a page with it and never rewrite it. Lint skips it the
+    same way in its drift check."""
+    return src.startswith("raw/") and not src.startswith("raw/assets/")
+
+
 def _page_raw_status(vault_path: Path, page: dict) -> str | None:
     """Classify a page against its raw source: ``"faithful"`` (body matches raw),
     ``"diverged"`` (body drifted from raw), or ``None`` (no readable raw/ source to
@@ -78,7 +88,7 @@ def _page_raw_status(vault_path: Path, page: dict) -> str | None:
     Resolves the first raw/ source that is a readable text file, matching how
     reingest maps a page back to its raw."""
     for src in (page["meta"].get("sources") or []):
-        if not src.startswith("raw/"):
+        if not _is_page_text_source(src):
             continue
         raw_path = vault_path / src
         if not raw_path.is_file():
@@ -286,7 +296,7 @@ class RawContentDrift(Check):
                 if _is_conversation_page(page):
                     continue
                 for src in (page["meta"].get("sources") or []):
-                    if not src.startswith("raw/"):
+                    if not _is_page_text_source(src):
                         continue
                     raw_path = vault_path / src
                     if not raw_path.is_file():
