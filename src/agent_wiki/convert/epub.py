@@ -86,9 +86,11 @@ def _text(el) -> str:
 
 def _parse(content: bytes):
     """The <body> of a content document, namespaces stripped, entities left
-    unresolved."""
+    unresolved. Comments and processing instructions are dropped, so none
+    can pose as a cut marker."""
     parser = etree.XMLParser(recover=True, resolve_entities=False,
-                             no_network=True)
+                             no_network=True, remove_comments=True,
+                             remove_pis=True)
     try:
         root = etree.fromstring(content, parser)
     except etree.XMLSyntaxError:
